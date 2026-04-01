@@ -1,0 +1,370 @@
+    st.session_state["usuario_logado"] = None
+    st.rerun()
+
+if menu == "Dashboard":
+    st.title("Dashboard de Vendas")
+    ano_dashboard = st.selectbox(
+        "Ano das vendas",
+        options=list(range(date.today().year - 2, date.today().year + 3)),
+        index=2,
+    )
+    metas = carregar_metas_vendas(ano_dashboard)
+    vendas = pd.read_sql("SELECT * FROM vendas ORDER BY data_venda DESC", conn)
+    atualizar_status_contas_pagar_automaticamente()
+    contas_pagar_dashboard = pd.read_sql("SELECT * FROM contas_pagar ORDER BY data_vencimento, fornecedor, descricao", conn)
+
+    with st.expander("Metas de vendas", expanded=False):
+        m1, m2, m3 = st.columns(3)
+        meta = m1.number_input("Meta", min_value=0.0, value=float(metas["meta"] or 100000))
+        supermeta = m2.number_input("Supermeta", min_value=0.0, value=float(metas["supermeta"] or 150000))
+        hipermeta = m3.number_input("Hipermeta", min_value=0.0, value=float(metas["hipermeta"] or 200000))
+        if st.button("Salvar metas de vendas"):
+            salvar_metas_vendas(ano_dashboard, meta, supermeta, hipermeta)
+            conn.commit()
+            st.success("Metas atualizadas.")
+            st.rerun()
+
+    if vendas.empty:
+        st.info("Nenhuma venda importada ainda.")
+    else:
+        vendas["data_ref"] = vendas["data_venda"].apply(parse_data_contrato)
+        vendas = vendas[vendas["data_ref"].notna()].copy()
+        vendas["ano"] = vendas["data_ref"].apply(lambda valor: valor.year)
+        vendas = vendas[vendas["ano"] == ano_dashboard].copy()
+        if vendas.empty:
+            st.info("Nao ha vendas para o ano selecionado.")
+        else:
+            vendas["mes"] = vendas["data_ref"].apply(lambda valor: valor.month)
+            vendas["mes_nome"] = vendas["mes"].map(
+                {
+                    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+                    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+                }
+            )
+            fv1, fv2, fv3, fv4 = st.columns(4)
+            filtro_pacientes_venda = fv1.multiselect(
+                "Pacientes",
+                options=sorted([valor for valor in vendas["paciente_nome"].fillna("").unique().tolist() if valor]),
+            )
+            filtro_avaliadores_venda = fv2.multiselect(
+                "Avaliadores",
+                options=sorted([valor for valor in vendas["avaliador"].fillna("").unique().tolist() if valor]),
+            )
+            filtro_vendedores_venda = fv3.multiselect(
+                "Vendedores",
+                options=sorted([valor for valor in vendas["vendedor"].fillna("").unique().tolist() if valor]),
+            )
+            filtro_meses_venda = fv4.multiselect(
+                "Meses",
+                options=list(range(1, 13)),
+                format_func=lambda valor: {
+                    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+                    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+                }[valor],
+            )
+
+            vendas_filtradas = vendas.copy()
+            if filtro_pacientes_venda:
+                vendas_filtradas = vendas_filtradas[vendas_filtradas["paciente_nome"].isin(filtro_pacientes_venda)]
+            if filtro_avaliadores_venda:
+                vendas_filtradas = vendas_filtradas[vendas_filtradas["avaliador"].isin(filtro_avaliadores_venda)]
+            if filtro_vendedores_venda:
+                vendas_filtradas = vendas_filtradas[vendas_filtradas["vendedor"].isin(filtro_vendedores_venda)]
+            if filtro_meses_venda:
+                vendas_filtradas = vendas_filtradas[vendas_filtradas["mes"].isin(filtro_meses_venda)]
+
+            if vendas_filtradas.empty:
+                st.info("Nao ha vendas para os filtros selecionados.")
+                st.stop()
+
+            st.subheader("Calendário de pagamentos")
+            if contas_pagar_dashboard.empty:
+                st.info("Nenhum pagamento cadastrado para exibir no calendário.")
+            else:
+                contas_pagar_dashboard["valor"] = contas_pagar_dashboard["valor"].fillna(0).astype(float)
+                contas_pagar_dashboard["_ordem_vencimento"] = pd.to_datetime(
+                    contas_pagar_dashboard["data_vencimento"],
+                    format="%d/%m/%Y",
+                    errors="coerce",
+                )
+                contas_calendario = contas_pagar_dashboard[contas_pagar_dashboard["_ordem_vencimento"].notna()].copy()
+
+                if contas_calendario.empty:
+                    st.info("Nenhum vencimento válido para exibir no calendário.")
+                else:
+                    meses_pt_br = {
+                        1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+                        7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+                    }
+                    anos_calendario = sorted(set(contas_calendario["_ordem_vencimento"].dt.year.tolist()) | {date.today().year})
+                    mes_atual = date.today().month
+                    ano_atual = date.today().year
+
+                    cal1, cal2 = st.columns(2)
+                    ano_pagamentos = cal1.selectbox(
+                        "Ano do calendário",
+                        options=anos_calendario,
+                        index=anos_calendario.index(ano_atual) if ano_atual in anos_calendario else 0,
+                        key="dashboard_ano_pagamentos",
+                    )
+                    mes_pagamentos = cal2.selectbox(
+                        "Mês do calendário",
+                        options=list(range(1, 13)),
+                        index=mes_atual - 1,
+                        format_func=lambda valor: meses_pt_br[valor],
+                        key="dashboard_mes_pagamentos",
+                    )
+
+                    contas_mes = contas_calendario[
+                        (contas_calendario["_ordem_vencimento"].dt.year == ano_pagamentos)
+                        & (contas_calendario["_ordem_vencimento"].dt.month == mes_pagamentos)
+                    ].copy()
+
+                    cabecalho = st.columns(7)
+                    for coluna, nome_dia in zip(cabecalho, ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]):
+                        coluna.markdown(f"**{nome_dia}**")
+
+                    hoje = date.today()
+                    for semana in calendar.monthcalendar(ano_pagamentos, mes_pagamentos):
+                        cols = st.columns(7)
+                        for idx, dia in enumerate(semana):
+                            with cols[idx]:
+                                if dia == 0:
+                                    st.write("")
+                                else:
+                                    dia_contas = contas_mes[contas_mes["_ordem_vencimento"].dt.day == dia].copy()
+                                    total_dia = float(dia_contas["valor"].sum()) if not dia_contas.empty else 0.0
+                                    qtd_dia = len(dia_contas)
+                                    qtd_pagos = int((dia_contas["status"] == "Pago").sum()) if not dia_contas.empty else 0
+                                    qtd_atrasados = int((dia_contas["status"] == "Atrasado").sum()) if not dia_contas.empty else 0
+
+                                    eh_hoje = hoje.year == ano_pagamentos and hoje.month == mes_pagamentos and hoje.day == dia
+                                    borda = "2px solid #111827" if eh_hoje else "1px solid #d1d5db"
+                                    fundo = "#ffffff"
+                                    if qtd_atrasados > 0:
+                                        fundo = "#fef2f2"
+                                    elif qtd_dia > 0 and qtd_pagos == qtd_dia:
+                                        fundo = "#f0fdf4"
+                                    elif qtd_dia > 0:
+                                        fundo = "#fffbeb"
+
+                                    resumo_status = ""
+                                    if qtd_atrasados > 0:
+                                        resumo_status = f"<div style='font-size:11px;color:#b91c1c;'>Atrasados: {qtd_atrasados}</div>"
+                                    elif qtd_dia > 0 and qtd_pagos == qtd_dia:
+                                        resumo_status = f"<div style='font-size:11px;color:#15803d;'>Todos pagos</div>"
+                                    elif qtd_dia > 0:
+                                        resumo_status = f"<div style='font-size:11px;color:#92400e;'>Títulos: {qtd_dia}</div>"
+
+                                    st.markdown(
+                                        f"""
+                                        <div style="border:{borda};border-radius:10px;padding:6px;min-height:88px;background:{fundo};">
+                                            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">{dia:02d}</div>
+                                            <div style="font-size:11px;color:#374151;">{formatar_moeda_br(total_dia) if qtd_dia else "Sem títulos"}</div>
+                                            {resumo_status}
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True,
+                                    )
+
+            hoje = date.today()
+            vendas_mes_atual = vendas_filtradas[(vendas_filtradas["mes"] == hoje.month) & (vendas_filtradas["ano"] == hoje.year)]
+            total_ano = float(vendas_filtradas["valor_total"].sum())
+            total_mes = float(vendas_mes_atual["valor_total"].sum()) if not vendas_mes_atual.empty else 0.0
+            ticket_medio = float(vendas_filtradas["valor_total"].mean()) if not vendas_filtradas.empty else 0.0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Vendas do ano", formatar_moeda_br(total_ano))
+            c2.metric("Vendas do mes", formatar_moeda_br(total_mes))
+            c3.metric("Quantidade", str(len(vendas_filtradas)))
+            c4.metric("Ticket medio", formatar_moeda_br(ticket_medio))
+
+            c5, c6, c7 = st.columns(3)
+            c5.metric("Meta", formatar_moeda_br(float(metas["meta"] or 0)))
+            c6.metric("Supermeta", formatar_moeda_br(float(metas["supermeta"] or 0)))
+            c7.metric("Hipermeta", formatar_moeda_br(float(metas["hipermeta"] or 0)))
+
+            st.subheader("Progresso das metas")
+            metas_progresso = [
+                ("Meta", float(metas["meta"] or 0)),
+                ("Supermeta", float(metas["supermeta"] or 0)),
+                ("Hipermeta", float(metas["hipermeta"] or 0)),
+            ]
+            for nome_meta, valor_meta in metas_progresso:
+                percentual = (total_mes / valor_meta) if valor_meta > 0 else 0
+                percentual_exibicao = max(0.0, min(percentual, 1.0))
+                diferenca = total_mes - valor_meta
+                if diferenca >= 0:
+                    status_meta = f"Meta batida. Excedente: {formatar_moeda_br(diferenca)}"
+                else:
+                    status_meta = f"Faltam {formatar_moeda_br(abs(diferenca))}"
+
+                st.markdown(f"**{nome_meta}**: {formatar_moeda_br(valor_meta)}")
+                st.progress(percentual_exibicao)
+                st.caption(f"Progresso mensal: {percentual * 100:.1f}% | {status_meta}")
+
+            resumo_mensal = vendas_filtradas.groupby(["mes", "mes_nome"], as_index=False)["valor_total"].sum().sort_values("mes")
+            resumo_mensal = resumo_mensal.rename(columns={"mes_nome": "Mes", "valor_total": "Valor total"})
+            ordem_meses = [
+                "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+            ]
+            resumo_mensal["Mes"] = pd.Categorical(resumo_mensal["Mes"], categories=ordem_meses, ordered=True)
+            resumo_mensal = resumo_mensal.sort_values("Mes")
+            st.subheader("Vendas por mes")
+            grafico_vendas = resumo_mensal.copy()
+            metas_linhas = pd.DataFrame(
+                [
+                    {"Meta": "Meta", "Valor": float(metas["meta"] or 0)},
+                    {"Meta": "Supermeta", "Valor": float(metas["supermeta"] or 0)},
+                    {"Meta": "Hipermeta", "Valor": float(metas["hipermeta"] or 0)},
+                ]
+            )
+            barras = alt.Chart(grafico_vendas).mark_bar(color="#c5a77a").encode(
+                x=alt.X("Mes:N", sort=ordem_meses, title="Mês"),
+                y=alt.Y("Valor total:Q", title="Valor"),
+                tooltip=[
+                    alt.Tooltip("Mes:N", title="Mês"),
+                    alt.Tooltip("Valor total:Q", title="Valor", format=",.2f"),
+                ],
+            )
+            linhas = alt.Chart(metas_linhas).mark_rule(strokeWidth=2).encode(
+                y=alt.Y("Valor:Q"),
+                color=alt.Color(
+                    "Meta:N",
+                    scale=alt.Scale(
+                        domain=["Meta", "Supermeta", "Hipermeta"],
+                        range=["#2563eb", "#ea580c", "#15803d"],
+                    ),
+                    legend=alt.Legend(title="Metas"),
+                ),
+                tooltip=[
+                    alt.Tooltip("Meta:N", title="Meta"),
+                    alt.Tooltip("Valor:Q", title="Valor", format=",.2f"),
+                ],
+            )
+            st.altair_chart((barras + linhas).properties(height=320), use_container_width=True)
+            resumo_exibicao = resumo_mensal.copy()
+            resumo_exibicao["Mes"] = resumo_exibicao["Mes"].astype(str)
+            resumo_exibicao["Valor total"] = resumo_exibicao["Valor total"].map(formatar_moeda_br)
+            st.dataframe(resumo_exibicao[["Mes", "Valor total"]], use_container_width=True, hide_index=True)
+
+            detalhe_vendas = vendas_filtradas[
+                ["data_venda", "paciente_nome", "valor_total", "valor_a_vista", "valor_cartao", "valor_boleto", "saldo", "avaliador", "vendedor", "nf"]
+            ].copy()
+            detalhe_vendas = detalhe_vendas.rename(
+                columns={
+                    "data_venda": "Data",
+                    "paciente_nome": "Paciente",
+                    "valor_total": "Valor total",
+                    "valor_a_vista": "A vista",
+                    "valor_cartao": "Cartao",
+                    "valor_boleto": "Boleto",
+                    "saldo": "Saldo",
+                    "avaliador": "Avaliador",
+                    "vendedor": "Vendedor",
+                    "nf": "NF",
+                }
+            )
+            for coluna in ["Valor total", "A vista", "Cartao", "Boleto", "Saldo"]:
+                detalhe_vendas[coluna] = detalhe_vendas[coluna].map(formatar_moeda_br)
+            st.subheader("Vendas importadas")
+            st.dataframe(detalhe_vendas, use_container_width=True, hide_index=True)
+
+            st.markdown("**Editar venda importada**")
+            opcoes_vendas = [
+                (
+                    int(row["id"]),
+                    f"{formatar_data_br_valor(row['data_venda'])} - {row['paciente_nome']} - {formatar_moeda_br(float(row['valor_total'] or 0))}"
+                )
+                for _, row in vendas_filtradas.sort_values(["data_ref", "paciente_nome"], ascending=[False, True]).iterrows()
+            ]
+            venda_id = st.selectbox(
+                "Venda para editar",
+                options=[opcao[0] for opcao in opcoes_vendas],
+                format_func=lambda valor: next(rotulo for chave, rotulo in opcoes_vendas if chave == valor),
+                key="venda_edicao_id",
+            )
+            venda_row = vendas_filtradas[vendas_filtradas["id"] == venda_id].iloc[0]
+
+            ve1, ve2 = st.columns(2)
+            edit_data_venda = ve1.text_input(
+                "Data da venda",
+                formatar_data_br_valor(venda_row["data_venda"] or ""),
+                key=f"edit_data_venda_{venda_id}",
+            )
+            edit_paciente_venda = ve2.text_input(
+                "Paciente",
+                venda_row["paciente_nome"] or "",
+                key=f"edit_paciente_venda_{venda_id}",
+            )
+
+            ve3, ve4, ve5, ve6 = st.columns(4)
+            edit_valor_total = ve3.number_input(
+                "Valor total",
+                min_value=0.0,
+                value=float(venda_row["valor_total"] or 0),
+                key=f"edit_valor_total_venda_{venda_id}",
+            )
+            edit_valor_a_vista = ve4.number_input(
+                "A vista",
+                min_value=0.0,
+                value=float(venda_row["valor_a_vista"] or 0),
+                key=f"edit_valor_avista_venda_{venda_id}",
+            )
+            edit_valor_cartao = ve5.number_input(
+                "Cartao",
+                min_value=0.0,
+                value=float(venda_row["valor_cartao"] or 0),
+                key=f"edit_valor_cartao_venda_{venda_id}",
+            )
+            edit_valor_boleto = ve6.number_input(
+                "Boleto",
+                min_value=0.0,
+                value=float(venda_row["valor_boleto"] or 0),
+                key=f"edit_valor_boleto_venda_{venda_id}",
+            )
+
+            ve7, ve8, ve9, ve10 = st.columns(4)
+            edit_saldo_venda = ve7.number_input(
+                "Saldo",
+                min_value=0.0,
+                value=float(venda_row["saldo"] or 0),
+                key=f"edit_saldo_venda_{venda_id}",
+            )
+            edit_data_a_pagar = ve8.text_input(
+                "Data a pagar",
+                formatar_data_br_valor(venda_row["data_a_pagar"] or ""),
+                key=f"edit_data_a_pagar_venda_{venda_id}",
+            )
+            edit_avaliador = ve9.text_input(
+                "Avaliador",
+                venda_row["avaliador"] or "",
+                key=f"edit_avaliador_venda_{venda_id}",
+            )
+            edit_vendedor = ve10.text_input(
+                "Vendedor",
+                venda_row["vendedor"] or "",
+                key=f"edit_vendedor_venda_{venda_id}",
+            )
+
+            edit_nf = st.text_input(
+                "NF",
+                venda_row["nf"] or "",
+                key=f"edit_nf_venda_{venda_id}",
+            )
+
+            if st.button("Salvar alteracoes da venda", key=f"salvar_venda_{venda_id}"):
+                if not parse_data_contrato(edit_data_venda):
+                    st.error("Informe a data da venda no formato DD/MM/AAAA.")
+                elif not edit_paciente_venda.strip():
+                    st.error("Informe o nome do paciente.")
+                elif float(edit_valor_total) <= 0:
+                    st.error("Informe um valor total maior que zero.")
+                elif edit_data_a_pagar.strip() and not parse_data_contrato(edit_data_a_pagar):
+                    st.error("Informe a data a pagar no formato DD/MM/AAAA.")
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE vendas
+                        SET data_venda=?, paciente_nome=?, valor_total=?, valor_a_vista=?, valor_cartao=?, valor_boleto=?, saldo=?, data_a_pagar=?, avaliador=?, vendedor=?, nf=?

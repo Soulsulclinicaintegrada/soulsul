@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.tmp
+*.zip
+_tmp*/
+*.log
+clinica.db
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+backend/node_modules/
+*.bak
+documentos/

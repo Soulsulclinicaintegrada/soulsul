@@ -1,0 +1,11 @@
+tunnel: SEU_TUNNEL_UUID
+credentials-file: C:\Users\SEU_USUARIO\.cloudflared\SEU_TUNNEL_UUID.json
+
+ingress:
+  - hostname: erp.seudominio.com
+    service: http://localhost:5173
+  - hostname: api.seudominio.com
+    service: http://localhost:8001
+  - hostname: agenda-api.seudominio.com
+    service: http://localhost:8002
+  - service: http_status:404

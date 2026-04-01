@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Odontograma Contrato</title>
+  <style>
+    body {
+      margin: 0;
+      background: #fff;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    svg {
+      display: block;
+      width: 690px;
+      height: 292px;
+      background: #fff;
+    }
+    .divider {
+      stroke: #bfbfbf;
+      stroke-width: 2;
+      stroke-dasharray: 0;
+    }
+    .tooth-body {
+      fill: #fffaf2;
+      stroke: #caa56d;
+      stroke-width: 2;
+    }
+    .tooth-shade {
+      fill: rgba(232, 198, 144, 0.42);
+    }
+    .tooth-highlight {
+      fill: rgba(255, 255, 255, 0.78);
+    }
+    .num {
+      font-size: 12px;
+      fill: #7a7a7a;
+      text-anchor: middle;
+    }
+  </style>
+</head>
+<body>
+<svg viewBox="0 0 690 292" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <g id="molar">
+      <path class="tooth-body" d="M10 16c4-7 12-10 26-10 13.8 0 22 3.2 26 10 4.2 7 4.4 15 2 24-2.2 8-7 13.8-10.6 19-3.5 5-5.2 10.2-6.8 18l-2.5 13.8c-.6 3.8-2.8 6.1-5.8 6.1-2.8 0-4.8-2-5.5-5.6L36 76.8l-2.8 14.5c-.7 3.6-2.7 5.6-5.5 5.6-3 0-5.2-2.3-5.8-6.1l-2.5-13.8c-1.4-7.7-3.2-13-6.8-18-3.7-5.2-8.4-11-10.6-19-2.4-8.8-2.2-16.8 2-24Z" />
+      <path class="tooth-shade" d="M18 22c2.9-3.8 8.8-5.8 18-5.8 9.3 0 15.2 2 18 5.8 2.7 3.7 2.8 8.8 1.3 14.8-1.7 6.6-5.8 11.3-9.5 16.2-3 4-5.4 8.4-7 14l-1.7 5.7-1.4-5.4c-1.7-6-4.3-10.4-7.4-14.5-3.8-5-7.7-9.7-9.3-16-1.5-6-1.3-11.2 1-14.8Z" />
+      <path class="tooth-highlight" d="M21 18c2.8-1.7 7.8-2.8 15-2.8s12.2 1 15 2.8c1.8 1.2 2.8 3 3.1 5.4-4.7-2.6-10.8-4.1-18.1-4.1-7 0-13.2 1.4-17.9 4 .2-2.4 1.1-4.1 2.9-5.3Z" />
+    </g>
+    <g id="premolar">
+      <path class="tooth-body" d="M16 14c3.7-5.7 10.2-8.5 20-8.5s16.3 2.8 20 8.5c4 6.2 4.6 13.8 2.7 21.7-1.8 7.5-6.2 13-9.8 18-3.3 4.4-5.6 9.4-6.9 16.7l-2.7 16.8c-.5 3.3-2.5 5.4-5.2 5.4s-4.7-2-5.2-5.4l-2.7-16.8c-1.2-7.4-3.6-12.4-6.9-16.7-3.7-5-8.1-10.5-9.8-18-1.9-8-.9-15.5 2.7-21.7Z" />
+      <path class="tooth-shade" d="M22 20c2.4-2.8 7-4.3 14-4.3 7.2 0 11.7 1.5 14 4.3 2.3 2.8 2.5 7 1.3 11.8-1.2 5.2-4.3 9.4-7.3 13.8-2.6 3.8-4.9 7.9-6.5 13l-1.4 4.5-1.3-4.5c-1.6-5.2-3.9-9.3-6.6-13.1-3-4.3-6.1-8.6-7.2-13.7-1.2-4.9-.9-9 1-11.8Z" />
+      <path class="tooth-highlight" d="M24.5 18.2c2.1-1.4 5.8-2.3 11.5-2.3 5.8 0 9.4.8 11.5 2.3 1.4 1 2.2 2.4 2.5 4.4-3.9-2-8.7-3-14-3s-10.1 1-14 2.9c.3-1.8 1.1-3.3 2.5-4.3Z" />
+    </g>
+    <g id="canine">
+      <path class="tooth-body" d="M24 10c2.8-3.1 6.7-4.9 12-4.9 5.4 0 9.2 1.8 12 4.9 4.8 5.4 6.6 12.8 4.8 21-1.8 7.8-6.1 13-9.2 17.6-2.6 3.8-4.1 7.9-5.2 13.8l-3.5 23.8c-.5 3.9-2.5 6.2-5 6.2s-4.5-2.3-5-6.2l-3.5-23.8c-.8-5.8-2.6-10-5.2-13.8-3.1-4.5-7.4-9.8-9.2-17.6-1.9-8.2.8-15.8 4.8-21 2.8-3 6.5-4.9 11.2-4.9Z" />
+      <path class="tooth-shade" d="M30 16c1.5-1.7 3.4-2.7 6-2.7s4.5 1 6 2.7c2.3 2.6 3 6.4 2.1 10.8-.9 4.6-3.5 8.4-5.8 12-1.7 2.7-3.2 5.5-4.4 9.2-1.3-3.8-2.8-6.7-4.6-9.2-2.4-3.5-4.8-7.4-5.7-12-.9-4.4-.1-8.3 2.4-10.8Z" />
+      <path class="tooth-highlight" d="M31.5 14.5c1.1-.9 2.6-1.4 4.5-1.4s3.4.5 4.5 1.4c1.2 1 1.9 2.5 2.2 4.3-2.2-.9-4.4-1.3-6.7-1.3-2.3 0-4.5.4-6.6 1.3.2-1.8.9-3.3 2.1-4.3Z" />
+    </g>
+    <g id="incisor">
+      <path class="tooth-body" d="M21 10c3.1-2.9 8-4.5 15-4.5 7.2 0 11.9 1.5 15 4.5 4 4 5.1 9.8 4.1 16.6-1.1 7.1-4.6 12.6-7.3 17.8-2.6 4.8-4.6 9.5-5.7 15.7l-3.7 24.7c-.5 3.8-2.6 6.1-5.4 6.1-2.8 0-4.9-2.3-5.4-6.1l-3.7-24.7c-.9-6-3-10.8-5.7-15.7-2.8-5.2-6.2-10.7-7.3-17.8-1-6.7.8-12.6 4.1-16.6Z" />
+      <path class="tooth-shade" d="M27 16c1.8-1.6 4.8-2.5 9-2.5s7.2.9 9 2.5c2 1.8 2.7 4.9 2.1 9-.7 4.7-3 8.7-5.2 12.7-2.1 3.9-3.9 8-5.4 13.4l-.5 1.8-.4-1.8c-1.6-5.4-3.5-9.5-5.5-13.4-2.2-4-4.5-8-5.1-12.7-.6-4.1.1-7 2-9Z" />
+      <path class="tooth-highlight" d="M29.5 15c1.4-.9 3.6-1.5 6.5-1.5s5.1.5 6.5 1.5c1.2.8 1.9 2.1 2.2 3.8-2.8-1.1-5.8-1.6-8.7-1.6-3 0-5.9.5-8.6 1.5.3-1.7 1-3 2.1-3.7Z" />
+    </g>
+  </defs>
+
+  <line class="divider" x1="12" y1="124" x2="678" y2="124" />
+  <line class="divider" x1="345" y1="8" x2="345" y2="284" />
+
+  <g transform="translate(18 10) scale(0.62)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(58 12) scale(0.58)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(98 12) scale(0.58)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(144 12) scale(0.56)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(184 12) scale(0.56)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(228 12) scale(0.54)">
+    <use href="#canine" />
+  </g>
+  <g transform="translate(268 12) scale(0.54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(308 12) scale(0.54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(348 12) scale(0.54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(388 12) scale(0.54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(428 12) scale(0.54)">
+    <use href="#canine" />
+  </g>
+  <g transform="translate(468 12) scale(0.56)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(508 12) scale(0.56)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(548 12) scale(0.58)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(588 12) scale(0.58)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(630 10) scale(0.62)">
+    <use href="#molar" />
+  </g>
+
+  <g transform="translate(18 158) scale(0.62) rotate(180 36 54)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(58 156) scale(0.58) rotate(180 36 54)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(98 156) scale(0.58) rotate(180 36 54)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(144 156) scale(0.56) rotate(180 36 54)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(184 156) scale(0.56) rotate(180 36 54)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(228 156) scale(0.54) rotate(180 36 54)">
+    <use href="#canine" />
+  </g>
+  <g transform="translate(268 156) scale(0.54) rotate(180 36 54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(308 156) scale(0.54) rotate(180 36 54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(348 156) scale(0.54) rotate(180 36 54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(388 156) scale(0.54) rotate(180 36 54)">
+    <use href="#incisor" />
+  </g>
+  <g transform="translate(428 156) scale(0.54) rotate(180 36 54)">
+    <use href="#canine" />
+  </g>
+  <g transform="translate(468 156) scale(0.56) rotate(180 36 54)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(508 156) scale(0.56) rotate(180 36 54)">
+    <use href="#premolar" />
+  </g>
+  <g transform="translate(548 156) scale(0.58) rotate(180 36 54)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(588 156) scale(0.58) rotate(180 36 54)">
+    <use href="#molar" />
+  </g>
+  <g transform="translate(630 158) scale(0.62) rotate(180 36 54)">
+    <use href="#molar" />
+  </g>
+
+  <g class="num">
+    <text x="35" y="118">18</text>
+    <text x="75" y="118">17</text>
+    <text x="115" y="118">16</text>
+    <text x="155" y="118">15</text>
+    <text x="195" y="118">14</text>
+    <text x="235" y="118">13</text>
+    <text x="275" y="118">12</text>
+    <text x="315" y="118">11</text>
+    <text x="355" y="118">21</text>
+    <text x="395" y="118">22</text>
+    <text x="435" y="118">23</text>
+    <text x="475" y="118">24</text>
+    <text x="515" y="118">25</text>
+    <text x="555" y="118">26</text>
+    <text x="595" y="118">27</text>
+    <text x="635" y="118">28</text>
+    <text x="35" y="140">48</text>
+    <text x="75" y="140">47</text>
+    <text x="115" y="140">46</text>
+    <text x="155" y="140">45</text>
+    <text x="195" y="140">44</text>
+    <text x="235" y="140">43</text>
+    <text x="275" y="140">42</text>
+    <text x="315" y="140">41</text>
+    <text x="355" y="140">31</text>
+    <text x="395" y="140">32</text>
+    <text x="435" y="140">33</text>
+    <text x="475" y="140">34</text>
+    <text x="515" y="140">35</text>
+    <text x="555" y="140">36</text>
+    <text x="595" y="140">37</text>
+    <text x="635" y="140">38</text>
+  </g>
+</svg>
+</body>
+</html>
