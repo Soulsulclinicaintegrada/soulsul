@@ -20,6 +20,19 @@ function Get-LocalIp {
 }
 
 function Get-PythonCommand {
+    $candidatos = @(
+        "C:\Users\jusgo\AppData\Local\Python\pythoncore-3.14-64\python.exe",
+        "C:\Users\jusgo\AppData\Local\Python\bin\python.exe",
+        "C:\Users\jusgo\AppData\Local\Programs\Python\Python313\python.exe",
+        "C:\Users\jusgo\AppData\Local\Programs\Python\Python312\python.exe",
+        "C:\Python313\python.exe",
+        "C:\Python312\python.exe"
+    )
+    foreach ($caminho in $candidatos) {
+        if (Test-Path $caminho) {
+            return "& '$caminho'"
+        }
+    }
     if (Get-Command python -ErrorAction SilentlyContinue) {
         return "python"
     }

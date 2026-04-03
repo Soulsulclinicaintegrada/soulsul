@@ -1,12 +1,14 @@
+import os
 import sqlite3
 from datetime import datetime
 import hashlib
 import hmac
 import secrets
 import json
+from pathlib import Path
 
 
-DB_PATH = "clinica.db"
+DB_PATH = os.getenv("DB_PATH", "clinica.db")
 USUARIO_ADMIN_INICIAL = "admin"
 SENHA_ADMIN_INICIAL = "admin123"
 SENHA_PADRAO_USUARIOS = "soulsul"
@@ -137,6 +139,9 @@ ETAPAS_PADRAO_POR_NOME = {
 
 
 def conectar():
+    db_path = Path(DB_PATH)
+    if db_path.parent and str(db_path.parent) not in {"", "."}:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -760,6 +765,7 @@ def inicializar_banco():
         """
         CREATE TABLE IF NOT EXISTS recibos_manuais (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero INTEGER,
             valor REAL DEFAULT 0,
             pagador TEXT,
             recebedor TEXT,
@@ -928,6 +934,7 @@ def inicializar_banco():
     garantir_coluna(conn, "acoes_usuario", "metodo_http TEXT")
     garantir_coluna(conn, "acoes_usuario", "rota TEXT")
     garantir_coluna(conn, "acoes_usuario", "data_hora TEXT")
+    garantir_coluna(conn, "recibos_manuais", "numero INTEGER DEFAULT 0")
     garantir_coluna(conn, "recibos_manuais", "valor REAL DEFAULT 0")
     garantir_coluna(conn, "recibos_manuais", "pagador TEXT")
     garantir_coluna(conn, "recibos_manuais", "recebedor TEXT")
