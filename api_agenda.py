@@ -65,7 +65,14 @@ def normalizar_nome_coluna_data() -> str:
     return "data_agendamento" if "data_agendamento" in cols else "data"
 
 
-DATA_COLUNA_AGENDA = normalizar_nome_coluna_data()
+DATA_COLUNA_AGENDA: str | None = None
+
+
+def obter_data_coluna_agenda() -> str:
+    global DATA_COLUNA_AGENDA
+    if not DATA_COLUNA_AGENDA:
+        DATA_COLUNA_AGENDA = normalizar_nome_coluna_data()
+    return DATA_COLUNA_AGENDA
 
 
 def row_val(row: sqlite3.Row, key: str, default=None):
@@ -292,6 +299,7 @@ def carregar_procedimentos_agendamento(conn: sqlite3.Connection, agendamento_id:
 
 
 def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendamentoResposta:
+    data_coluna_agenda = obter_data_coluna_agenda()
     procedimentos = carregar_procedimentos_agendamento(conn, row["id"])
     primeiro = procedimentos[0] if procedimentos else (
         row_val(row, "procedimento_nome_snapshot", "") or row_val(row, "procedimento", "") or ""
@@ -310,7 +318,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         tipoAtendimento=row_val(row, "tipo_atendimento_nome_snapshot", "") or "",
         procedimentos=procedimentos or ([primeiro] if primeiro else []),
         status=row_val(row, "status", "Agendado") or "Agendado",
-        data=row[DATA_COLUNA_AGENDA],
+        data=row[data_coluna_agenda],
         inicio=row_val(row, "hora_inicio", ""),
         fim=row_val(row, "hora_fim", ""),
         observacoes=row_val(row, "observacoes", "") or row_val(row, "observacao", ""),
@@ -321,12 +329,13 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
 
 
 def existe_conflito(conn: sqlite3.Connection, profissional_id: int, data: str, inicio: str, fim: str) -> bool:
+    data_coluna_agenda = obter_data_coluna_agenda()
     row = conn.execute(
         f"""
         SELECT 1
         FROM agendamentos
         WHERE profissional_id=?
-          AND {DATA_COLUNA_AGENDA}=?
+          AND {data_coluna_agenda}=?
           AND COALESCE(status, 'Agendado') <> 'Cancelado'
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
         LIMIT 1
@@ -344,13 +353,14 @@ def existe_conflito_excluindo(
     inicio: str,
     fim: str,
 ) -> bool:
+    data_coluna_agenda = obter_data_coluna_agenda()
     row = conn.execute(
         f"""
         SELECT 1
         FROM agendamentos
         WHERE id <> ?
           AND profissional_id=?
-          AND {DATA_COLUNA_AGENDA}=?
+          AND {data_coluna_agenda}=?
           AND COALESCE(status, 'Agendado') <> 'Cancelado'
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
         LIMIT 1
@@ -409,6 +419,7 @@ def buscar_disponibilidade(
     profissional_id: int = Query(..., alias="profissional_id"),
     data: str = Query(...),
 ):
+    data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
         rows = conn.execute(
@@ -416,7 +427,7 @@ def buscar_disponibilidade(
             SELECT *
             FROM agendamentos
             WHERE profissional_id=?
-              AND {DATA_COLUNA_AGENDA}=?
+              AND {data_coluna_agenda}=?
               AND COALESCE(status, 'Agendado') <> 'Cancelado'
             ORDER BY hora_inicio
             """,
@@ -446,6 +457,7 @@ def listar_agendamentos(
     data_inicio: str = Query(..., alias="data_inicio"),
     data_fim: str | None = Query(None, alias="data_fim"),
 ):
+    data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
         data_fim_real = data_fim or data_inicio
@@ -453,9 +465,9 @@ def listar_agendamentos(
             f"""
             SELECT *
             FROM agendamentos
-            WHERE {DATA_COLUNA_AGENDA} >= ?
-              AND {DATA_COLUNA_AGENDA} <= ?
-            ORDER BY {DATA_COLUNA_AGENDA}, hora_inicio, profissional
+            WHERE {data_coluna_agenda} >= ?
+              AND {data_coluna_agenda} <= ?
+            ORDER BY {data_coluna_agenda}, hora_inicio, profissional
             """,
             (data_inicio, data_fim_real),
         ).fetchall()
@@ -628,6 +640,7 @@ def buscar_contexto_paciente(paciente_id: int):
 
 @app.post("/api/agenda/agendamentos", response_model=AgendamentoResposta)
 def criar_agendamento(payload: AgendamentoPayload):
+    data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
         paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
@@ -651,7 +664,7 @@ def criar_agendamento(payload: AgendamentoPayload):
             "procedimento",
             "contrato_id",
             "origem_contrato",
-            DATA_COLUNA_AGENDA,
+            data_coluna_agenda,
             "hora_inicio",
             "hora_fim",
             "duracao_minutos",
@@ -688,7 +701,7 @@ def criar_agendamento(payload: AgendamentoPayload):
             payload.agendadoEm,
         ]
 
-        if DATA_COLUNA_AGENDA != "data" and "data" in colunas_agendamento:
+        if data_coluna_agenda != "data" and "data" in colunas_agendamento:
             colunas_insert.append("data")
             valores_insert.append(payload.data)
 
@@ -755,6 +768,7 @@ def detalhar_agendamento(agendamento_id: int):
 
 @app.put("/api/agenda/agendamentos/{agendamento_id}", response_model=AgendamentoResposta)
 def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload):
+    data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
         existente = conn.execute("SELECT * FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
@@ -784,7 +798,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload):
                 procedimento=?,
                 contrato_id=?,
                 origem_contrato=?,
-                {DATA_COLUNA_AGENDA}=?,
+                {data_coluna_agenda}=?,
                 hora_inicio=?,
                 hora_fim=?,
                 duracao_minutos=?,
