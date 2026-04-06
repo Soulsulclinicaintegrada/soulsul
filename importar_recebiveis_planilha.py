@@ -61,12 +61,35 @@ def to_float(value: Any) -> float:
         return 0.0
 
 
+def is_numeric_like(value: Any) -> bool:
+    if is_blank(value):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    text = clean_str(value).replace(".", "").replace(",", ".")
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
 def parse_date(value: Any) -> str:
+    if is_blank(value):
+        return ""
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%Y-%m-%d")
+        except Exception:
+            pass
     text = clean_str(value)
     if not text:
         return ""
     try:
-        parsed = pd.to_datetime(text, errors="coerce", dayfirst=True)
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            parsed = pd.to_datetime(text, errors="coerce", dayfirst=False)
+        else:
+            parsed = pd.to_datetime(text, errors="coerce", dayfirst=True)
     except Exception:
         parsed = pd.NaT
     if pd.isna(parsed):
@@ -75,11 +98,21 @@ def parse_date(value: Any) -> str:
 
 
 def parse_datetime(value: Any) -> str:
+    if is_blank(value):
+        return ""
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
     text = clean_str(value)
     if not text:
         return ""
     try:
-        parsed = pd.to_datetime(text, errors="coerce", dayfirst=True)
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            parsed = pd.to_datetime(text, errors="coerce", dayfirst=False)
+        else:
+            parsed = pd.to_datetime(text, errors="coerce", dayfirst=True)
     except Exception:
         parsed = pd.NaT
     if pd.isna(parsed):
@@ -87,16 +120,24 @@ def parse_datetime(value: Any) -> str:
     return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def map_status(pago: Any, status: Any, vencimento: str) -> tuple[str, str]:
+def map_status(pago: Any, status: Any, vencimento: str, cobranca: Any = None) -> tuple[str, str]:
     pago_text = normalize_text(pago)
     status_text = normalize_text(status)
+    cobranca_text = normalize_text(cobranca)
+    combinado = " ".join(part for part in [pago_text, status_text, cobranca_text] if part)
 
-    if any(flag in pago_text for flag in ["cancel", "suspens", "abatido"]):
+    if "susp" in combinado:
+        return "Suspenso", ""
+
+    if any(flag in combinado for flag in ["cancel", "abatido"]):
         return "Cancelado", ""
 
     data_pagamento = parse_datetime(pago)
     if data_pagamento:
         return "Pago", data_pagamento
+
+    if is_numeric_like(pago) and to_float(pago) > 0:
+        return "Pago", ""
 
     if status_text == "devendo":
         if vencimento:
@@ -128,25 +169,6 @@ def build_patient_lookup(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     return lookup
 
 
-def build_db_groups(conn: sqlite3.Connection) -> tuple[dict[tuple[str, float], list[dict[str, Any]]], int]:
-    rows = conn.execute(
-        """
-        SELECT id, contrato_id, paciente_id, paciente_nome, prontuario, parcela_numero,
-               vencimento, valor, forma_pagamento, status, observacao, data_criacao,
-               hash_importacao, data_pagamento
-        FROM recebiveis
-        ORDER BY paciente_nome, valor, vencimento, id
-        """
-    ).fetchall()
-    groups: dict[tuple[str, float], list[dict[str, Any]]] = defaultdict(list)
-    max_id = 0
-    for row in rows:
-        item = dict(row)
-        max_id = max(max_id, int(item["id"]))
-        groups[(normalize_text(item["paciente_nome"]), round(float(item["valor"] or 0), 2))].append(item)
-    return groups, max_id
-
-
 def build_plan_groups(df: pd.DataFrame) -> dict[tuple[str, float], list[dict[str, Any]]]:
     groups: dict[tuple[str, float], list[dict[str, Any]]] = defaultdict(list)
     for _, row in df.iterrows():
@@ -155,7 +177,7 @@ def build_plan_groups(df: pd.DataFrame) -> dict[tuple[str, float], list[dict[str
         valor = to_float(row.get("VALOR"))
         if not paciente or valor <= 0:
             continue
-        status, data_pagamento = map_status(row.get("PAGO"), row.get("STATUS"), vencimento)
+        status, data_pagamento = map_status(row.get("PAGO"), row.get("STATUS"), vencimento, row.get("cobrança"))
         groups[(normalize_text(paciente), valor)].append(
             {
                 "paciente_nome": paciente,
@@ -184,60 +206,32 @@ def reconcile() -> dict[str, int]:
     df = pd.read_excel(ARQUIVO_RECEBIVEIS)
     conn = conectar()
     patient_lookup = build_patient_lookup(conn)
-    db_groups, max_id = build_db_groups(conn)
     plan_groups = build_plan_groups(df)
 
     reconciled_rows: list[dict[str, Any]] = []
-    matched = 0
-    created = 0
-    removed = 0
-
-    all_keys = sorted(set(db_groups.keys()) | set(plan_groups.keys()))
-    for key in all_keys:
-        db_items = sorted(db_groups.get(key, []), key=lambda item: (item["vencimento"] or "", int(item["id"])))
-        plan_items = plan_groups.get(key, [])
-        max_len = max(len(db_items), len(plan_items))
-        for index in range(max_len):
-            db_item = db_items[index] if index < len(db_items) else None
-            plan_item = plan_items[index] if index < len(plan_items) else None
-
-            if db_item and plan_item:
-                db_item["paciente_nome"] = plan_item["paciente_nome"] or db_item["paciente_nome"]
-                db_item["vencimento"] = plan_item["vencimento"] or db_item["vencimento"]
-                db_item["valor"] = plan_item["valor"]
-                db_item["status"] = plan_item["status"]
-                db_item["data_pagamento"] = plan_item["data_pagamento"]
-                db_item["observacao"] = plan_item["observacao"] or db_item["observacao"]
-                reconciled_rows.append(db_item)
-                matched += 1
-                continue
-
-            if plan_item and not db_item:
-                patient = patient_lookup.get(normalize_text(plan_item["paciente_nome"]))
-                max_id += 1
-                reconciled_rows.append(
-                    {
-                        "id": max_id,
-                        "contrato_id": None,
-                        "paciente_id": int(patient["id"]) if patient else None,
-                        "paciente_nome": plan_item["paciente_nome"],
-                        "prontuario": clean_str(patient["prontuario"]) if patient else "",
-                        "parcela_numero": None,
-                        "vencimento": plan_item["vencimento"],
-                        "valor": plan_item["valor"],
-                        "forma_pagamento": "BOLETO",
-                        "status": plan_item["status"],
-                        "observacao": plan_item["observacao"],
-                        "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "hash_importacao": f"recebiveis-planilha:{max_id}",
-                        "data_pagamento": plan_item["data_pagamento"],
-                    }
-                )
-                created += 1
-                continue
-
-            if db_item and not plan_item:
-                removed += 1
+    next_id = 1
+    for _, plan_items in sorted(plan_groups.items(), key=lambda entry: entry[0]):
+        for plan_item in plan_items:
+            patient = patient_lookup.get(normalize_text(plan_item["paciente_nome"]))
+            reconciled_rows.append(
+                {
+                    "id": next_id,
+                    "contrato_id": None,
+                    "paciente_id": int(patient["id"]) if patient else None,
+                    "paciente_nome": plan_item["paciente_nome"],
+                    "prontuario": clean_str(patient["prontuario"]) if patient else "",
+                    "parcela_numero": None,
+                    "vencimento": plan_item["vencimento"],
+                    "valor": plan_item["valor"],
+                    "forma_pagamento": "BOLETO",
+                    "status": plan_item["status"],
+                    "observacao": plan_item["observacao"],
+                    "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "hash_importacao": f"recebiveis-planilha:{next_id}",
+                    "data_pagamento": plan_item["data_pagamento"],
+                }
+            )
+            next_id += 1
 
     conn.execute("DELETE FROM recebiveis")
     for item in reconciled_rows:
@@ -273,9 +267,9 @@ def reconcile() -> dict[str, int]:
     return {
         "planilha": len(df),
         "importados": len(reconciled_rows),
-        "casados": matched,
-        "novos": created,
-        "removidos": removed,
+        "casados": len(reconciled_rows),
+        "novos": 0,
+        "removidos": 0,
     }
 
 
