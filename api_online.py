@@ -1,3 +1,6 @@
+import os
+from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,9 +28,11 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event() -> None:
+    print(f"[api_online] startup begin {datetime.now().isoformat()} DB_PATH={os.getenv('DB_PATH', 'clinica.db')}", flush=True)
     inicializar_banco()
     garantir_colunas_pacientes_api()
     garantir_colunas_agenda_api()
+    print("[api_online] startup ready", flush=True)
 
 
 @app.middleware("http")
@@ -49,3 +54,8 @@ anexar_rotas(agenda_app)
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"status": "online", "service": "soulsul"}
