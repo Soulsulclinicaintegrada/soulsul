@@ -1,22 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   atualizarContaPagarApi,
+  atualizarMetaFinanceiraApi,
   atualizarMovimentoCaixaApi,
+  atualizarNotaFiscalEmitidaApi,
   atualizarRecebiveisLoteApi,
   baixarContaPagarApi,
   baixarRecebivelPacienteApi,
+  criarNotaFiscalEmitidaApi,
   criarReciboManualApi,
   criarSaldoContaApi,
   criarContaPagarApi,
   criarMovimentoCaixaApi,
   excluirMovimentoCaixaApi,
+  listarMetasFinanceirasApi,
+  listarNotasFiscaisEmitidasApi,
   listarRecibosManuaisApi,
   painelFinanceiroApi,
   type ContaPagarPayload,
   type ContaPagarResumoApi,
   type FinanceiroPainelApi,
+  type MetaMensalApi,
+  type MetaMensalPayload,
   type MovimentoCaixaPayload,
   type MovimentoCaixaResumoApi,
+  type NotaFiscalEmitidaApi,
+  type NotaFiscalEmitidaPayload,
   type ReciboManualApi,
   type ReciboManualPayload,
   type RecebivelAtualizacaoPayload,
@@ -26,7 +35,7 @@ import {
   urlExportarCaixaExcel
 } from "./pacientesApi";
 
-type AbaFinanceiro = "caixa" | "recebiveis" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo";
+type AbaFinanceiro = "caixa" | "recebiveis" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais";
 
 type RecebivelForm = {
   id: number;
@@ -99,6 +108,30 @@ type ReciboManualForm = {
   cidade: string;
 };
 
+type MetaForm = {
+  ano: number;
+  mes: number;
+  meta: string;
+  supermeta: string;
+  hipermeta: string;
+};
+
+type NotaFiscalForm = {
+  id?: number;
+  competencia: string;
+  dataEmissao: string;
+  dataRecebimento: string;
+  numeroNf: string;
+  serie: string;
+  cliente: string;
+  descricao: string;
+  contaDestino: string;
+  valorNf: string;
+  valorRecebido: string;
+  status: string;
+  observacao: string;
+};
+
 const STATUS_RECEBIVEIS = ["Aberto", "Pago", "Atrasado", "Suspenso", "Cancelado"] as const;
 const STATUS_PAGAR = ["A vencer", "Atrasado", "Pago", "Cancelado"] as const;
 const FORMAS = ["PIX", "BOLETO", "CARTAO_CREDITO", "CARTAO_DEBITO", "DINHEIRO"] as const;
@@ -143,6 +176,46 @@ const RECIBO_INICIAL: ReciboManualForm = {
   observacao: "",
   cidade: "CAMPOS DOS GOYTACAZES/RJ"
 };
+
+const META_FORM_INICIAL: MetaForm = {
+  ano: new Date().getFullYear(),
+  mes: new Date().getMonth() + 1,
+  meta: "",
+  supermeta: "",
+  hipermeta: ""
+};
+
+const NOTA_FISCAL_INICIAL: NotaFiscalForm = {
+  competencia: new Date().toISOString().slice(0, 7),
+  dataEmissao: new Date().toISOString().slice(0, 10),
+  dataRecebimento: "",
+  numeroNf: "",
+  serie: "",
+  cliente: "",
+  descricao: "",
+  contaDestino: "SICOOB",
+  valorNf: "",
+  valorRecebido: "",
+  status: "Pendente",
+  observacao: ""
+};
+
+const STATUS_NOTA_FISCAL = ["Pendente", "Recebida", "Conciliada", "Cancelada"] as const;
+
+const MESES_ANO = [
+  { valor: 1, rotulo: "Janeiro" },
+  { valor: 2, rotulo: "Fevereiro" },
+  { valor: 3, rotulo: "Marco" },
+  { valor: 4, rotulo: "Abril" },
+  { valor: 5, rotulo: "Maio" },
+  { valor: 6, rotulo: "Junho" },
+  { valor: 7, rotulo: "Julho" },
+  { valor: 8, rotulo: "Agosto" },
+  { valor: 9, rotulo: "Setembro" },
+  { valor: 10, rotulo: "Outubro" },
+  { valor: 11, rotulo: "Novembro" },
+  { valor: 12, rotulo: "Dezembro" }
+] as const;
 
 function labelParcela(parcela?: number | null) {
   if (parcela === 0) return "Entrada";
@@ -203,6 +276,34 @@ function contaParaForm(item: ContaPagarResumoApi): ContaPagarForm {
   };
 }
 
+function metaParaForm(item: MetaMensalApi): MetaForm {
+  return {
+    ano: item.ano,
+    mes: item.mes,
+    meta: item.meta ? item.meta.toFixed(2).replace(".", ",") : "",
+    supermeta: item.supermeta ? item.supermeta.toFixed(2).replace(".", ",") : "",
+    hipermeta: item.hipermeta ? item.hipermeta.toFixed(2).replace(".", ",") : ""
+  };
+}
+
+function notaFiscalParaForm(item: NotaFiscalEmitidaApi): NotaFiscalForm {
+  return {
+    id: item.id,
+    competencia: item.competencia || "",
+    dataEmissao: dataBrParaIso(item.dataEmissao),
+    dataRecebimento: dataBrParaIso(item.dataRecebimento),
+    numeroNf: item.numeroNf || "",
+    serie: item.serie || "",
+    cliente: item.cliente || "",
+    descricao: item.descricao || "",
+    contaDestino: item.contaDestino || "SICOOB",
+    valorNf: item.valorNf || "",
+    valorRecebido: item.valorRecebido || "",
+    status: item.status || "Pendente",
+    observacao: item.observacao || ""
+  };
+}
+
 export function FinanceiroPage() {
   const [painel, setPainel] = useState<FinanceiroPainelApi | null>(null);
   const [aba, setAba] = useState<AbaFinanceiro>("caixa");
@@ -230,15 +331,26 @@ export function FinanceiroPage() {
   const [filtroVencimentoPagar, setFiltroVencimentoPagar] = useState("");
   const [reciboForm, setReciboForm] = useState<ReciboManualForm>(RECIBO_INICIAL);
   const [recibosManuais, setRecibosManuais] = useState<ReciboManualApi[]>([]);
+  const [metasAno, setMetasAno] = useState(new Date().getFullYear());
+  const [metasMensais, setMetasMensais] = useState<MetaMensalApi[]>([]);
+  const [metaForm, setMetaForm] = useState<MetaForm>(META_FORM_INICIAL);
+  const [notasFiscais, setNotasFiscais] = useState<NotaFiscalEmitidaApi[]>([]);
+  const [notaFiscalForm, setNotaFiscalForm] = useState<NotaFiscalForm>(NOTA_FISCAL_INICIAL);
 
   async function carregarPainel() {
     setCarregando(true);
     setErro(null);
     try {
-      const resposta = await painelFinanceiroApi();
-      const recibos = await listarRecibosManuaisApi();
+      const [resposta, recibos, metas, notas] = await Promise.all([
+        painelFinanceiroApi(),
+        listarRecibosManuaisApi(),
+        listarMetasFinanceirasApi(metasAno),
+        listarNotasFiscaisEmitidasApi()
+      ]);
       setPainel(resposta);
       setRecibosManuais(recibos);
+      setMetasMensais(metas);
+      setNotasFiscais(notas);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar financeiro.");
     } finally {
@@ -248,7 +360,7 @@ export function FinanceiroPage() {
 
   useEffect(() => {
     void carregarPainel();
-  }, []);
+  }, [metasAno]);
 
   const recebiveis = painel?.recebiveis || [];
   const contasPagar = painel?.contasPagar || [];
@@ -276,6 +388,15 @@ export function FinanceiroPage() {
       observacao: movimentoEditando.observacao || ""
     });
   }, [movimentoEditando]);
+
+  useEffect(() => {
+    const selecionada =
+      metasMensais.find((item) => item.mes === metaForm.mes && item.ano === metasAno)
+      || metasMensais[0]
+      || null;
+    if (!selecionada) return;
+    setMetaForm(metaParaForm(selecionada));
+  }, [metasAno, metasMensais, metaForm.mes]);
 
   const recebiveisAbertos = useMemo(
     () => recebiveis.filter((item) => ["Aberto", "Atrasado"].includes(item.status || "")),
@@ -323,6 +444,18 @@ export function FinanceiroPage() {
       return fornecedorOk && statusOk && categoriaOk && vencimentoOk;
     });
   }, [contasPagar, filtroFornecedorPagar, filtroStatusPagar, filtroCategoriaPagar, filtroVencimentoPagar]);
+
+  const notasFiscaisOrdenadas = useMemo(
+    () => [...notasFiscais].sort((a, b) => `${b.competencia}|${b.dataEmissao}`.localeCompare(`${a.competencia}|${a.dataEmissao}`)),
+    [notasFiscais]
+  );
+
+  const resumoNotasFiscais = useMemo(() => ({
+    totalNf: notasFiscais.reduce((total, item) => total + (item.valorNfNumero || 0), 0),
+    totalRecebido: notasFiscais.reduce((total, item) => total + (item.valorRecebidoNumero || 0), 0),
+    totalDiferenca: notasFiscais.reduce((total, item) => total + (item.diferencaNumero || 0), 0),
+    quantidadePendentes: notasFiscais.filter((item) => !item.conciliado && item.status !== "Cancelada").length
+  }), [notasFiscais]);
 
   const lotes = useMemo(() => {
     const mapa = new Map<number, { contratoId: number; pacienteNome: string; prontuario: string; quantidade: number; primeiroVencimento: string }>();
@@ -627,6 +760,57 @@ export function FinanceiroPage() {
     }
   }
 
+  async function salvarMetaMensal() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      const payload: MetaMensalPayload = {
+        meta: moedaParaNumero(metaForm.meta),
+        supermeta: moedaParaNumero(metaForm.supermeta),
+        hipermeta: moedaParaNumero(metaForm.hipermeta)
+      };
+      await atualizarMetaFinanceiraApi(metaForm.ano, metaForm.mes, payload);
+      const metasAtualizadas = await listarMetasFinanceirasApi(metaForm.ano);
+      setMetasMensais(metasAtualizadas);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar meta mensal.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function salvarNotaFiscal() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      const payload: NotaFiscalEmitidaPayload = {
+        competencia: notaFiscalForm.competencia,
+        data_emissao: notaFiscalForm.dataEmissao,
+        data_recebimento: notaFiscalForm.dataRecebimento,
+        numero_nf: notaFiscalForm.numeroNf,
+        serie: notaFiscalForm.serie,
+        cliente: notaFiscalForm.cliente,
+        descricao: notaFiscalForm.descricao,
+        conta_destino: notaFiscalForm.contaDestino,
+        valor_nf: moedaParaNumero(notaFiscalForm.valorNf),
+        valor_recebido: moedaParaNumero(notaFiscalForm.valorRecebido),
+        status: notaFiscalForm.status,
+        observacao: notaFiscalForm.observacao
+      };
+      if (notaFiscalForm.id) {
+        await atualizarNotaFiscalEmitidaApi(notaFiscalForm.id, payload);
+      } else {
+        await criarNotaFiscalEmitidaApi(payload);
+      }
+      setNotaFiscalForm(NOTA_FISCAL_INICIAL);
+      setNotasFiscais(await listarNotasFiscaisEmitidasApi());
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar nota fiscal.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   return (
     <section className="module-shell finance-module-shell">
       <section className="module-kpis">
@@ -656,6 +840,8 @@ export function FinanceiroPage() {
           <button type="button" className={aba === "pagar" ? "active" : ""} onClick={() => setAba("pagar")}>Contas a pagar</button>
           <button type="button" className={aba === "novo_pagar" ? "active" : ""} onClick={() => setAba("novo_pagar")}>Novo a pagar</button>
           <button type="button" className={aba === "recibo" ? "active" : ""} onClick={() => setAba("recibo")}>Recibo</button>
+          <button type="button" className={aba === "metas" ? "active" : ""} onClick={() => setAba("metas")}>Metas</button>
+          <button type="button" className={aba === "notas_fiscais" ? "active" : ""} onClick={() => setAba("notas_fiscais")}>NF emitidas</button>
         </div>
 
         {erro ? <div className="finance-inline-error">{erro}</div> : null}
@@ -958,6 +1144,124 @@ export function FinanceiroPage() {
                     </div>
                   </div>
                 )) : <div className="empty-inline">Nenhum recibo manual salvo.</div>}
+              </div>
+            </article>
+          </div>
+        ) : null}
+
+        {!carregando && aba === "metas" ? (
+          <div className="finance-legacy-grid">
+            <article className="panel finance-form-panel">
+              <span className="panel-kicker">Meta mensal</span>
+              <div className="finance-form-grid">
+                <label>
+                  <span>Ano</span>
+                  <input
+                    type="number"
+                    value={metasAno}
+                    onChange={(e) => {
+                      const ano = Number(e.target.value) || new Date().getFullYear();
+                      setMetasAno(ano);
+                      setMetaForm((atual) => ({ ...atual, ano }));
+                    }}
+                  />
+                </label>
+                <label>
+                  <span>Mês</span>
+                  <select
+                    value={metaForm.mes}
+                    onChange={(e) => setMetaForm((atual) => ({ ...atual, mes: Number(e.target.value) }))}
+                  >
+                    {MESES_ANO.map((item) => <option key={item.valor} value={item.valor}>{item.rotulo}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Meta</span>
+                  <input type="text" value={metaForm.meta} onChange={(e) => setMetaForm((atual) => ({ ...atual, meta: e.target.value }))} />
+                </label>
+                <label>
+                  <span>Supermeta</span>
+                  <input type="text" value={metaForm.supermeta} onChange={(e) => setMetaForm((atual) => ({ ...atual, supermeta: e.target.value }))} />
+                </label>
+                <label>
+                  <span>Hipermeta</span>
+                  <input type="text" value={metaForm.hipermeta} onChange={(e) => setMetaForm((atual) => ({ ...atual, hipermeta: e.target.value }))} />
+                </label>
+              </div>
+              <div className="finance-form-actions">
+                <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarMetaMensal()}>Salvar metas do mês</button>
+              </div>
+            </article>
+
+            <article className="panel finance-module-list finance-span-all">
+              <span className="panel-kicker">Planejamento do ano</span>
+              <div className="module-sublist">
+                {metasMensais.length ? metasMensais.map((item) => (
+                  <div className="module-subitem finance-module-subitem" key={`${item.ano}-${item.mes}`}>
+                    <div>
+                      <strong>{item.mesNome}</strong>
+                      <span>Meta {numeroParaMoedaBr(item.meta)} · Supermeta {numeroParaMoedaBr(item.supermeta)} · Hipermeta {numeroParaMoedaBr(item.hipermeta)}</span>
+                    </div>
+                    <div className="module-subitem-right">
+                      <strong>{item.dataAtualizacao ? `Atualizado ${item.dataAtualizacao}` : "Sem ajuste"}</strong>
+                      <div className="finance-inline-actions">
+                        <button type="button" className="ghost-action compact" onClick={() => setMetaForm(metaParaForm(item))}>Editar</button>
+                      </div>
+                    </div>
+                  </div>
+                )) : <div className="empty-inline">Nenhuma meta mensal cadastrada.</div>}
+              </div>
+            </article>
+          </div>
+        ) : null}
+
+        {!carregando && aba === "notas_fiscais" ? (
+          <div className="finance-legacy-grid">
+            <article className="panel finance-form-panel finance-span-all">
+              <span className="panel-kicker">{notaFiscalForm.id ? "Editar NF emitida" : "Nova NF emitida"}</span>
+              <div className="finance-form-grid">
+                <label><span>Competência</span><input type="month" value={notaFiscalForm.competencia} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, competencia: e.target.value }))} /></label>
+                <label><span>Data emissão</span><input type="date" value={notaFiscalForm.dataEmissao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, dataEmissao: e.target.value }))} /></label>
+                <label><span>Data recebimento</span><input type="date" value={notaFiscalForm.dataRecebimento} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, dataRecebimento: e.target.value }))} /></label>
+                <label><span>Número NF</span><input type="text" value={notaFiscalForm.numeroNf} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, numeroNf: e.target.value }))} /></label>
+                <label><span>Série</span><input type="text" value={notaFiscalForm.serie} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, serie: e.target.value }))} /></label>
+                <label><span>Conta de entrada</span><select value={notaFiscalForm.contaDestino} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, contaDestino: e.target.value }))}>{CONTAS_CAIXA.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                <label className="finance-span-2"><span>Cliente / tomador</span><input type="text" value={notaFiscalForm.cliente} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, cliente: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Descrição</span><input type="text" value={notaFiscalForm.descricao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, descricao: e.target.value }))} /></label>
+                <label><span>Valor da NF</span><input type="text" value={notaFiscalForm.valorNf} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, valorNf: e.target.value }))} /></label>
+                <label><span>Valor recebido</span><input type="text" value={notaFiscalForm.valorRecebido} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, valorRecebido: e.target.value }))} /></label>
+                <label><span>Status</span><select value={notaFiscalForm.status} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, status: e.target.value }))}>{STATUS_NOTA_FISCAL.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={notaFiscalForm.observacao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, observacao: e.target.value }))} /></label>
+              </div>
+              <div className="finance-form-actions">
+                <button type="button" className="ghost-action" onClick={() => setNotaFiscalForm(NOTA_FISCAL_INICIAL)}>Limpar</button>
+                <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarNotaFiscal()}>Salvar NF</button>
+              </div>
+            </article>
+
+            <article className="panel finance-form-panel"><span>Total NF</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalNf)}</strong></article>
+            <article className="panel finance-form-panel"><span>Total recebido</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalRecebido)}</strong></article>
+            <article className="panel finance-form-panel"><span>Diferença acumulada</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalDiferenca)}</strong></article>
+            <article className="panel finance-form-panel"><span>Pendentes de conferência</span><strong>{String(resumoNotasFiscais.quantidadePendentes)}</strong></article>
+
+            <article className="panel finance-module-list finance-span-all">
+              <span className="panel-kicker">Controle de NF emitidas</span>
+              <div className="module-sublist">
+                {notasFiscaisOrdenadas.length ? notasFiscaisOrdenadas.map((item) => (
+                  <div className="module-subitem finance-module-subitem" key={item.id}>
+                    <div>
+                      <strong>{item.numeroNf ? `NF ${item.numeroNf}` : "NF sem número"} · {item.cliente || "Sem cliente"}</strong>
+                      <span>{item.competencia || "-"} · {item.dataEmissao || "-"} · {item.contaDestino || "-"} · {item.descricao || "Sem descrição"}</span>
+                    </div>
+                    <div className="module-subitem-right">
+                      <strong>{item.diferenca}</strong>
+                      <div className="finance-inline-actions">
+                        <span className={`module-status-badge ${item.conciliado ? "ok" : "pendente"}`}>{item.conciliado ? "Conciliada" : item.status || "Pendente"}</span>
+                        <button type="button" className="ghost-action compact" onClick={() => setNotaFiscalForm(notaFiscalParaForm(item))}>Editar</button>
+                      </div>
+                    </div>
+                  </div>
+                )) : <div className="empty-inline">Nenhuma NF emitida cadastrada ainda.</div>}
               </div>
             </article>
           </div>

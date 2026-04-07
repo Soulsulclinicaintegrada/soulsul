@@ -10,6 +10,7 @@ from urllib import request as urllib_request
 import json
 from datetime import date, datetime
 from shutil import copyfile
+import base64
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -607,6 +608,60 @@ class ReciboManualResumo(BaseModel):
     observacao: str = ""
     cidade: str = ""
     criadoEm: str = ""
+
+
+class MetaMensalPayload(BaseModel):
+    meta: float = 0
+    supermeta: float = 0
+    hipermeta: float = 0
+
+
+class MetaMensalResumo(BaseModel):
+    ano: int
+    mes: int
+    mesNome: str = ""
+    meta: float = 0
+    supermeta: float = 0
+    hipermeta: float = 0
+    dataAtualizacao: str = ""
+
+
+class NotaFiscalEmitidaPayload(BaseModel):
+    competencia: str = ""
+    data_emissao: str = ""
+    data_recebimento: str = ""
+    numero_nf: str = ""
+    serie: str = ""
+    cliente: str = ""
+    descricao: str = ""
+    conta_destino: str = ""
+    valor_nf: float = 0
+    valor_recebido: float = 0
+    status: str = "Pendente"
+    observacao: str = ""
+
+
+class NotaFiscalEmitidaResumo(BaseModel):
+    id: int
+    competencia: str = ""
+    dataEmissao: str = ""
+    dataRecebimento: str = ""
+    numeroNf: str = ""
+    serie: str = ""
+    cliente: str = ""
+    descricao: str = ""
+    contaDestino: str = ""
+    valorNf: str = ""
+    valorRecebido: str = ""
+    valorNfNumero: float = 0
+    valorRecebidoNumero: float = 0
+    diferenca: str = ""
+    diferencaNumero: float = 0
+    status: str = ""
+    observacao: str = ""
+    conciliado: bool = False
+    criadoEm: str = ""
+    atualizadoEm: str = ""
 
 
 class DashboardIndicadorResposta(BaseModel):
@@ -2613,6 +2668,123 @@ def mapear_saldo_conta(row: sqlite3.Row) -> SaldoContaResumo:
     )
 
 
+def nome_mes_portugues(mes: int) -> str:
+    meses = ["Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+    if 1 <= int(mes) <= 12:
+        return meses[int(mes) - 1]
+    return ""
+
+
+def carregar_metas_mensais(conn: sqlite3.Connection, ano: int) -> list[MetaMensalResumo]:
+    ano_referencia = int(ano or date.today().year)
+    base_row = conn.execute(
+        """
+        SELECT meta, supermeta, hipermeta
+        FROM metas_vendas
+        WHERE ano=?
+        LIMIT 1
+        """,
+        (ano_referencia,),
+    ).fetchone()
+    meta_padrao = float(base_row["meta"] or 100000.0) if base_row else 100000.0
+    supermeta_padrao = float(base_row["supermeta"] or 150000.0) if base_row else 150000.0
+    hipermeta_padrao = float(base_row["hipermeta"] or 200000.0) if base_row else 200000.0
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM metas_mensais
+        WHERE ano=?
+        ORDER BY mes ASC
+        """,
+        (ano_referencia,),
+    ).fetchall()
+    por_mes = {int(row["mes"]): row for row in rows if row["mes"] is not None}
+    metas: list[MetaMensalResumo] = []
+    alterou = False
+    for mes in range(1, 13):
+        row = por_mes.get(mes)
+        if row is None:
+            conn.execute(
+                """
+                INSERT INTO metas_mensais
+                (ano, mes, meta, supermeta, hipermeta, data_atualizacao)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (ano_referencia, mes, meta_padrao, supermeta_padrao, hipermeta_padrao, agora_str()),
+            )
+            alterou = True
+            meta = meta_padrao
+            supermeta = supermeta_padrao
+            hipermeta = hipermeta_padrao
+            atualizado = agora_str()
+        else:
+            meta = float(row["meta"] or meta_padrao)
+            supermeta = float(row["supermeta"] or supermeta_padrao)
+            hipermeta = float(row["hipermeta"] or hipermeta_padrao)
+            atualizado = str(row["data_atualizacao"] or "")
+        metas.append(
+            MetaMensalResumo(
+                ano=ano_referencia,
+                mes=mes,
+                mesNome=nome_mes_portugues(mes),
+                meta=meta,
+                supermeta=supermeta,
+                hipermeta=hipermeta,
+                dataAtualizacao=atualizado,
+            )
+        )
+    if alterou:
+        conn.commit()
+    return metas
+
+
+def obter_meta_mensal(conn: sqlite3.Connection, ano: int, mes: int) -> MetaMensalResumo:
+    metas = carregar_metas_mensais(conn, ano)
+    for item in metas:
+        if item.mes == int(mes):
+            return item
+    raise HTTPException(status_code=404, detail="Meta mensal nao encontrada.")
+
+
+def carregar_notas_fiscais_emitidas(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT *
+        FROM notas_fiscais_emitidas
+        ORDER BY COALESCE(competencia, '') DESC, COALESCE(data_emissao, '') DESC, id DESC
+        """
+    ).fetchall()
+
+
+def mapear_nota_fiscal_emitida(row: sqlite3.Row) -> NotaFiscalEmitidaResumo:
+    valor_nf = float(row["valor_nf"] or 0)
+    valor_recebido = float(row["valor_recebido"] or 0)
+    diferenca = valor_recebido - valor_nf
+    conciliado = abs(diferenca) < 0.01
+    return NotaFiscalEmitidaResumo(
+        id=int(row["id"]),
+        competencia=str(row["competencia"] or ""),
+        dataEmissao=formatar_data_br_valor(row["data_emissao"]),
+        dataRecebimento=formatar_data_br_valor(row["data_recebimento"]),
+        numeroNf=str(row["numero_nf"] or ""),
+        serie=str(row["serie"] or ""),
+        cliente=str(row["cliente"] or ""),
+        descricao=str(row["descricao"] or ""),
+        contaDestino=str(row["conta_destino"] or ""),
+        valorNf=formatar_moeda_br(valor_nf),
+        valorRecebido=formatar_moeda_br(valor_recebido),
+        valorNfNumero=valor_nf,
+        valorRecebidoNumero=valor_recebido,
+        diferenca=formatar_moeda_br(diferenca),
+        diferencaNumero=diferenca,
+        status=str(row["status"] or ""),
+        observacao=str(row["observacao"] or ""),
+        conciliado=conciliado,
+        criadoEm=str(row["criado_em"] or ""),
+        atualizadoEm=str(row["atualizado_em"] or ""),
+    )
+
+
 def resumo_financeiro_global(recebiveis: list[sqlite3.Row]) -> FinanceiroResumo:
     return resumo_financeiro_paciente(recebiveis)
 
@@ -2691,18 +2863,10 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     )
     saldo_hoje = entradas_hoje - saidas_hoje
 
-    meta_row = conn.execute(
-        """
-        SELECT meta, supermeta, hipermeta
-        FROM metas_vendas
-        WHERE ano=?
-        LIMIT 1
-        """,
-        (ano_atual,),
-    ).fetchone()
-    meta_mes = float(meta_row["meta"] or 0) if meta_row else 0.0
-    supermeta_mes = float(meta_row["supermeta"] or 0) if meta_row else 0.0
-    hipermeta_mes = float(meta_row["hipermeta"] or 0) if meta_row else 0.0
+    meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
+    meta_mes = float(meta_atual.meta or 0)
+    supermeta_mes = float(meta_atual.supermeta or 0)
+    hipermeta_mes = float(meta_atual.hipermeta or 0)
 
     vendas_rows = conn.execute(
         """
@@ -3215,6 +3379,22 @@ def gerar_html_recibo_especie(recebivel: sqlite3.Row) -> str:
 </html>"""
 
 
+LOGO_RECIBO_BASE64: str | None = None
+
+
+def obter_logo_recibo_base64() -> str:
+    global LOGO_RECIBO_BASE64
+    if LOGO_RECIBO_BASE64:
+        return LOGO_RECIBO_BASE64
+    caminho = os.path.join(os.path.dirname(__file__), "assets", "sou sul marca preta fundo.png")
+    try:
+        with open(caminho, "rb") as arquivo:
+            LOGO_RECIBO_BASE64 = base64.b64encode(arquivo.read()).decode("ascii")
+    except FileNotFoundError:
+        LOGO_RECIBO_BASE64 = ""
+    return LOGO_RECIBO_BASE64
+
+
 def gerar_html_recibo_manual(recibo: sqlite3.Row) -> str:
     valor = formatar_moeda_br(recibo["valor"])
     data_pagamento = formatar_data_br_valor(recibo["data_pagamento"]) or formatar_data_br(date.today())
@@ -3223,6 +3403,8 @@ def gerar_html_recibo_manual(recibo: sqlite3.Row) -> str:
     referente = str(recibo["referente"] or "").strip() or "pagamento realizado"
     observacao = str(recibo["observacao"] or "").strip()
     cidade = str(recibo["cidade"] or "").strip() or "Campos dos Goytacazes/RJ"
+    numero = int(recibo["numero"] or 0)
+    logo = obter_logo_recibo_base64()
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -3245,7 +3427,11 @@ def gerar_html_recibo_manual(recibo: sqlite3.Row) -> str:
 <body>
   <div class="sheet">
     <div class="topline">
-      <strong>RECIBO</strong>
+      <img class="logo-recibo" src="data:image/png;base64,{logo}" alt="Logo" />
+      <div>
+        <strong>RECIBO</strong>
+        <div class="numero">Nº {numero:04d}</div>
+      </div>
       <span>{cidade}, {data_pagamento}</span>
     </div>
     <div class="body-text">
@@ -4355,6 +4541,130 @@ def painel_dashboard():
     conn = conectar()
     try:
         return dados_dashboard(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/api/financeiro/metas", response_model=list[MetaMensalResumo])
+def listar_metas_financeiras(ano: int = Query(default_factory=lambda: date.today().year)):
+    conn = conectar()
+    try:
+        return carregar_metas_mensais(conn, ano)
+    finally:
+        conn.close()
+
+
+@app.put("/api/financeiro/metas/{ano}/{mes}", response_model=MetaMensalResumo)
+def atualizar_meta_financeira(ano: int, mes: int, payload: MetaMensalPayload):
+    if mes < 1 or mes > 12:
+        raise HTTPException(status_code=400, detail="Mes invalido.")
+    conn = conectar()
+    try:
+        carregar_metas_mensais(conn, ano)
+        conn.execute(
+            """
+            UPDATE metas_mensais
+            SET meta=?, supermeta=?, hipermeta=?, data_atualizacao=?
+            WHERE ano=? AND mes=?
+            """,
+            (
+                float(payload.meta or 0),
+                float(payload.supermeta or 0),
+                float(payload.hipermeta or 0),
+                agora_str(),
+                int(ano),
+                int(mes),
+            ),
+        )
+        conn.commit()
+        return obter_meta_mensal(conn, ano, mes)
+    finally:
+        conn.close()
+
+
+@app.get("/api/financeiro/notas-fiscais", response_model=list[NotaFiscalEmitidaResumo])
+def listar_notas_fiscais_emitidas():
+    conn = conectar()
+    try:
+        return [mapear_nota_fiscal_emitida(row) for row in carregar_notas_fiscais_emitidas(conn)]
+    finally:
+        conn.close()
+
+
+@app.post("/api/financeiro/notas-fiscais", response_model=NotaFiscalEmitidaResumo)
+def criar_nota_fiscal_emitida(payload: NotaFiscalEmitidaPayload):
+    conn = conectar()
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO notas_fiscais_emitidas (
+                competencia, data_emissao, data_recebimento, numero_nf, serie, cliente,
+                descricao, conta_destino, valor_nf, valor_recebido, status, observacao,
+                criado_em, atualizado_em
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.competencia.strip(),
+                payload.data_emissao.strip(),
+                payload.data_recebimento.strip(),
+                payload.numero_nf.strip(),
+                payload.serie.strip(),
+                payload.cliente.strip(),
+                payload.descricao.strip(),
+                payload.conta_destino.strip(),
+                float(payload.valor_nf or 0),
+                float(payload.valor_recebido or 0),
+                payload.status.strip() or "Pendente",
+                payload.observacao.strip(),
+                agora_str(),
+                agora_str(),
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM notas_fiscais_emitidas WHERE id=?", (int(cursor.lastrowid),)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=500, detail="Falha ao salvar nota fiscal.")
+        return mapear_nota_fiscal_emitida(row)
+    finally:
+        conn.close()
+
+
+@app.put("/api/financeiro/notas-fiscais/{nota_id}", response_model=NotaFiscalEmitidaResumo)
+def atualizar_nota_fiscal_emitida(nota_id: int, payload: NotaFiscalEmitidaPayload):
+    conn = conectar()
+    try:
+        row = conn.execute("SELECT * FROM notas_fiscais_emitidas WHERE id=?", (nota_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Nota fiscal nao encontrada.")
+        conn.execute(
+            """
+            UPDATE notas_fiscais_emitidas
+            SET competencia=?, data_emissao=?, data_recebimento=?, numero_nf=?, serie=?, cliente=?,
+                descricao=?, conta_destino=?, valor_nf=?, valor_recebido=?, status=?, observacao=?, atualizado_em=?
+            WHERE id=?
+            """,
+            (
+                payload.competencia.strip(),
+                payload.data_emissao.strip(),
+                payload.data_recebimento.strip(),
+                payload.numero_nf.strip(),
+                payload.serie.strip(),
+                payload.cliente.strip(),
+                payload.descricao.strip(),
+                payload.conta_destino.strip(),
+                float(payload.valor_nf or 0),
+                float(payload.valor_recebido or 0),
+                payload.status.strip() or "Pendente",
+                payload.observacao.strip(),
+                agora_str(),
+                int(nota_id),
+            ),
+        )
+        conn.commit()
+        atualizado = conn.execute("SELECT * FROM notas_fiscais_emitidas WHERE id=?", (nota_id,)).fetchone()
+        if atualizado is None:
+            raise HTTPException(status_code=500, detail="Falha ao atualizar nota fiscal.")
+        return mapear_nota_fiscal_emitida(atualizado)
     finally:
         conn.close()
 

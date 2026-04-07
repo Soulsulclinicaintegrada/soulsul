@@ -345,6 +345,37 @@ def garantir_metas_vendas_iniciais(conn, ano=None):
     )
 
 
+def garantir_meta_mensal_inicial(conn, ano=None, mes=None):
+    ano_referencia = int(ano or datetime.now().year)
+    mes_referencia = int(mes or datetime.now().month)
+    row = conn.execute(
+        "SELECT id FROM metas_mensais WHERE ano=? AND mes=? LIMIT 1",
+        (ano_referencia, mes_referencia),
+    ).fetchone()
+    if row is not None:
+        return
+    base_row = conn.execute(
+        """
+        SELECT meta, supermeta, hipermeta
+        FROM metas_vendas
+        WHERE ano=?
+        LIMIT 1
+        """,
+        (ano_referencia,),
+    ).fetchone()
+    meta = float(base_row["meta"] or 100000.0) if base_row else 100000.0
+    supermeta = float(base_row["supermeta"] or 150000.0) if base_row else 150000.0
+    hipermeta = float(base_row["hipermeta"] or 200000.0) if base_row else 200000.0
+    conn.execute(
+        """
+        INSERT INTO metas_mensais
+        (ano, mes, meta, supermeta, hipermeta, data_atualizacao)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (ano_referencia, mes_referencia, meta, supermeta, hipermeta, agora_str()),
+    )
+
+
 def garantir_procedimentos_padrao(conn):
     row = conn.execute("SELECT COUNT(1) AS total FROM procedimentos").fetchone()
     if row is not None and int(row["total"] or 0) > 0:
@@ -695,6 +726,20 @@ def inicializar_banco():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS metas_mensais (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ano INTEGER,
+            mes INTEGER,
+            meta REAL DEFAULT 100000,
+            supermeta REAL DEFAULT 150000,
+            hipermeta REAL DEFAULT 200000,
+            data_atualizacao TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT,
@@ -774,6 +819,28 @@ def inicializar_banco():
             observacao TEXT,
             cidade TEXT,
             criado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notas_fiscais_emitidas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            competencia TEXT,
+            data_emissao TEXT,
+            data_recebimento TEXT,
+            numero_nf TEXT,
+            serie TEXT,
+            cliente TEXT,
+            descricao TEXT,
+            conta_destino TEXT,
+            valor_nf REAL DEFAULT 0,
+            valor_recebido REAL DEFAULT 0,
+            status TEXT DEFAULT 'Pendente',
+            observacao TEXT,
+            criado_em TEXT,
+            atualizado_em TEXT
         )
         """
     )
@@ -898,6 +965,12 @@ def inicializar_banco():
     garantir_coluna(conn, "metas_vendas", "supermeta REAL DEFAULT 150000")
     garantir_coluna(conn, "metas_vendas", "hipermeta REAL DEFAULT 200000")
     garantir_coluna(conn, "metas_vendas", "data_atualizacao TEXT")
+    garantir_coluna(conn, "metas_mensais", "ano INTEGER")
+    garantir_coluna(conn, "metas_mensais", "mes INTEGER")
+    garantir_coluna(conn, "metas_mensais", "meta REAL DEFAULT 100000")
+    garantir_coluna(conn, "metas_mensais", "supermeta REAL DEFAULT 150000")
+    garantir_coluna(conn, "metas_mensais", "hipermeta REAL DEFAULT 200000")
+    garantir_coluna(conn, "metas_mensais", "data_atualizacao TEXT")
     garantir_coluna(conn, "usuarios", "nome TEXT")
     garantir_coluna(conn, "usuarios", "usuario TEXT")
     garantir_coluna(conn, "usuarios", "nome_agenda TEXT")
@@ -943,6 +1016,20 @@ def inicializar_banco():
     garantir_coluna(conn, "recibos_manuais", "observacao TEXT")
     garantir_coluna(conn, "recibos_manuais", "cidade TEXT")
     garantir_coluna(conn, "recibos_manuais", "criado_em TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "competencia TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "data_emissao TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "data_recebimento TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "numero_nf TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "serie TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "cliente TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "descricao TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "conta_destino TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "valor_nf REAL DEFAULT 0")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "valor_recebido REAL DEFAULT 0")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "status TEXT DEFAULT 'Pendente'")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "observacao TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "criado_em TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "atualizado_em TEXT")
     garantir_coluna(conn, "contratos", "data_criacao TEXT")
     garantir_coluna(conn, "contratos", "data_pagamento_entrada TEXT")
     garantir_coluna(conn, "contratos", "hash_importacao TEXT")
@@ -1038,6 +1125,8 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_profissionais_ativo_ordem ON profissionais(ativo, ordem_exibicao)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_tipos_atendimento_ativo_ordem ON tipos_atendimento(ativo, ordem_exibicao)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_procedimentos_ativo_categoria ON procedimentos(ativo, categoria)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_metas_mensais_ano_mes ON metas_mensais(ano, mes)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_notas_fiscais_competencia ON notas_fiscais_emitidas(competencia, data_emissao)")
 
     conn.execute(
         """
@@ -1057,6 +1146,7 @@ def inicializar_banco():
 
     garantir_procedimentos_padrao(conn)
     garantir_metas_vendas_iniciais(conn)
+    garantir_meta_mensal_inicial(conn)
     conn.commit()
     conn.close()
 

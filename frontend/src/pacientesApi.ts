@@ -296,6 +296,60 @@ export type ReciboManualApi = {
   criadoEm: string;
 };
 
+export type MetaMensalApi = {
+  ano: number;
+  mes: number;
+  mesNome: string;
+  meta: number;
+  supermeta: number;
+  hipermeta: number;
+  dataAtualizacao: string;
+};
+
+export type MetaMensalPayload = {
+  meta: number;
+  supermeta: number;
+  hipermeta: number;
+};
+
+export type NotaFiscalEmitidaApi = {
+  id: number;
+  competencia: string;
+  dataEmissao: string;
+  dataRecebimento: string;
+  numeroNf: string;
+  serie: string;
+  cliente: string;
+  descricao: string;
+  contaDestino: string;
+  valorNf: string;
+  valorRecebido: string;
+  valorNfNumero: number;
+  valorRecebidoNumero: number;
+  diferenca: string;
+  diferencaNumero: number;
+  status: string;
+  observacao: string;
+  conciliado: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+};
+
+export type NotaFiscalEmitidaPayload = {
+  competencia: string;
+  data_emissao: string;
+  data_recebimento: string;
+  numero_nf: string;
+  serie: string;
+  cliente: string;
+  descricao: string;
+  conta_destino: string;
+  valor_nf: number;
+  valor_recebido: number;
+  status: string;
+  observacao: string;
+};
+
 export type SaldoContaPayload = {
   data: string;
   conta: string;
@@ -804,6 +858,35 @@ export async function painelFinanceiroApi() {
 
 export async function painelDashboardApi() {
   return fetchJson<DashboardPainelApi>(`${API_BASE_URL}/api/dashboard`);
+}
+
+export async function listarMetasFinanceirasApi(ano: number) {
+  return fetchJson<MetaMensalApi[]>(`${API_BASE_URL}/api/financeiro/metas?ano=${encodeURIComponent(String(ano))}`);
+}
+
+export async function atualizarMetaFinanceiraApi(ano: number, mes: number, payload: MetaMensalPayload) {
+  return fetchJson<MetaMensalApi>(`${API_BASE_URL}/api/financeiro/metas/${ano}/${mes}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function listarNotasFiscaisEmitidasApi() {
+  return fetchJson<NotaFiscalEmitidaApi[]>(`${API_BASE_URL}/api/financeiro/notas-fiscais`);
+}
+
+export async function criarNotaFiscalEmitidaApi(payload: NotaFiscalEmitidaPayload) {
+  return fetchJson<NotaFiscalEmitidaApi>(`${API_BASE_URL}/api/financeiro/notas-fiscais`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function atualizarNotaFiscalEmitidaApi(notaId: number, payload: NotaFiscalEmitidaPayload) {
+  return fetchJson<NotaFiscalEmitidaApi>(`${API_BASE_URL}/api/financeiro/notas-fiscais/${notaId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function criarContaPagarApi(payload: ContaPagarPayload) {

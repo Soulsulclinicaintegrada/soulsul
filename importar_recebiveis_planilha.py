@@ -13,8 +13,19 @@ from api_pacientes import garantir_colunas_pacientes_api
 from database import conectar, inicializar_banco
 
 
-ARQUIVO_RECEBIVEIS = Path(r"C:\Users\jusgo\Desktop\recebíveis.xlsx")
+POSSIVEIS_ARQUIVOS_RECEBIVEIS = [
+    Path(r"C:\Users\jusgo\Desktop\a receber.xlsx"),
+    Path(r"C:\Users\jusgo\Desktop\recebiveis.xlsx"),
+    Path(r"C:\Users\jusgo\Desktop\recebíveis.xlsx"),
+]
 TODAY = datetime.now().date()
+
+
+def localizar_arquivo_recebiveis() -> Path:
+    for arquivo in POSSIVEIS_ARQUIVOS_RECEBIVEIS:
+        if arquivo.exists():
+            return arquivo
+    return POSSIVEIS_ARQUIVOS_RECEBIVEIS[0]
 
 
 def is_blank(value: Any) -> bool:
@@ -197,13 +208,14 @@ def build_plan_groups(df: pd.DataFrame) -> dict[tuple[str, float], list[dict[str
 
 
 def reconcile() -> dict[str, int]:
-    if not ARQUIVO_RECEBIVEIS.exists():
-        raise FileNotFoundError(f"Planilha não encontrada: {ARQUIVO_RECEBIVEIS}")
+    arquivo_recebiveis = localizar_arquivo_recebiveis()
+    if not arquivo_recebiveis.exists():
+        raise FileNotFoundError(f"Planilha não encontrada: {arquivo_recebiveis}")
 
     inicializar_banco()
     garantir_colunas_pacientes_api()
 
-    df = pd.read_excel(ARQUIVO_RECEBIVEIS)
+    df = pd.read_excel(arquivo_recebiveis)
     conn = conectar()
     patient_lookup = build_patient_lookup(conn)
     plan_groups = build_plan_groups(df)
