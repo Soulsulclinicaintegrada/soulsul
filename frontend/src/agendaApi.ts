@@ -131,6 +131,15 @@ function normalizarTexto(valor: string) {
     .trim();
 }
 
+function normalizarDataAgenda(valor: string) {
+  const texto = String(valor || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+    const [ano, mes, dia] = texto.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+  return texto;
+}
+
 function paraMinutos(hora: string) {
   const [horas, minutos] = hora.split(":").map(Number);
   return horas * 60 + minutos;
@@ -174,6 +183,13 @@ function mapearEventoMock(evento: EventoAgenda): AgendaApiAgendamento {
     observacoes: evento.observacoes,
     financeiro: evento.financeiro,
     agendadoEm: "19/03/2026 18:07"
+  };
+}
+
+function mapearEventoApi(evento: AgendaApiAgendamento): AgendaApiAgendamento {
+  return {
+    ...evento,
+    data: normalizarDataAgenda(evento.data)
   };
 }
 
@@ -263,7 +279,7 @@ export async function listarAgendamentosAgenda(
       const resposta = await fetchJson<AgendaListaResponse>(
         `${API_BASE_URL}/api/agenda/agendamentos?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFimReal)}`
       );
-      return resposta.agendamentos;
+      return resposta.agendamentos.map(mapearEventoApi);
     } catch {
       // segue para fallback local
     }
