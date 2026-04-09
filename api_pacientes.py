@@ -4124,7 +4124,57 @@ def carregar_plano_pagamento_contrato(contrato: sqlite3.Row) -> list[dict]:
         bruto = json.loads(str(contrato["plano_pagamento_json"] or "[]"))
     except (TypeError, ValueError, json.JSONDecodeError):
         bruto = []
-    return [item for item in bruto if isinstance(item, dict)]
+    plano = [item for item in bruto if isinstance(item, dict)]
+    if plano:
+        return plano
+
+    valor_total = float(contrato["valor_total"] or 0)
+    if valor_total <= 0:
+        return []
+
+    entrada = float(contrato["entrada"] or 0)
+    parcelas = max(int(contrato["parcelas"] or 1), 1)
+    forma = str(contrato["forma_pagamento"] or "A Definir").strip() or "A Definir"
+    data_base = parse_data_contrato(contrato["primeiro_vencimento"]) or parse_data_contrato(contrato["data_criacao"]) or date.today()
+    plano_legacy: list[dict] = []
+
+    if entrada > 0:
+        data_entrada = parse_data_contrato(contrato["data_pagamento_entrada"]) or data_base
+        plano_legacy.append(
+            {
+                "indice": 0,
+                "descricao": "Entrada",
+                "data": data_entrada.isoformat(),
+                "forma": forma,
+                "valor": round(entrada, 2),
+                "parcelas_cartao": 1,
+            }
+        )
+
+    restante = max(valor_total - entrada, 0)
+    if restante <= 0:
+        return plano_legacy
+
+    quantidade_parcelas = max(parcelas, 1)
+    valor_base = round(restante / quantidade_parcelas, 2)
+    acumulado = 0.0
+    for indice in range(quantidade_parcelas):
+        valor_parcela = valor_base
+        if indice == quantidade_parcelas - 1:
+            valor_parcela = round(restante - acumulado, 2)
+        acumulado += valor_parcela
+        plano_legacy.append(
+            {
+                "indice": indice + 1,
+                "descricao": str(indice + 1),
+                "data": adicionar_meses(data_base, indice).isoformat(),
+                "forma": forma,
+                "valor": valor_parcela,
+                "parcelas_cartao": quantidade_parcelas if "CARTAO" in normalizar_texto(forma).upper() else 1,
+            }
+        )
+
+    return plano_legacy
 
 
 def gerar_documento_contrato(
@@ -4242,7 +4292,8 @@ def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqli
     prontuario = formatar_prontuario_valor(paciente_row["prontuario"])
     for item in plano:
         forma = str(item.get("forma", "") or "").strip().upper()
-        if forma not in {"BOLETO", "CARTAO_CREDITO"}:
+        valor_item = float(item.get("valor", 0) or 0)
+        if valor_item <= 0:
             continue
         descricao_item = normalizar_texto(item.get("descricao", ""))
         if descricao_item == "entrada":
@@ -4267,7 +4318,7 @@ def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqli
                 prontuario,
                 parcela_numero,
                 str(item.get("data", "") or ""),
-                float(item.get("valor", 0) or 0),
+                valor_item,
                 forma.replace("_", " "),
                 f"CONTRATO_APROVADO_{contrato_id}",
                 agora_str(),
