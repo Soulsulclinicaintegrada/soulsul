@@ -831,6 +831,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   const [elementoClinicoAtivo, setElementoClinicoAtivo] = useState<number[]>([]);
   const [salvandoOrcamento, setSalvandoOrcamento] = useState(false);
   const [confirmarDesaprovarId, setConfirmarDesaprovarId] = useState<number | null>(null);
+  const [alterandoStatusOrcamentoId, setAlterandoStatusOrcamentoId] = useState<number | null>(null);
   const [menuOrcamentoAberto, setMenuOrcamentoAberto] = useState(false);
   const [modoReordenarOrcamento, setModoReordenarOrcamento] = useState(false);
   const [modalDescontoAberto, setModalDescontoAberto] = useState(false);
@@ -1946,23 +1947,29 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   async function aprovarOrcamento(contratoId: number) {
     if (!pacienteAtivoId) return;
     try {
+      setAlterandoStatusOrcamentoId(contratoId);
       await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, contratoId, "APROVADO");
       setFeedback("Orçamento aprovado.");
       await carregarFicha(pacienteAtivoId);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao aprovar orçamento.");
+    } finally {
+      setAlterandoStatusOrcamentoId(null);
     }
   }
 
   async function desaprovarOrcamento() {
     if (!pacienteAtivoId || !confirmarDesaprovarId) return;
     try {
+      setAlterandoStatusOrcamentoId(confirmarDesaprovarId);
       await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, confirmarDesaprovarId, "EM_ABERTO");
       setConfirmarDesaprovarId(null);
       setFeedback("Orçamento desaprovado.");
       await carregarFicha(pacienteAtivoId);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao desaprovar orçamento.");
+    } finally {
+      setAlterandoStatusOrcamentoId(null);
     }
   }
 
@@ -2440,6 +2447,13 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                           <span>{iniciais(editForm.nome || pacienteDetalhe?.nome || "P")}</span>
                         )}
                       </button>
+                      <input
+                        ref={inputFotoPacienteRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="patient-photo-input"
+                        onChange={enviarFotoPaciente}
+                      />
                       <div className="patient-photo-upload-copy">
                         <strong>Foto do paciente</strong>
                         <span>Envie uma imagem com fundo limpo para identificação na ficha.</span>
@@ -2773,17 +2787,22 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                           <button
                             type="button"
                             className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : "open"}`}
+                            disabled={alterandoStatusOrcamentoId === contrato.id}
                             onClick={() => {
                               if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
-                              else aprovarOrcamento(contrato.id);
+                              else void aprovarOrcamento(contrato.id);
                             }}
                           >
-                            {contrato.status === "APROVADO" ? "Aprovado" : "Em Aberto"}
+                            {alterandoStatusOrcamentoId === contrato.id
+                              ? "Salvando..."
+                              : contrato.status === "APROVADO"
+                                ? "Aprovado"
+                                : "Em Aberto"}
                           </button>
                           <span>{contrato.dataCriacao || "Sem data"}</span>
                           {contrato.aprovadoPor ? <span>{`Aprovado por ${contrato.aprovadoPor}`}</span> : null}
                         </div>
-                          <button
+                        <button
                           type="button"
                           className="budget-list-row-main"
                           onClick={() => abrirOrcamentoExistente(contrato.id)}

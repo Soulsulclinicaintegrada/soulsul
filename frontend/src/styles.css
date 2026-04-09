@@ -3336,7 +3336,12 @@ textarea::placeholder {
   gap: 16px;
 }
 
-.module-list-panel,`r`n.module-detail-panel {`r`n  display: grid;`r`n  gap: 16px;`r`n  align-content: start;`r`n}
+.module-list-panel,
+.module-detail-panel {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
 
 .module-card-stack,
 .module-sublist {
@@ -5998,4 +6003,283 @@ textarea::placeholder {
   width: 100%;
   min-height: 40px;
   padding: 4px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    padding: 16px;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    width: 100%;
+  }
+
+  .topbar-right {
+    justify-content: space-between;
+  }
+
+  .search-box {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .patient-directory-floating {
+    position: static;
+    top: auto;
+    right: auto;
+    width: 100%;
+  }
+
+  .patient-list-row,
+  .patient-list-row.patient-list-row-compact,
+  .finance-legacy-grid,
+  .finance-module-grid-two,
+  .finance-form-grid,
+  .finance-mini-metrics,
+  .procedures-grid,
+  .procedures-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-span-2,
+  .procedures-form-wide {
+    grid-column: auto;
+  }
+
+  .module-subitem,
+  .module-actions-row,
+  .module-inline-metrics,
+  .finance-inline-actions,
+  .finance-form-actions,
+  .finance-selected-card-head,
+  .finance-selected-card-grid,
+  .clinical-element-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .module-list-card-meta,
+  .module-subitem-right,
+  .finance-selected-card-total {
+    text-align: left;
+    justify-items: start;
+  }
+
+  .agenda-shell {
+    height: auto;
+    min-height: 0;
+  }
+
+  .agenda-leftbar {
+    max-height: none;
+  }
+
+  .agenda-main {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 640px) {
+  html,
+  body,
+  #root {
+    font-size: 11px;
+  }
+
+  .main-area,
+  .login-shell {
+    padding: 12px;
+  }
+
+  .topbar {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .page-title {
+    font-size: 1.45rem;
+  }
+
+  .page-eyebrow {
+    margin-bottom: 4px;
+  }
+
+  .header-user {
+    justify-content: space-between;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(199, 170, 120, 0.14);
+  }
+
+  .header-user-text {
+    min-width: 0;
+  }
+
+  .header-user-text strong,
+  .search-box input,
+  .patient-list-main strong,
+  .module-list-card-head strong,
+  .module-subitem strong {
+    word-break: break-word;
+  }
+
+  .search-box {
+    width: 100%;
+    padding: 12px;
+  }
+
+  .panel,
+  .kpi-card,
+  .patients-search-hero,
+  .patients-recent-wrap,
+  .patients-results-section,
+  .patient-hero,
+  .summary-card,
+  .form-block,
+  .patient-result-card,
+  .patient-chip-card,
+  .budget-card,
+  .doc-card,
+  .exam-card,
+  .finance-card,
+  .schedule-item,
+  .agenda-leftbar,
+  .agenda-main,
+  .finance-form-panel,
+  .finance-module-list {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .patients-search-hero,
+  .patient-hero,
+  .patient-detail-shell,
+  .patient-tabs-panel,
+  .module-shell,
+  .finance-main-panel {
+    gap: 12px;
+  }
+
+  .patient-hero-actions,
+  .finance-tabs,
+  .finance-caixa-modos,
+  .tab-shell,
+  .procedures-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .finance-tabs button,
+  .finance-caixa-modos button,
+  .tab-shell button,
+  .patient-hero-actions button,
+  .procedures-toolbar button {
+    flex: 0 0 auto;
+  }
+
+  .agenda-toolbar {
+    gap: 10px;
+  }
+
+  .agenda-toolbar-left,
+  .agenda-toolbar-center,
+  .agenda-toolbar-right,
+  .view-switcher {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .agenda-day-layout {
+    grid-template-columns: 64px minmax(720px, 1fr);
+    align-items: start;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding-bottom: 6px;
+  }
+
+  .agenda-time-column {
+    position: sticky;
+    left: 0;
+    z-index: 9;
+  }
+
+  .agenda-day-grid {
+    min-width: 720px;
+    grid-auto-columns: minmax(132px, 132px);
+  }
+
+  .agenda-day-column-head,
+  .agenda-column-header {
+    height: 42px;
+  }
+
+  .agenda-prof-chip {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    padding: 0 6px;
+  }
+
+  .agenda-event-card {
+    padding: 6px 5px;
+    font-size: 0.74rem;
+  }
+
+  .agenda-event-card strong,
+  .agenda-event-card span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .patient-list-row,
+  .patient-list-row.patient-list-row-compact {
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .budget-list-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .budget-list-row-left {
+    justify-items: start;
+  }
+
+  .patient-list-row > * {
+    min-width: 0;
+  }
+
+  .patient-record-tabs-scroll,
+  .tab-shell {
+    scrollbar-width: thin;
+  }
+
+  .modal-backdrop,
+  .overlay {
+    padding: 8px;
+  }
+
+  .modal-shell,
+  .modal-shell.modal-shell-compact,
+  .agenda-modal-shell,
+  .agenda-config-shell,
+  .user-password-modal {
+    width: min(100vw - 16px, 100%);
+    max-width: 100%;
+  }
 }
