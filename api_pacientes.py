@@ -5265,7 +5265,10 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
             if contrato_atualizado is not None:
                 sincronizar_recebiveis_contrato(conn, paciente, contrato_atualizado, contrato_id)
                 sincronizar_financeiro_contrato(conn, paciente, contrato_atualizado, contrato_id)
-                gerar_documento_contrato(conn, paciente, contrato_atualizado, contrato_id)
+                try:
+                    gerar_documento_contrato(conn, paciente, contrato_atualizado, contrato_id)
+                except Exception as exc:
+                    print(f"[orcamento] falha ao gerar documento do contrato {contrato_id}: {exc}", flush=True)
         else:
             conn.execute(
                 "UPDATE contratos SET status='EM_ABERTO', aprovado_por='', data_aprovacao=NULL WHERE id=? AND paciente_id=?",
