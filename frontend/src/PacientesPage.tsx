@@ -1809,14 +1809,6 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       setErro("Informe o elemento ou arcada.");
       return;
     }
-    if (!ordemServicoForm.cor.trim()) {
-      setErro("Informe a cor.");
-      return;
-    }
-    if (!ordemServicoForm.escala.trim()) {
-      setErro("Informe a escala.");
-      return;
-    }
     if (!ordemServicoForm.retornoSolicitado) {
       setErro("Informe a data de retorno solicitada.");
       return;

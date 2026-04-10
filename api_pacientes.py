@@ -1920,10 +1920,6 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             raise HTTPException(status_code=400, detail="Descreva o material quando selecionar Outro.")
         if not elemento_arcada:
             raise HTTPException(status_code=400, detail="Informe o elemento ou arcada.")
-        if not cor:
-            raise HTTPException(status_code=400, detail="Informe a cor.")
-        if not escala:
-            raise HTTPException(status_code=400, detail="Informe a escala.")
         if not retorno_solicitado:
             raise HTTPException(status_code=400, detail="Informe a data de retorno solicitada.")
         etapas_validas = mapear_procedimento_resumo(procedimento).etapasPadrao
@@ -3579,6 +3575,24 @@ def preencher_campo_rotulado(celula, prefixo: str, valor: str) -> None:
         celula.text = texto
 
 
+def limpar_celula_docx(celula) -> None:
+    celula.text = ""
+
+
+def preencher_celula_multilinha(celula, linhas: list[str]) -> None:
+    limpar_celula_docx(celula)
+    linhas_validas = [str(linha or "") for linha in linhas]
+    if not linhas_validas:
+        return
+    primeiro = True
+    for linha in linhas_validas:
+        if primeiro:
+            celula.paragraphs[0].text = linha
+            primeiro = False
+        else:
+            celula.add_paragraph(linha)
+
+
 def gerar_documento_ordem_servico(
     paciente_row: sqlite3.Row,
     ordem_id: int,
@@ -3604,34 +3618,43 @@ def gerar_documento_ordem_servico(
     tabela = tabelas[0]
     data_emissao = datetime.now().strftime("%d/%m/%Y %H:%M")
     material_final = material if normalizar_texto(material) != "outro" else f"OUTRO - {material_outro}"
+    etapas_texto = " | ".join(
+        f"{etapa}: {descricao}" if normalizar_texto(etapa) == "outro" and descricao else etapa
+        for etapa, descricao in etapas
+        if str(etapa or "").strip()
+    )
+    linhas_topo = [
+        f"PACIENTE: {formatar_titulo(valor_row(paciente_row, 'nome'))}",
+        f"PRONTUÁRIO: {formatar_prontuario_valor(paciente_row['prontuario'])}",
+        f"DATA E HORA DE EMISSÃO: {data_emissao}",
+        f"DATA DE RETORNO SOLICITADA: {formatar_data_br_valor(retorno_solicitado) or retorno_solicitado}",
+    ]
+    linhas_servico = [
+        f"MATERIAL: {material_final}",
+        f"SERVIÇO: {procedimento_nome}",
+        f"ELEMENTO (S): {elemento_arcada}",
+        f"ESCALA: {escala}" if str(escala or "").strip() else "ESCALA:",
+        f"COR: {cor}" if str(cor or "").strip() else "COR:",
+    ]
+    linhas_final = [
+        f"CARGA IMEDIATA: {texto_ordem_servico_carga_imediata(carga_imediata)}",
+        "FORA DE PRAZO:",
+        f"ETAPAS: {etapas_texto}" if etapas_texto else "ETAPAS:",
+    ]
+    if observacao.strip():
+        linhas_final.append(f"OBSERVAÇÃO: {observacao.strip()}")
 
     try:
-        celula_0 = tabela.cell(0, 0)
-        preencher_campo_rotulado(celula_0, "PACIENTE:", formatar_titulo(valor_row(paciente_row, "nome")))
-        celula_0.add_paragraph(f"PRONTUÁRIO: {formatar_prontuario_valor(paciente_row['prontuario'])}")
-        celula_0.add_paragraph(f"DATA E HORA DE EMISSÃO: {data_emissao}")
-        celula_0.add_paragraph(f"DATA DE RETORNO SOLICITADA: {formatar_data_br_valor(retorno_solicitado) or retorno_solicitado}")
-
-        celula_1 = tabela.cell(1, 0)
-        celula_1.text = ""
-        celula_1.paragraphs[0].text = f"MATERIAL: {material_final}"
-        celula_1.add_paragraph(f"SERVIÇO: {procedimento_nome}")
-        celula_1.add_paragraph(f"ELEMENTO (S): {elemento_arcada}")
-        celula_1.add_paragraph(f"ESCALA: {escala}")
-        celula_1.add_paragraph(f"COR: {cor}")
-
-        celula_2 = tabela.cell(2, 0)
-        celula_2.text = f"CARGA IMEDIATA: {texto_ordem_servico_carga_imediata(carga_imediata)}"
-
-        celula_3 = tabela.cell(3, 0)
-        celula_3.text = "FORA DE PRAZO:"
+        total_colunas = len(tabela.columns)
+        colunas_alvo = range(total_colunas) if total_colunas else [0]
+        for coluna in colunas_alvo:
+            preencher_celula_multilinha(tabela.cell(0, coluna), linhas_topo)
+            preencher_celula_multilinha(tabela.cell(1, coluna), linhas_servico)
+            preencher_celula_multilinha(tabela.cell(2, coluna), linhas_final)
+            if len(tabela.rows) > 3:
+                preencher_celula_multilinha(tabela.cell(3, coluna), [])
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Falha ao preencher ordem de servico: {exc}") from exc
-
-    doc.add_paragraph("")
-    doc.add_paragraph(f"ETAPAS: {' | '.join(f'{etapa}: {descricao}' if normalizar_texto(etapa) == 'outro' and descricao else etapa for etapa, descricao in etapas)}")
-    if observacao.strip():
-        doc.add_paragraph(f"OBSERVAÇÃO: {observacao.strip()}")
 
     os.makedirs(DOCS_DIR, exist_ok=True)
     nome_arquivo = nome_arquivo_ordem_servico(paciente_row, ordem_id)
@@ -4260,6 +4283,31 @@ def carregar_plano_pagamento_contrato(contrato: sqlite3.Row) -> list[dict]:
     return plano_legacy
 
 
+def gerar_html_contrato_fallback(
+    paciente_row: sqlite3.Row,
+    contrato_id: int,
+    procedimentos: list[dict],
+    plano: list[dict],
+) -> str:
+    caminho_html = os.path.join(DOCS_DIR, f"{nome_base_contrato(paciente_row, contrato_id)}.html")
+    linhas_procedimentos = "".join(
+        f"<tr><td>{row['procedimento']}</td><td>{row['profissional_snapshot'] or ''}</td><td>{row['denticao_snapshot'] or ''}</td><td style='text-align:right'>{formatar_moeda_br(row['valor'])}</td></tr>"
+        for row in procedimentos
+    )
+    linhas_pagamento = "".join(
+        f"<tr><td>{item.get('descricao', '')}</td><td>{formatar_data_br_valor(item.get('data'))}</td><td>{str(item.get('forma', '')).replace('_', ' ')}</td><td style='text-align:right'>{formatar_moeda_br(item.get('valor', 0))}</td></tr>"
+        for item in plano
+        if float(item.get('valor', 0) or 0) > 0
+    )
+    html = f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Contrato {contrato_id}</title></head>
+<body><h1>Contrato #{contrato_id}</h1><p>{formatar_titulo(paciente_row['nome'] or '')}</p>
+<table>{linhas_procedimentos}</table><table>{linhas_pagamento}</table></body></html>"""
+    with open(caminho_html, "w", encoding="utf-8") as arquivo:
+        arquivo.write(html)
+    return caminho_html
+
+
 def gerar_documento_contrato(
     conn: sqlite3.Connection,
     paciente_row: sqlite3.Row,
@@ -4273,92 +4321,79 @@ def gerar_documento_contrato(
     caminho = os.path.join(DOCS_DIR, nome_arquivo)
 
     if Document is None or not os.path.isfile(TEMPLATE_PATH):
-        linhas_procedimentos = "".join(
-            f"<tr><td>{row['procedimento']}</td><td>{row['profissional_snapshot'] or ''}</td><td>{row['denticao_snapshot'] or ''}</td><td style='text-align:right'>{formatar_moeda_br(row['valor'])}</td></tr>"
-            for row in procedimentos
-        )
-        linhas_pagamento = "".join(
-            f"<tr><td>{item.get('descricao', '')}</td><td>{formatar_data_br_valor(item.get('data'))}</td><td>{str(item.get('forma', '')).replace('_', ' ')}</td><td style='text-align:right'>{formatar_moeda_br(item.get('valor', 0))}</td></tr>"
-            for item in plano
-            if float(item.get('valor', 0) or 0) > 0
-        )
-        caminho_html = os.path.join(DOCS_DIR, f"{nome_base_contrato(paciente_row, contrato_id)}.html")
-        html = f"""<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><title>Contrato {contrato_id}</title></head>
-<body><h1>Contrato #{contrato_id}</h1><p>{formatar_titulo(paciente_row['nome'] or '')}</p>
-<table>{linhas_procedimentos}</table><table>{linhas_pagamento}</table></body></html>"""
-        with open(caminho_html, "w", encoding="utf-8") as arquivo:
-            arquivo.write(html)
-        return caminho_html
+        return gerar_html_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
-    doc = Document(TEMPLATE_PATH)
-    garantir_logo_no_cabecalho(doc)
-    termo_cirurgia = montar_termo_cirurgia_contrato(procedimentos)
-    if not termo_cirurgia:
-        remover_secao_termo_cirurgico(doc)
-    nome_paciente = formatar_titulo(valor_row(paciente_row, "nome"))
-    cpf_paciente = valor_row(paciente_row, "cpf")
-    assinatura = dados_assinatura_contrato(paciente_row)
-    qualificacao = montar_qualificacao_contrato(paciente_row)
-    pagamento = montar_texto_pagamento_contrato(contrato, plano)
+    try:
+        doc = Document(TEMPLATE_PATH)
+        garantir_logo_no_cabecalho(doc)
+        termo_cirurgia = montar_termo_cirurgia_contrato(procedimentos)
+        if not termo_cirurgia:
+            remover_secao_termo_cirurgico(doc)
+        nome_paciente = formatar_titulo(valor_row(paciente_row, "nome"))
+        cpf_paciente = valor_row(paciente_row, "cpf")
+        assinatura = dados_assinatura_contrato(paciente_row)
+        qualificacao = montar_qualificacao_contrato(paciente_row)
+        pagamento = montar_texto_pagamento_contrato(contrato, plano)
 
-    dados = {
-        "{PACIENTE}": nome_paciente,
-        "{paciente}": nome_paciente,
-        "{CPF}": cpf_paciente,
-        "{cpf}": cpf_paciente,
-        "{PRONTUARIO}": formatar_prontuario_valor(paciente_row["prontuario"]),
-        "{prontuario}": formatar_prontuario_valor(paciente_row["prontuario"]),
-        "{PAGAMENTO}": pagamento,
-        "{pagamento}": pagamento,
-        "{QUALIFICACAO}": qualificacao,
-        "{qualificacao}": qualificacao,
-        "{ENDERECO}": formatar_titulo(valor_row(paciente_row, "endereco")),
-        "{endereco}": formatar_titulo(valor_row(paciente_row, "endereco")),
-        "{NUMERO}": valor_row(paciente_row, "numero"),
-        "{numero}": valor_row(paciente_row, "numero"),
-        "{BAIRRO}": formatar_titulo(valor_row(paciente_row, "bairro")),
-        "{bairro}": formatar_titulo(valor_row(paciente_row, "bairro")),
-        "{CIDADE}": formatar_titulo(valor_row(paciente_row, "cidade")),
-        "{cidade}": formatar_titulo(valor_row(paciente_row, "cidade")),
-        "{ESTADO}": valor_row(paciente_row, "estado"),
-        "{estado}": valor_row(paciente_row, "estado"),
-        "{CEP}": valor_row(paciente_row, "cep"),
-        "{cep}": valor_row(paciente_row, "cep"),
-        "{TELEFONE}": valor_row(paciente_row, "telefone"),
-        "{telefone}": valor_row(paciente_row, "telefone"),
-        "{DATA_NASCIMENTO}": formatar_data_br_valor(valor_row(paciente_row, "data_nascimento")),
-        "{data_nascimento}": formatar_data_br_valor(valor_row(paciente_row, "data_nascimento")),
-        "{TERMO_CIRURGIA}": termo_cirurgia,
-        "{termo_cirurgia}": termo_cirurgia,
-    }
-    substituir_runs_doc(doc, dados)
+        dados = {
+            "{PACIENTE}": nome_paciente,
+            "{paciente}": nome_paciente,
+            "{CPF}": cpf_paciente,
+            "{cpf}": cpf_paciente,
+            "{PRONTUARIO}": formatar_prontuario_valor(paciente_row["prontuario"]),
+            "{prontuario}": formatar_prontuario_valor(paciente_row["prontuario"]),
+            "{PAGAMENTO}": pagamento,
+            "{pagamento}": pagamento,
+            "{QUALIFICACAO}": qualificacao,
+            "{qualificacao}": qualificacao,
+            "{ENDERECO}": formatar_titulo(valor_row(paciente_row, "endereco")),
+            "{endereco}": formatar_titulo(valor_row(paciente_row, "endereco")),
+            "{NUMERO}": valor_row(paciente_row, "numero"),
+            "{numero}": valor_row(paciente_row, "numero"),
+            "{BAIRRO}": formatar_titulo(valor_row(paciente_row, "bairro")),
+            "{bairro}": formatar_titulo(valor_row(paciente_row, "bairro")),
+            "{CIDADE}": formatar_titulo(valor_row(paciente_row, "cidade")),
+            "{cidade}": formatar_titulo(valor_row(paciente_row, "cidade")),
+            "{ESTADO}": valor_row(paciente_row, "estado"),
+            "{estado}": valor_row(paciente_row, "estado"),
+            "{CEP}": valor_row(paciente_row, "cep"),
+            "{cep}": valor_row(paciente_row, "cep"),
+            "{TELEFONE}": valor_row(paciente_row, "telefone"),
+            "{telefone}": valor_row(paciente_row, "telefone"),
+            "{DATA_NASCIMENTO}": formatar_data_br_valor(valor_row(paciente_row, "data_nascimento")),
+            "{data_nascimento}": formatar_data_br_valor(valor_row(paciente_row, "data_nascimento")),
+            "{TERMO_CIRURGIA}": termo_cirurgia,
+            "{termo_cirurgia}": termo_cirurgia,
+        }
+        substituir_runs_doc(doc, dados)
 
-    checklist_preenchido = False
-    tabela_contrato_preenchida = False
-    for tabela in doc.tables:
-        if not checklist_preenchido and preencher_tabela_checklist_contrato(tabela, procedimentos):
-            checklist_preenchido = True
-            continue
-        if not tabela_contrato_preenchida and preencher_tabela_contrato_docx(tabela, procedimentos):
-            tabela_contrato_preenchida = True
+        checklist_preenchido = False
+        tabela_contrato_preenchida = False
+        for tabela in doc.tables:
+            if not checklist_preenchido and preencher_tabela_checklist_contrato(tabela, procedimentos):
+                checklist_preenchido = True
+                continue
+            if not tabela_contrato_preenchida and preencher_tabela_contrato_docx(tabela, procedimentos):
+                tabela_contrato_preenchida = True
 
-    if bool(assinatura["assinatura_menor"]):
-        ajustar_assinaturas_menor(doc, nome_paciente, cpf_paciente, assinatura)
-        ajustar_assinaturas_por_texto(doc, nome_paciente, cpf_paciente, assinatura)
-        ajustar_assinatura_termo_cirurgico_final(doc, nome_paciente, cpf_paciente, assinatura)
-        ajustar_ultima_assinatura_menor(doc, nome_paciente, cpf_paciente, assinatura)
-        ajustar_bloco_final_assinatura(doc, assinatura)
-    else:
-        ajustar_assinatura_capa(doc, nome_paciente, cpf_paciente, assinatura)
-        ajustar_assinatura_contrato(doc, assinatura)
-    reescrever_bloco_final_termo(doc, assinatura)
-    normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO")
-    normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO")
-    compactar_bloco_final(doc)
-    aplicar_fonte_times_new_roman(doc)
-    doc.save(caminho)
-    return caminho
+        if bool(assinatura["assinatura_menor"]):
+            ajustar_assinaturas_menor(doc, nome_paciente, cpf_paciente, assinatura)
+            ajustar_assinaturas_por_texto(doc, nome_paciente, cpf_paciente, assinatura)
+            ajustar_assinatura_termo_cirurgico_final(doc, nome_paciente, cpf_paciente, assinatura)
+            ajustar_ultima_assinatura_menor(doc, nome_paciente, cpf_paciente, assinatura)
+            ajustar_bloco_final_assinatura(doc, assinatura)
+        else:
+            ajustar_assinatura_capa(doc, nome_paciente, cpf_paciente, assinatura)
+            ajustar_assinatura_contrato(doc, assinatura)
+        reescrever_bloco_final_termo(doc, assinatura)
+        normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO")
+        normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO")
+        compactar_bloco_final(doc)
+        aplicar_fonte_times_new_roman(doc)
+        doc.save(caminho)
+        return caminho
+    except Exception:
+        return gerar_html_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
 
 def limpar_documento_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> None:
