@@ -93,7 +93,6 @@ type DesmarqueConsultaForm = {
 };
 
 const SLOT_HEIGHT = 24;
-const USUARIO_LOGADO = "Juliana";
 const HORARIOS = gerarSlotsQuinzeMinutos("07:00", "20:00");
 const MINUTO_INICIAL_AGENDA = paraMinutos("07:00");
 const NOMES_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
@@ -119,6 +118,10 @@ type AgendaPageProps = {
   onAbrirPaciente?: (pacienteId: number, destino: "cadastro" | "financeiro" | "orcamentos") => void;
   onAbrirNovoPaciente?: () => void;
 };
+
+function statusOcultoNaAgenda(status?: string) {
+  return String(status || "").trim().toLowerCase() === "desmarcado";
+}
 
 type ConfigProfissionalAgenda = {
   id: number;
@@ -379,6 +382,8 @@ function corStatusAgendamento(status: AgendaEventoUI["status"]) {
       return "#d64545";
     case "Faltou":
       return "#4b5563";
+    case "Desmarcado":
+      return "#9b8f7a";
     case "Cancelado":
       return "#8b5cf6";
     default:
@@ -457,7 +462,7 @@ function calcularColunasSobrepostas(eventosDia: AgendaEventoUI[]) {
   return mapa;
 }
 
-function criarFormulario(slot: SlotRascunho): ModalFormState {
+function criarFormulario(slot: SlotRascunho, usuarioAtual: string): ModalFormState {
   return {
     data: slot.data,
     profissionalId: slot.profissionalId,
@@ -469,7 +474,7 @@ function criarFormulario(slot: SlotRascunho): ModalFormState {
     prontuario: "",
     celular: "",
     observacoes: "",
-    agendadoPor: USUARIO_LOGADO,
+    agendadoPor: usuarioAtual,
     agendadoEm: formatarAgoraBr(),
     horarioInicio: slot.hora,
     horarioFim: adicionarMinutos(slot.hora, 15),
@@ -532,6 +537,7 @@ function ProcedimentoBadge({
 }
 
 export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente }: AgendaPageProps) {
+  const usuarioAtual = (usuarioLogado?.nome || "Usuário").trim() || "Usuário";
   const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioResumoApi[]>([]);
   const profissionaisUsuariosBase = useMemo(() => construirProfissionaisBase(usuariosAgenda), [usuariosAgenda]);
   const profissionaisBase = profissionaisUsuariosBase;
@@ -553,14 +559,16 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     profissionalId: profissionaisBase[0]?.id ?? 1
   });
   const [form, setForm] = useState<ModalFormState>(() =>
-    criarFormulario({ data: dataInicialHoje, hora: "10:00", profissionalId: profissionaisBase[0]?.id ?? 1 })
+    criarFormulario({ data: dataInicialHoje, hora: "10:00", profissionalId: profissionaisBase[0]?.id ?? 1 }, usuarioAtual)
   );
   const [sugestoesPaciente, setSugestoesPaciente] = useState<AgendaPacienteBuscaItem[]>([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
   const [contextoPaciente, setContextoPaciente] = useState<AgendaProcedimentoContrato[]>([]);
   const [procedimentosSelecionados, setProcedimentosSelecionados] = useState<ProcedimentoSelecionado[]>([]);
+  const [procedimentoContratoSelecionado, setProcedimentoContratoSelecionado] = useState("");
   const [procedimentoManual, setProcedimentoManual] = useState("");
   const [duracaoManual, setDuracaoManual] = useState(45);
+  const [erroAgendaModal, setErroAgendaModal] = useState<string | null>(null);
   const [modoNovoPacienteRapido, setModoNovoPacienteRapido] = useState(false);
   const [eventoTodaEquipe, setEventoTodaEquipe] = useState(false);
   const [slotsOcupados, setSlotsOcupados] = useState<string[]>([]);
@@ -740,17 +748,21 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     }, 300);
     return () => window.clearTimeout(timer);
   }, [configClinicaDias, configProfissionais, ordemProfissionais]);
+  const eventosVisiveis = useMemo(
+    () => eventos.filter((evento) => !statusOcultoNaAgenda(evento.status)),
+    [eventos]
+  );
   const eventosDia = useMemo(
-    () => eventos.filter((evento) => evento.data === isoParaBr(dataSelecionada)),
-    [eventos, dataSelecionada]
+    () => eventosVisiveis.filter((evento) => evento.data === isoParaBr(dataSelecionada)),
+    [eventosVisiveis, dataSelecionada]
   );
   const detalheAtivo = useMemo(
     () => eventos.find((item) => item.id === eventoAtivoId) ?? null,
     [eventos, eventoAtivoId]
   );
   const eventosDaSemana = useMemo(
-    () => eventos.filter((evento) => diasSemana.map(isoParaBr).includes(evento.data)),
-    [eventos, diasSemana]
+    () => eventosVisiveis.filter((evento) => diasSemana.map(isoParaBr).includes(evento.data)),
+    [eventosVisiveis, diasSemana]
   );
   function nomeProfissionalPorId(profissionalId: number) {
     return profissionaisBase.find((item) => item.id === profissionalId)?.nome ?? "Profissional";
@@ -989,7 +1001,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     const slotAjustado = { ...slot, hora: horarioValido };
     setRascunhoSlot(slot);
     setRascunhoSlot(slotAjustado);
-    setForm(criarFormulario(slotAjustado));
+    setForm(criarFormulario(slotAjustado, usuarioAtual));
     setAgendamentoEditandoId(null);
     setEventoTodaEquipe(false);
     setSlotsSelecionados([horarioValido]);
@@ -997,8 +1009,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setSugestoesPaciente([]);
     setContextoPaciente([]);
     setProcedimentosSelecionados([]);
+    setProcedimentoContratoSelecionado("");
     setProcedimentoManual("");
     setDuracaoManual(45);
+    setErroAgendaModal(null);
     setModoNovoPacienteRapido(false);
     setAbaModal("Nova Consulta");
     setEventoAtivoId(null);
@@ -1056,7 +1070,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       prontuario: detalhe.prontuario ?? "",
       celular: detalhe.telefone ?? "",
       observacoes: detalhe.observacoes ?? "",
-      agendadoPor: detalhe.agendadoPor ?? USUARIO_LOGADO,
+      agendadoPor: detalhe.agendadoPor ?? usuarioAtual,
       agendadoEm: detalhe.agendadoEm ?? formatarAgoraBr(),
       horarioInicio: detalhe.inicio,
       horarioFim: detalhe.fim,
@@ -1065,8 +1079,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setSlotsSelecionados(slotsDoIntervalo(detalhe.inicio, detalhe.fim));
     setModoSelecaoSlots("intervalo");
     setSugestoesPaciente([]);
+    setProcedimentoContratoSelecionado("");
     setProcedimentoManual("");
     setDuracaoManual(45);
+    setErroAgendaModal(null);
     setModoNovoPacienteRapido(false);
     setAbaModal(
       !detalhe.pacienteId && (detalhe.tipoAtendimento === "Evento" || detalhe.tipoAtendimento === "Compromisso")
@@ -1079,6 +1095,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     if (detalhe.pacienteId) {
       const contexto = await buscarContextoPacienteAgenda(detalhe.pacienteId);
       setContextoPaciente(contexto.procedimentosContratados);
+      setProcedimentoContratoSelecionado("");
       setForm((atual) => ({
         ...atual,
         prontuario: contexto.prontuario,
@@ -1086,6 +1103,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       }));
     } else {
       setContextoPaciente([]);
+      setProcedimentoContratoSelecionado("");
     }
     setProcedimentosSelecionados(
       detalhe.procedimentos.map((nome, indice) => ({
@@ -1115,6 +1133,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setModoNovoPacienteRapido(false);
     const contexto = await buscarContextoPacienteAgenda(item.id);
     setContextoPaciente(contexto.procedimentosContratados);
+    setProcedimentoContratoSelecionado("");
     setForm((atual) => ({ ...atual, prontuario: contexto.prontuario, celular: contexto.celular }));
   }
 
@@ -1127,6 +1146,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     }));
     setSugestoesPaciente([]);
     setContextoPaciente([]);
+    setProcedimentoContratoSelecionado("");
     setModoNovoPacienteRapido(true);
   }
 
@@ -1168,6 +1188,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   }
 
   function adicionarProcedimentoContrato(procedimento: AgendaProcedimentoContrato) {
+    setErroAgendaModal(null);
     setProcedimentosSelecionados((atual) => {
       if (atual.some((item) => item.chave === procedimento.chave)) return atual;
       return [
@@ -1187,9 +1208,17 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setModoSelecaoSlots("intervalo");
   }
 
+  function adicionarProcedimentoContratoSelecionado() {
+    const procedimento = contextoPaciente.find((item) => item.chave === procedimentoContratoSelecionado);
+    if (!procedimento) return;
+    adicionarProcedimentoContrato(procedimento);
+    setProcedimentoContratoSelecionado("");
+  }
+
   function adicionarProcedimentoManual() {
     const nome = procedimentoManual.trim();
     if (!nome) return;
+    setErroAgendaModal(null);
     setProcedimentosSelecionados((atual) => [
       ...atual,
       {
@@ -1295,6 +1324,11 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     const nomePrincipal = (form.pacienteId ? form.nomePaciente : form.nomePaciente || form.pacienteBusca).trim();
     const ehConsulta = abaModal === "Nova Consulta";
     if (!nomePrincipal || !slotsSelecionados.length || (ehConsulta && !form.celular.trim())) return;
+    if (ehConsulta && !procedimentosSelecionados.length) {
+      setErroAgendaModal("Selecione ao menos um procedimento antes de agendar.");
+      return;
+    }
+    setErroAgendaModal(null);
     setSalvando(true);
     try {
       let pacienteIdAtual = form.pacienteId;
@@ -1406,6 +1440,59 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     }
   }
 
+  function payloadProcedimentosDoEvento(evento: AgendaEventoUI): AgendaProcedimentoPayload[] {
+    return (evento.procedimentos || [])
+      .filter((nome) => nome.trim())
+      .map((nome) => ({
+        nome,
+        origem: evento.contratoId ? "contrato" : "manual",
+        contratoId: evento.contratoId ?? null,
+        duracaoMinutos: Math.max(15, Math.round((paraMinutos(evento.fim) - paraMinutos(evento.inicio)) / Math.max(evento.procedimentos.length, 1)))
+      }));
+  }
+
+  async function persistirAtualizacaoRapidaAgendamento(
+    evento: AgendaEventoUI,
+    overrides: Partial<AgendaSalvarPayload>,
+    overridesLocais?: Partial<AgendaEventoUI>
+  ) {
+    const payload: AgendaSalvarPayload = {
+      pacienteId: evento.pacienteId ?? null,
+      nomePaciente: evento.paciente,
+      prontuario: evento.prontuario,
+      telefone: evento.telefone,
+      profissionalId: evento.profissionalId,
+      profissionalNome: evento.profissional,
+      tipoAtendimentoId: evento.tipoAtendimentoId,
+      tipoAtendimentoNome: evento.tipoAtendimento,
+      data: evento.data,
+      horaInicio: evento.inicio,
+      horaFim: evento.fim,
+      duracaoMinutos: Math.max(15, paraMinutos(evento.fim) - paraMinutos(evento.inicio)),
+      status: evento.status,
+      agendadoPor: evento.agendadoPor || usuarioAtual,
+      agendadoEm: evento.agendadoEm || formatarAgoraBr(),
+      observacoes: evento.observacoes || "",
+      procedimentos: payloadProcedimentosDoEvento(evento),
+      ...overrides
+    };
+
+    const atualizado = await atualizarAgendamentoAgenda(evento.id, payload);
+    setEventos((atual) =>
+      atual.map((item) =>
+        item.id === evento.id
+          ? {
+              ...item,
+              ...atualizado,
+              ...overridesLocais,
+              procedimentos: atualizado.procedimentos.length ? atualizado.procedimentos : item.procedimentos
+            }
+          : item
+      )
+    );
+    return atualizado;
+  }
+
   function calcularPosicaoDetalhe(elemento: HTMLElement): DetalhePopoverPosicao {
     const rect = elemento.getBoundingClientRect();
     const larguraPopover = 340;
@@ -1449,32 +1536,55 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     }, 180);
   }
 
-  function atualizarStatusAgendamento(id: number, status: AgendaEventoUI["status"]) {
-    setEventos((atual) => atual.map((item) => (item.id === id ? { ...item, status } : item)));
+  async function atualizarStatusAgendamento(id: number, status: AgendaEventoUI["status"]) {
+    const evento = eventos.find((item) => item.id === id);
+    if (!evento) return;
+    try {
+      await persistirAtualizacaoRapidaAgendamento(evento, { status }, { status });
+      if (statusOcultoNaAgenda(status)) {
+        setEventoAtivoId(null);
+        setDetalhePosicao(null);
+      }
+    } catch {
+      // mantém estado anterior se a API falhar
+    }
   }
 
-  function aplicarDesmarqueConsulta() {
+  async function aplicarDesmarqueConsulta() {
     if (!detalheAtivo) return;
     const complemento = `Desmarcado por ${desmarqueConsulta.responsavel}${desmarqueConsulta.motivo.trim() ? ` · ${desmarqueConsulta.motivo.trim()}` : ""}`;
-    setEventos((atual) =>
-      atual.map((item) =>
-        item.id === detalheAtivo.id
-          ? {
-              ...item,
-              status: "Faltou",
-              observacoes: item.observacoes ? `${item.observacoes}\n${complemento}` : complemento
-            }
-          : item
-      )
-    );
+    const observacoesAtualizadas = detalheAtivo.observacoes ? `${detalheAtivo.observacoes}\n${complemento}` : complemento;
+    try {
+      await persistirAtualizacaoRapidaAgendamento(
+        detalheAtivo,
+        {
+          status: "Desmarcado",
+          observacoes: observacoesAtualizadas
+        },
+        {
+          status: "Desmarcado",
+          observacoes: observacoesAtualizadas
+        }
+      );
+    } catch {
+      return;
+    }
     setDesmarqueConsulta({ aberto: false, motivo: "", responsavel: "Paciente" });
     setEventoAtivoId(null);
     setDetalhePosicao(null);
   }
 
-  function aplicarCancelamentoConsulta() {
+  async function aplicarCancelamentoConsulta() {
     if (!detalheAtivo) return;
-    setEventos((atual) => atual.map((item) => (item.id === detalheAtivo.id ? { ...item, status: "Cancelado" } : item)));
+    try {
+      await persistirAtualizacaoRapidaAgendamento(
+        detalheAtivo,
+        { status: "Cancelado" },
+        { status: "Cancelado" }
+      );
+    } catch {
+      return;
+    }
     setConfirmarCancelamentoAberto(false);
     setEventoAtivoId(null);
     setDetalhePosicao(null);
@@ -1540,7 +1650,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
               .join("")
           : diasMes
               .map((diaIso) => {
-                const eventosDiaMes = eventos.filter((evento) => evento.data === isoParaBr(diaIso));
+                const eventosDiaMes = eventosVisiveis.filter((evento) => evento.data === isoParaBr(diaIso));
                 if (!eventosDiaMes.length) return "";
                 return eventosDiaMes
                   .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${evento.procedimentos.join(", ")}</td></tr>`)
@@ -1806,7 +1916,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         <div className="agenda-month-grid">
           {diasMes.map((diaIso) => {
             const data = new Date(`${diaIso}T12:00:00`);
-            const eventosDiaMes = eventos.filter((evento) => evento.data === isoParaBr(diaIso));
+            const eventosDiaMes = eventosVisiveis.filter((evento) => evento.data === isoParaBr(diaIso));
             const foraDoMes = data.getMonth() !== new Date(`${dataSelecionada}T12:00:00`).getMonth();
             return (
               <button
@@ -1941,13 +2051,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
               <span>Status</span>
               <div className="agenda-status-select-row">
                 <span className={`agenda-event-status-dot ${classeStatusAgendamento(detalheAtivo.status)}`} style={{ background: corStatusAgendamento(detalheAtivo.status) }} />
-                <select value={detalheAtivo.status} onChange={(event) => atualizarStatusAgendamento(detalheAtivo.id, event.target.value as AgendaEventoUI["status"])}>
-                  {["Agendado", "Confirmado", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Cancelado"].map((status) => (
+                <select value={detalheAtivo.status} onChange={(event) => void atualizarStatusAgendamento(detalheAtivo.id, event.target.value as AgendaEventoUI["status"])}>
+                  {["Agendado", "Confirmado", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"].map((status) => (
                     <option key={status} value={status}>{status}</option>
                   ))}
                 </select>
               </div>
             </label>
+            <div><strong>Agendado por:</strong> {detalheAtivo.agendadoPor || "Sistema"}</div>
             <div><strong>Agendado em:</strong> {detalheAtivo.agendadoEm ?? "Agora"}</div>
             <div><strong>Profissional:</strong> {detalheAtivo.profissional}</div>
             <div><strong>Prontuário:</strong> {detalheAtivo.paciente} ({detalheAtivo.prontuario})</div>
@@ -1956,6 +2067,20 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
             <div><strong>Procedimentos:</strong> {detalheAtivo.procedimentos.join(", ")}</div>
             <div><strong>Marcadores:</strong> {(detalheAtivo.marcadores ?? []).join(", ") || "Sem marcadores"}</div>
             <div><strong>Observações:</strong> {detalheAtivo.observacoes || "Sem observações"}</div>
+            <div className="agenda-history-block">
+              <strong>Histórico</strong>
+              <div className="agenda-history-list">
+                {detalheAtivo.historico?.length
+                  ? detalheAtivo.historico.map((item, indice) => (
+                      <div key={`${item.criadoEm}-${indice}`} className="agenda-history-item">
+                        {item.acao === "MODIFICADO"
+                          ? `Modificado (${item.descricao}) em ${item.criadoEm} por ${item.criadoPor}`
+                          : `Agendado em ${item.criadoEm} por ${item.criadoPor}`}
+                      </div>
+                    ))
+                  : <div className="agenda-history-item">Sem alterações registradas.</div>}
+              </div>
+            </div>
             <div className="agenda-finance-row">
               <strong>Indicador financeiro:</strong>
               <span className={`agenda-finance-pill ${classeFinanceiroAgenda(detalheAtivo.financeiro)}`}>
@@ -2045,7 +2170,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
                   <label>
                     <span>Status</span>
                     <select value={form.status} onChange={(event) => setForm((atual) => ({ ...atual, status: event.target.value as AgendaEventoUI["status"] }))}>
-                      {["Agendado", "Confirmado", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Cancelado"].map((status) => (
+                      {["Agendado", "Confirmado", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"].map((status) => (
                         <option key={status} value={status}>{status}</option>
                       ))}
                     </select>
@@ -2090,22 +2215,33 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
                       <>
                         {contextoPaciente.length ? (
                           <section className="agenda-procedimentos-section">
-                            <div className="agenda-procedimentos-section-label">Seleção contratada</div>
+                            <div className="agenda-procedimentos-section-label">Procedimento contratado</div>
                             <div className="agenda-procedimentos-box compact">
                               <div className="agenda-procedimentos-header">
-                                <strong>Tratamentos em aberto</strong>
-                                <span>Selecione o procedimento contratado que será usado neste atendimento.</span>
+                                <strong>Selecionar do contrato</strong>
+                                <span>Escolha o procedimento contratado que será usado neste atendimento.</span>
                               </div>
-                              <div className="agenda-procedimentos-contract-list compact">
-                                {contextoPaciente.map((procedimento) => (
-                                  <button key={procedimento.chave} type="button" className={`agenda-contrato-item${procedimentosSelecionados.some((item) => item.chave === procedimento.chave) ? " selected" : ""}`} onClick={() => adicionarProcedimentoContrato(procedimento)}>
-                                    <Check size={14} />
-                                    <div>
-                                      <strong>{procedimento.nome}</strong>
-                                      <span>Sessões: {procedimento.sessoesRestantes}/{procedimento.sessoesTotal}</span>
-                                    </div>
-                                  </button>
-                                ))}
+                              <div className="agenda-manual-row compact">
+                                <label className="agenda-span-2">
+                                  <span>Procedimento do contrato</span>
+                                  <select value={procedimentoContratoSelecionado} onChange={(event) => setProcedimentoContratoSelecionado(event.target.value)}>
+                                    <option value="">Selecione</option>
+                                    {contextoPaciente.map((procedimento) => (
+                                      <option key={procedimento.chave} value={procedimento.chave}>
+                                        {`${procedimento.nome} · Sessões ${procedimento.sessoesRestantes}/${procedimento.sessoesTotal}`}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <button
+                                  type="button"
+                                  className="primary-action compact agenda-add-procedimento"
+                                  onClick={adicionarProcedimentoContratoSelecionado}
+                                  disabled={!procedimentoContratoSelecionado}
+                                >
+                                  <Check size={15} />
+                                  Usar no agendamento
+                                </button>
                               </div>
                             </div>
                           </section>
@@ -2113,7 +2249,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
 
                         <section className="agenda-procedimentos-section">
                           <div className="agenda-procedimentos-section-label">Complemento manual</div>
-                          <div className="agenda-procedimentos-box compact">
+                            <div className="agenda-procedimentos-box compact">
                             <div className="agenda-procedimentos-header">
                               <strong>Adicionar procedimento manual</strong>
                               <span>Use esta área apenas quando precisar complementar o atendimento com um procedimento fora do contrato.</span>
@@ -2147,6 +2283,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
                             <div className="agenda-selected-procedures">
                               {procedimentosSelecionados.length ? procedimentosSelecionados.map((item) => <ProcedimentoBadge key={item.chave} item={item} onRemove={removerProcedimento} />) : <span className="empty-inline">Nenhum procedimento selecionado para este agendamento.</span>}
                             </div>
+                            {erroAgendaModal ? <div className="agenda-inline-error">{erroAgendaModal}</div> : null}
                             <label className="agenda-observacao-field">
                               <span>Observações</span>
                               <textarea rows={2} value={form.observacoes} onChange={(event) => setForm((atual) => ({ ...atual, observacoes: event.target.value }))} />
@@ -2414,7 +2551,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
               </div>
               <div className="agenda-modal-footer">
                 <button type="button" className="ghost-action" onClick={() => setDesmarqueConsulta({ aberto: false, motivo: "", responsavel: "Paciente" })}>Cancelar</button>
-                <button type="button" className="primary-action" onClick={aplicarDesmarqueConsulta}>Ok</button>
+                <button type="button" className="primary-action" onClick={() => void aplicarDesmarqueConsulta()}>Ok</button>
               </div>
             </div>
           </div>
@@ -2434,7 +2571,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
               <div className="placeholder-copy"><p>Deseja realmente cancelar esta consulta?</p></div>
               <div className="agenda-modal-footer">
                 <button type="button" className="ghost-action" onClick={() => setConfirmarCancelamentoAberto(false)}>Cancelar</button>
-                <button type="button" className="primary-action" onClick={aplicarCancelamentoConsulta}>Ok</button>
+                <button type="button" className="primary-action" onClick={() => void aplicarCancelamentoConsulta()}>Ok</button>
               </div>
             </div>
           </div>

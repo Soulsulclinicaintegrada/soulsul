@@ -5,7 +5,7 @@ import json
 import sqlite3
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -110,6 +110,13 @@ class AgendamentoPayload(BaseModel):
     procedimentos: list[ProcedimentoPayload] = Field(default_factory=list)
 
 
+class AgendamentoHistoricoItem(BaseModel):
+    acao: str
+    descricao: str
+    criadoPor: str
+    criadoEm: str
+
+
 class AgendamentoResposta(BaseModel):
     id: int
     pacienteId: int | None = None
@@ -127,8 +134,12 @@ class AgendamentoResposta(BaseModel):
     fim: str
     observacoes: str | None = None
     financeiro: str | None = None
+    agendadoPor: str | None = None
     agendadoEm: str | None = None
+    atualizadoPor: str | None = None
+    atualizadoEm: str | None = None
     contratoId: int | None = None
+    historico: list[AgendamentoHistoricoItem] = Field(default_factory=list)
 
 
 class PacienteBuscaItem(BaseModel):
@@ -298,6 +309,89 @@ def carregar_procedimentos_agendamento(conn: sqlite3.Connection, agendamento_id:
     return [row["procedimento_nome_snapshot"] for row in rows if row["procedimento_nome_snapshot"]]
 
 
+def carregar_historico_agendamento(conn: sqlite3.Connection, agendamento_id: int) -> list[AgendamentoHistoricoItem]:
+    rows = conn.execute(
+        """
+        SELECT acao, descricao, criado_por, criado_em
+        FROM agendamento_historico
+        WHERE agendamento_id=?
+        ORDER BY id DESC
+        """,
+        (agendamento_id,),
+    ).fetchall()
+    return [
+        AgendamentoHistoricoItem(
+            acao=str(row_val(row, "acao", "") or ""),
+            descricao=str(row_val(row, "descricao", "") or ""),
+            criadoPor=str(row_val(row, "criado_por", "") or ""),
+            criadoEm=str(row_val(row, "criado_em", "") or ""),
+        )
+        for row in rows
+    ]
+
+
+def registrar_historico_agendamento(
+    conn: sqlite3.Connection,
+    agendamento_id: int,
+    acao: str,
+    descricao: str,
+    usuario: str,
+    quando: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO agendamento_historico (agendamento_id, acao, descricao, criado_por, criado_em)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (agendamento_id, acao, descricao.strip(), usuario.strip(), quando.strip()),
+    )
+
+
+def usuario_request(request: Request) -> str:
+    return (request.headers.get("x-usuario") or "").strip() or "Sistema"
+
+
+def descrever_alteracoes_agendamento(
+    existente: sqlite3.Row,
+    payload: AgendamentoPayload,
+    procedimentos_atuais: list[str],
+) -> str:
+    alteracoes: list[str] = []
+    campos_texto = [
+        ("paciente", str(row_val(existente, "nome_paciente_snapshot", "") or row_val(existente, "paciente_nome", "") or ""), payload.nomePaciente),
+        ("profissional", str(row_val(existente, "profissional", "") or ""), payload.profissionalNome),
+        ("tipo", str(row_val(existente, "tipo_atendimento_nome_snapshot", "") or ""), payload.tipoAtendimentoNome),
+        ("status", str(row_val(existente, "status", "") or ""), payload.status or "Agendado"),
+    ]
+    for rotulo, anterior, novo in campos_texto:
+        anterior_limpo = anterior.strip()
+        novo_limpo = str(novo or "").strip()
+        if anterior_limpo != novo_limpo:
+            alteracoes.append(f"{rotulo}: {anterior_limpo or '-'} -> {novo_limpo or '-'}")
+
+    data_anterior = str(row_val(existente, obter_data_coluna_agenda(), "") or "")
+    if data_anterior != payload.data:
+        alteracoes.append(f"data: {data_anterior or '-'} -> {payload.data}")
+
+    hora_inicio_anterior = str(row_val(existente, "hora_inicio", "") or "")
+    hora_fim_anterior = str(row_val(existente, "hora_fim", "") or "")
+    if hora_inicio_anterior != payload.horaInicio or hora_fim_anterior != payload.horaFim:
+        alteracoes.append(f"horário: {hora_inicio_anterior or '-'} - {hora_fim_anterior or '-'} -> {payload.horaInicio} - {payload.horaFim}")
+
+    observacoes_anteriores = str(row_val(existente, "observacoes", "") or row_val(existente, "observacao", "") or "").strip()
+    observacoes_novas = str(payload.observacoes or "").strip()
+    if observacoes_anteriores != observacoes_novas:
+        alteracoes.append("observações alteradas")
+
+    procedimentos_novos = [item.nome.strip() for item in payload.procedimentos if item.nome.strip()]
+    if procedimentos_atuais != procedimentos_novos:
+        alteracoes.append(
+            f"procedimentos: {', '.join(procedimentos_atuais) or '-'} -> {', '.join(procedimentos_novos) or '-'}"
+        )
+
+    return "; ".join(alteracoes)
+
+
 def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendamentoResposta:
     data_coluna_agenda = obter_data_coluna_agenda()
     procedimentos = carregar_procedimentos_agendamento(conn, row["id"])
@@ -323,8 +417,12 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         fim=row_val(row, "hora_fim", ""),
         observacoes=row_val(row, "observacoes", "") or row_val(row, "observacao", ""),
         financeiro=financeiro,
+        agendadoPor=row_val(row, "criado_por", "") or "",
         agendadoEm=row_val(row, "criado_em", "") or row_val(row, "data_criacao", ""),
+        atualizadoPor=row_val(row, "atualizado_por", "") or "",
+        atualizadoEm=row_val(row, "atualizado_em", "") or "",
         contratoId=contrato_id,
+        historico=carregar_historico_agendamento(conn, row["id"]),
     )
 
 
@@ -336,7 +434,7 @@ def existe_conflito(conn: sqlite3.Connection, profissional_id: int, data: str, i
         FROM agendamentos
         WHERE profissional_id=?
           AND {data_coluna_agenda}=?
-          AND COALESCE(status, 'Agendado') <> 'Cancelado'
+          AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
         LIMIT 1
         """,
@@ -361,7 +459,7 @@ def existe_conflito_excluindo(
         WHERE id <> ?
           AND profissional_id=?
           AND {data_coluna_agenda}=?
-          AND COALESCE(status, 'Agendado') <> 'Cancelado'
+          AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
         LIMIT 1
         """,
@@ -428,7 +526,7 @@ def buscar_disponibilidade(
             FROM agendamentos
             WHERE profissional_id=?
               AND {data_coluna_agenda}=?
-              AND COALESCE(status, 'Agendado') <> 'Cancelado'
+              AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
             ORDER BY hora_inicio
             """,
             (profissional_id, data),
@@ -467,6 +565,7 @@ def listar_agendamentos(
             FROM agendamentos
             WHERE {data_coluna_agenda} >= ?
               AND {data_coluna_agenda} <= ?
+              AND COALESCE(status, 'Agendado') <> 'Desmarcado'
             ORDER BY {data_coluna_agenda}, hora_inicio, profissional
             """,
             (data_inicio, data_fim_real),
@@ -607,7 +706,7 @@ def buscar_contexto_paciente(paciente_id: int):
                 JOIN agendamentos a ON a.id = ap.agendamento_id
                 WHERE ap.contrato_id=?
                   AND lower(trim(ap.procedimento_nome_snapshot)) = lower(trim(?))
-                  AND COALESCE(a.status, 'Agendado') <> 'Cancelado'
+                  AND COALESCE(a.status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
                 """,
                 (row["contrato_id"], row["procedimento"]),
             ).fetchone()
@@ -639,10 +738,14 @@ def buscar_contexto_paciente(paciente_id: int):
 
 
 @app.post("/api/agenda/agendamentos", response_model=AgendamentoResposta)
-def criar_agendamento(payload: AgendamentoPayload):
+def criar_agendamento(payload: AgendamentoPayload, request: Request):
     data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
+        if payload.tipoAtendimentoId and not any(item.nome.strip() for item in payload.procedimentos):
+            raise HTTPException(status_code=400, detail="Selecione ao menos um procedimento para salvar a consulta.")
+        if payload.tipoAtendimentoId and not any(item.nome.strip() for item in payload.procedimentos):
+            raise HTTPException(status_code=400, detail="Selecione ao menos um procedimento para salvar a consulta.")
         paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
         if existe_conflito(conn, payload.profissionalId, payload.data, payload.horaInicio, payload.horaFim):
             raise HTTPException(status_code=409, detail="Conflito de horário para o profissional selecionado.")
@@ -651,6 +754,12 @@ def criar_agendamento(payload: AgendamentoPayload):
         primeiro_procedimento = payload.procedimentos[0].nome if payload.procedimentos else ""
         contrato_id = next((item.contratoId for item in payload.procedimentos if item.contratoId), None)
         origem_contrato = 1 if contrato_id else 0
+        usuario = usuario_request(request)
+        momento = agora_br()
+        procedimentos_atuais = carregar_procedimentos_agendamento(conn, agendamento_id)
+        descricao_alteracoes = descrever_alteracoes_agendamento(existente, payload, procedimentos_atuais)
+        usuario = usuario_request(request)
+        momento = agora_br()
 
         colunas_insert = [
             "paciente_id",
@@ -673,6 +782,7 @@ def criar_agendamento(payload: AgendamentoPayload):
             "status",
             "criado_por",
             "criado_em",
+            "atualizado_por",
             "atualizado_em",
             "data_criacao",
         ]
@@ -695,10 +805,11 @@ def criar_agendamento(payload: AgendamentoPayload):
             payload.observacoes or "",
             payload.observacoes or "",
             payload.status or "Agendado",
-            payload.agendadoPor,
-            payload.agendadoEm,
-            payload.agendadoEm,
-            payload.agendadoEm,
+            usuario,
+            momento,
+            usuario,
+            momento,
+            momento,
         ]
 
         if data_coluna_agenda != "data" and "data" in colunas_agendamento:
@@ -720,6 +831,14 @@ def criar_agendamento(payload: AgendamentoPayload):
             tuple(valores_insert),
         )
         agendamento_id = cursor.lastrowid
+        registrar_historico_agendamento(
+            conn,
+            agendamento_id,
+            "CRIADO",
+            f"Agendado para {payload.data} em {payload.horaInicio} com {payload.profissionalNome}.",
+            usuario,
+            momento,
+        )
 
         for procedimento in payload.procedimentos:
             conn.execute(
@@ -745,6 +864,16 @@ def criar_agendamento(payload: AgendamentoPayload):
                 ),
             )
 
+        if descricao_alteracoes:
+            registrar_historico_agendamento(
+                conn,
+                agendamento_id,
+                "MODIFICADO",
+                descricao_alteracoes,
+                usuario,
+                momento,
+            )
+
         conn.commit()
         row = conn.execute("SELECT * FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
         if not row:
@@ -767,7 +896,7 @@ def detalhar_agendamento(agendamento_id: int):
 
 
 @app.put("/api/agenda/agendamentos/{agendamento_id}", response_model=AgendamentoResposta)
-def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload):
+def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, request: Request):
     data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
@@ -805,7 +934,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload):
                 observacao=?,
                 observacoes=?,
                 status=?,
-                criado_por=?,
+                atualizado_por=?,
                 atualizado_em=?
             WHERE id=?
             """,
@@ -829,8 +958,8 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload):
                 payload.observacoes or "",
                 payload.observacoes or "",
                 payload.status or "Agendado",
-                payload.agendadoPor,
-                agora_br(),
+                usuario,
+                momento,
                 agendamento_id,
             ),
         )

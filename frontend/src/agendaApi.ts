@@ -30,8 +30,17 @@ export type AgendaApiAgendamento = {
   fim: string;
   observacoes?: string;
   financeiro?: string;
+  agendadoPor?: string;
   agendadoEm?: string;
+  atualizadoPor?: string;
+  atualizadoEm?: string;
   contratoId?: number | null;
+  historico?: Array<{
+    acao: string;
+    descricao: string;
+    criadoPor: string;
+    criadoEm: string;
+  }>;
 };
 
 export type AgendaDisponibilidadeResponse = {

@@ -4112,6 +4112,11 @@ textarea::placeholder {
   color: #6f42d9;
 }
 
+.agenda-status-pill.desmarcado {
+  background: rgba(155, 143, 122, 0.16);
+  color: #6f6554;
+}
+
 .agenda-status-select-row {
   display: flex;
   align-items: center;
@@ -4128,6 +4133,26 @@ textarea::placeholder {
 .agenda-finance-row {
   display: grid;
   gap: 6px;
+}
+
+.agenda-history-block {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.agenda-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.agenda-history-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 252, 247, 0.84);
+  border: 1px solid rgba(199, 170, 120, 0.14);
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .agenda-finance-pill {
@@ -5389,6 +5414,17 @@ textarea::placeholder {
   background: rgba(199, 170, 120, 0.12);
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.agenda-inline-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(163, 60, 51, 0.08);
+  color: #9a3d35;
+  border: 1px solid rgba(163, 60, 51, 0.12);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .agenda-horarios-block-tight {

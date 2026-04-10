@@ -592,6 +592,19 @@ def inicializar_banco():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS agendamento_historico (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agendamento_id INTEGER,
+            acao TEXT,
+            descricao TEXT,
+            criado_por TEXT,
+            criado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS ordens_servico_protetico (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             paciente_id INTEGER,
@@ -877,6 +890,7 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "criado_por TEXT")
     garantir_coluna(conn, "agendamentos", "criado_em TEXT")
     garantir_coluna(conn, "agendamentos", "atualizado_em TEXT")
+    garantir_coluna(conn, "agendamentos", "atualizado_por TEXT")
     garantir_coluna(conn, "profissionais", "nome TEXT")
     garantir_coluna(conn, "profissionais", "especialidade TEXT")
     garantir_coluna(conn, "profissionais", "cor TEXT")
@@ -912,6 +926,11 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamento_procedimentos", "duracao_snapshot_minutos INTEGER")
     garantir_coluna(conn, "agendamento_procedimentos", "origem_contrato INTEGER DEFAULT 0")
     garantir_coluna(conn, "agendamento_procedimentos", "contrato_id INTEGER")
+    garantir_coluna(conn, "agendamento_historico", "agendamento_id INTEGER")
+    garantir_coluna(conn, "agendamento_historico", "acao TEXT")
+    garantir_coluna(conn, "agendamento_historico", "descricao TEXT")
+    garantir_coluna(conn, "agendamento_historico", "criado_por TEXT")
+    garantir_coluna(conn, "agendamento_historico", "criado_em TEXT")
     garantir_coluna(conn, "procedimentos_dente", "grupo_item INTEGER")
     garantir_coluna(conn, "lembretes_agendamento", "agendamento_id INTEGER")
     garantir_coluna(conn, "lembretes_agendamento", "tipo_lembrete TEXT")
@@ -1113,6 +1132,7 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agendamentos_profissional_id ON agendamentos(profissional_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agendamentos_paciente_id ON agendamentos(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agendamento_procedimentos_agendamento_id ON agendamento_procedimentos(agendamento_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agendamento_historico_agendamento_id ON agendamento_historico(agendamento_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_lembretes_agendamento_id ON lembretes_agendamento(agendamento_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_paciente_id ON ordens_servico_protetico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_etapas_ordem_id ON ordem_servico_protetico_etapas(ordem_servico_id)")
