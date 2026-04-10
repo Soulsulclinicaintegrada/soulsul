@@ -1,6 +1,7 @@
 ﻿import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, ChevronDown, FileText, IdCard, Mail, MoreVertical, Pencil, Phone, Plus, Printer, Search, Wallet, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
+  marcarPacienteFinalizadoCrmApi,
   alterarStatusOrcamentoPacienteApi,
   buscarCepApi,
   baixarRecebivelPacienteApi,
@@ -829,6 +830,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   const [ordensServico, setOrdensServico] = useState<OrdemServicoResumoApi[]>([]);
   const [ordemServicoForm, setOrdemServicoForm] = useState<OrdemServicoForm>(ORDEM_SERVICO_INICIAL);
   const [salvandoOrdemServico, setSalvandoOrdemServico] = useState(false);
+  const [salvandoCrmFinalizado, setSalvandoCrmFinalizado] = useState(false);
   const [denticaoClinica, setDenticaoClinica] = useState<"Permanente" | "Decidua">("Permanente");
   const [elementoClinicoAtivo, setElementoClinicoAtivo] = useState<number[]>([]);
   const [salvandoOrcamento, setSalvandoOrcamento] = useState(false);
@@ -1171,6 +1173,21 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       setErro(error instanceof Error ? error.message : "Falha ao atualizar paciente.");
     } finally {
       setSalvandoEdicao(false);
+    }
+  }
+
+  async function enviarPacienteFinalizadoParaCrm() {
+    if (!pacienteAtivoId) return;
+    setSalvandoCrmFinalizado(true);
+    setErro(null);
+    try {
+      await marcarPacienteFinalizadoCrmApi(pacienteAtivoId);
+      setFeedback("Paciente enviado para a lista de finalizados do CRM.");
+      await carregarFicha(pacienteAtivoId);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao enviar paciente para o CRM.");
+    } finally {
+      setSalvandoCrmFinalizado(false);
     }
   }
 
@@ -2395,29 +2412,44 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   const renderFichaPacienteNova = pacienteDetalhe ? (
     <section className="patient-detail-shell patient-detail-shell-clean">
       <article className="patient-record-shell">
-        <div className="patient-record-tabs">
-          <div className="patient-record-tabs-scroll">
-            {abasFichaDisponiveis.map((aba) => {
-              const ativo =
-                abaPrincipal === aba.principal &&
-                (aba.clinica ? abaClinica === aba.clinica : true) &&
-                (aba.documentos ? abaDocumentos === aba.documentos : true);
-              return (
-                <button
-                  key={aba.label}
-                  type="button"
-                  className={`patient-record-tab${ativo ? " active" : ""}`}
-                  onClick={() => {
-                    setAbaPrincipal(aba.principal);
-                    if (aba.clinica) setAbaClinica(aba.clinica);
-                    if (aba.documentos) setAbaDocumentos(aba.documentos);
-                  }}
-                >
-                  {aba.label}
-                </button>
-              );
-            })}
+        <div className="patient-record-topbar">
+          <div className="patient-record-tabs">
+            <div className="patient-record-tabs-scroll">
+              {abasFichaDisponiveis.map((aba) => {
+                const ativo =
+                  abaPrincipal === aba.principal &&
+                  (aba.clinica ? abaClinica === aba.clinica : true) &&
+                  (aba.documentos ? abaDocumentos === aba.documentos : true);
+                return (
+                  <button
+                    key={aba.label}
+                    type="button"
+                    className={`patient-record-tab${ativo ? " active" : ""}`}
+                    onClick={() => {
+                      setAbaPrincipal(aba.principal);
+                      if (aba.clinica) setAbaClinica(aba.clinica);
+                      if (aba.documentos) setAbaDocumentos(aba.documentos);
+                    }}
+                  >
+                    {aba.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+          <button
+            type="button"
+            className="icon-action"
+            onClick={() => void enviarPacienteFinalizadoParaCrm()}
+            disabled={salvandoCrmFinalizado}
+          >
+            <Plus size={18} />
+            {salvandoCrmFinalizado
+              ? "Enviando ao CRM..."
+              : ficha?.crm?.finalizado
+                ? "Finalizado no CRM"
+                : "Marcar como finalizado"}
+          </button>
         </div>
 
         <div className="patient-record-body">

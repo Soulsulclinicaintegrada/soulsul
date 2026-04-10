@@ -728,6 +728,70 @@ class FichaPacienteResposta(BaseModel):
     documentos: list[ArquivoPacienteItem]
     exames: list[ArquivoPacienteItem]
     recibos: list[RecebivelResumo]
+    crm: "CrmPacienteResumoResposta | None" = None
+
+
+class CrmPacienteResumoResposta(BaseModel):
+    crmId: int | None = None
+    finalizado: bool = False
+    avaliacao: bool = False
+    etapaFunil: str = ""
+    campanha: str = ""
+    canal: str = "Facebook"
+    ultimaAvaliacaoEm: str = ""
+    finalizadoEm: str = ""
+
+
+class CrmPacienteItemResposta(BaseModel):
+    id: int
+    pacienteId: int
+    nome: str
+    prontuario: str = ""
+    telefone: str = ""
+    origemFinalizado: bool = False
+    origemAvaliacao: bool = False
+    etapaFunil: str = "Novo lead"
+    canal: str = "Facebook"
+    campanha: str = ""
+    conjuntoAnuncio: str = ""
+    anuncio: str = ""
+    responsavel: str = ""
+    proximoContato: str = ""
+    observacao: str = ""
+    ultimaInteracao: str = ""
+    ultimaAvaliacaoEm: str = ""
+    finalizadoEm: str = ""
+    atualizadoEm: str = ""
+
+
+class CrmAvaliacaoItemResposta(BaseModel):
+    pacienteId: int
+    nome: str
+    prontuario: str = ""
+    telefone: str = ""
+    dataAvaliacao: str = ""
+    profissional: str = ""
+    status: str = ""
+    procedimento: str = ""
+    jaNoCrm: bool = False
+
+
+class CrmPainelResposta(BaseModel):
+    pipeline: list[CrmPacienteItemResposta] = Field(default_factory=list)
+    finalizados: list[CrmPacienteItemResposta] = Field(default_factory=list)
+    avaliacoes: list[CrmAvaliacaoItemResposta] = Field(default_factory=list)
+
+
+class CrmAtualizacaoPayload(BaseModel):
+    etapa_funil: str = ""
+    canal: str = "Facebook"
+    campanha: str = ""
+    conjunto_anuncio: str = ""
+    anuncio: str = ""
+    responsavel: str = ""
+    proximo_contato: str = ""
+    observacao: str = ""
+    ultima_interacao: str = ""
 
 
 class OdontogramaResposta(BaseModel):
@@ -4400,6 +4464,187 @@ def mapear_agendamento(row: sqlite3.Row) -> AgendamentoResumo:
     )
 
 
+CRM_ETAPAS_PADRAO = [
+    "Novo lead",
+    "Contato inicial",
+    "Tentando contato",
+    "Conversando",
+    "Agendou avaliação",
+    "Em negociação",
+    "Convertido",
+    "Perdido",
+]
+
+
+def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResposta | None:
+    if row is None:
+        return None
+    return CrmPacienteResumoResposta(
+        crmId=int(row["id"]) if row["id"] is not None else None,
+        finalizado=bool(int(row["origem_finalizado"] or 0)),
+        avaliacao=bool(int(row["origem_avaliacao"] or 0)),
+        etapaFunil=str(row["etapa_funil"] or "Novo lead"),
+        campanha=str(row["campanha"] or ""),
+        canal=str(row["canal"] or "Facebook"),
+        ultimaAvaliacaoEm=formatar_data_br_valor(row["ultima_avaliacao_em"]),
+        finalizadoEm=formatar_data_br_valor(row["finalizado_em"]),
+    )
+
+
+def mapear_crm_paciente_item(row: sqlite3.Row) -> CrmPacienteItemResposta:
+    return CrmPacienteItemResposta(
+        id=int(row["id"]),
+        pacienteId=int(row["paciente_id"]),
+        nome=str(row["nome"] or ""),
+        prontuario=formatar_prontuario_valor(row["prontuario"]),
+        telefone=str(row["telefone"] or ""),
+        origemFinalizado=bool(int(row["origem_finalizado"] or 0)),
+        origemAvaliacao=bool(int(row["origem_avaliacao"] or 0)),
+        etapaFunil=str(row["etapa_funil"] or "Novo lead"),
+        canal=str(row["canal"] or "Facebook"),
+        campanha=str(row["campanha"] or ""),
+        conjuntoAnuncio=str(row["conjunto_anuncio"] or ""),
+        anuncio=str(row["anuncio"] or ""),
+        responsavel=str(row["responsavel"] or ""),
+        proximoContato=formatar_data_br_valor(row["proximo_contato"]),
+        observacao=str(row["observacao"] or ""),
+        ultimaInteracao=formatar_data_br_valor(row["ultima_interacao"]),
+        ultimaAvaliacaoEm=formatar_data_br_valor(row["ultima_avaliacao_em"]),
+        finalizadoEm=formatar_data_br_valor(row["finalizado_em"]),
+        atualizadoEm=str(row["atualizado_em"] or ""),
+    )
+
+
+def crm_entry_por_paciente(conn: sqlite3.Connection, paciente_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM crm_pacientes WHERE paciente_id=? LIMIT 1", (int(paciente_id),)).fetchone()
+
+
+def agendamento_eh_avaliacao(row: sqlite3.Row) -> bool:
+    blocos = [
+        str(row["tipo_atendimento_nome_snapshot"] or ""),
+        str(row["procedimento_nome_snapshot"] or ""),
+        str(row["procedimento"] or ""),
+        str(row["observacoes"] or row["observacao"] or ""),
+    ]
+    texto = " ".join(blocos)
+    normalizado = normalizar_texto(texto)
+    return "avaliacao" in normalizado or re.search(r"\baval\b", normalizado) is not None
+
+
+def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResposta]:
+    rows = conn.execute(
+        """
+        SELECT
+            a.id,
+            a.paciente_id,
+            COALESCE(NULLIF(p.nome, ''), NULLIF(a.nome_paciente_snapshot, ''), NULLIF(a.paciente_nome, '')) AS nome,
+            COALESCE(p.prontuario, '') AS prontuario,
+            COALESCE(NULLIF(p.telefone, ''), NULLIF(a.telefone_snapshot, '')) AS telefone,
+            COALESCE(a.data_agendamento, a.data) AS data_referencia,
+            COALESCE(a.hora_inicio, '') AS hora_inicio,
+            COALESCE(a.profissional, '') AS profissional,
+            COALESCE(a.status, '') AS status,
+            COALESCE(NULLIF(a.procedimento_nome_snapshot, ''), NULLIF(a.procedimento, '')) AS procedimento,
+            COALESCE(a.tipo_atendimento_nome_snapshot, '') AS tipo_atendimento,
+            COALESCE(crm.id, 0) AS crm_id,
+            COALESCE(crm.origem_avaliacao, 0) AS origem_avaliacao
+        FROM agendamentos a
+        LEFT JOIN pacientes p ON p.id = a.paciente_id
+        LEFT JOIN crm_pacientes crm ON crm.paciente_id = a.paciente_id
+        WHERE a.paciente_id IS NOT NULL
+        ORDER BY COALESCE(a.data_agendamento, a.data) DESC, COALESCE(a.hora_inicio, '') DESC, a.id DESC
+        """
+    ).fetchall()
+    por_paciente: dict[int, CrmAvaliacaoItemResposta] = {}
+    hoje = date.today()
+    for row in rows:
+        paciente_id = int(row["paciente_id"] or 0)
+        if paciente_id <= 0 or paciente_id in por_paciente:
+            continue
+        if not agendamento_eh_avaliacao(row):
+            continue
+        status = normalizar_texto(str(row["status"] or ""))
+        if status in {"cancelado", "desmarcado", "faltou"}:
+            continue
+        data_ref = parse_data_contrato(row["data_referencia"])
+        if not data_ref or data_ref > hoje:
+            continue
+        data_avaliacao = formatar_data_br_valor(row["data_referencia"])
+        if str(row["hora_inicio"] or "").strip():
+            data_avaliacao = f"{data_avaliacao} {str(row['hora_inicio'] or '').strip()}".strip()
+        por_paciente[paciente_id] = CrmAvaliacaoItemResposta(
+            pacienteId=paciente_id,
+            nome=str(row["nome"] or ""),
+            prontuario=formatar_prontuario_valor(row["prontuario"]),
+            telefone=str(row["telefone"] or ""),
+            dataAvaliacao=data_avaliacao,
+            profissional=str(row["profissional"] or ""),
+            status=str(row["status"] or ""),
+            procedimento=str(row["procedimento"] or row["tipo_atendimento"] or ""),
+            jaNoCrm=bool(int(row["crm_id"] or 0)),
+        )
+    return list(por_paciente.values())
+
+
+def upsert_crm_origem(
+    conn: sqlite3.Connection,
+    paciente_id: int,
+    *,
+    marcar_finalizado: bool = False,
+    marcar_avaliacao: bool = False,
+    usuario: str = "",
+    ultima_avaliacao_em: str = "",
+) -> sqlite3.Row:
+    existente = crm_entry_por_paciente(conn, paciente_id)
+    agora = agora_str()
+    usuario_limpo = str(usuario or "").strip()
+    if existente is None:
+        conn.execute(
+            """
+            INSERT INTO crm_pacientes (
+                paciente_id, origem_finalizado, origem_avaliacao, etapa_funil, canal,
+                ultima_avaliacao_em, finalizado_em, criado_por, atualizado_por, criado_em, atualizado_em
+            )
+            VALUES (?, ?, ?, 'Novo lead', 'Facebook', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(paciente_id),
+                1 if marcar_finalizado else 0,
+                1 if marcar_avaliacao else 0,
+                ultima_avaliacao_em or "",
+                agora if marcar_finalizado else "",
+                usuario_limpo,
+                usuario_limpo,
+                agora,
+                agora,
+            ),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET
+                origem_finalizado=?,
+                origem_avaliacao=?,
+                ultima_avaliacao_em=?,
+                finalizado_em=?,
+                atualizado_por=?,
+                atualizado_em=?
+            WHERE paciente_id=?
+            """,
+            (
+                1 if (bool(int(existente["origem_finalizado"] or 0)) or marcar_finalizado) else 0,
+                1 if (bool(int(existente["origem_avaliacao"] or 0)) or marcar_avaliacao) else 0,
+                ultima_avaliacao_em or str(existente["ultima_avaliacao_em"] or ""),
+                str(existente["finalizado_em"] or "") or (agora if marcar_finalizado else ""),
+                usuario_limpo or str(existente["atualizado_por"] or ""),
+                agora,
+                int(paciente_id),
+            ),
+        )
+    return crm_entry_por_paciente(conn, paciente_id)
+
+
 def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -> FichaPacienteResposta:
     atualizar_status_recebiveis_automaticamente(conn)
     contratos_rows = conn.execute(
@@ -4441,6 +4686,7 @@ def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -
         documentos=listar_documentos_paciente(paciente_row),
         exames=listar_exames_paciente(paciente_row),
         recibos=recibos,
+        crm=mapear_crm_paciente_resumo(crm_entry_por_paciente(conn, int(paciente_row["id"]))),
     )
 
 
@@ -4491,6 +4737,180 @@ def ficha_paciente(paciente_id: int):
         return montar_ficha_paciente(conn, row)
     finally:
         conn.close()
+
+
+@app.get("/api/crm", response_model=CrmPainelResposta)
+def listar_crm():
+    conn = conectar()
+    try:
+        pipeline_rows = conn.execute(
+            """
+            SELECT
+                crm.*,
+                COALESCE(p.nome, '') AS nome,
+                COALESCE(p.prontuario, '') AS prontuario,
+                COALESCE(p.telefone, '') AS telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            ORDER BY
+                CASE COALESCE(crm.etapa_funil, 'Novo lead')
+                    WHEN 'Novo lead' THEN 1
+                    WHEN 'Contato inicial' THEN 2
+                    WHEN 'Tentando contato' THEN 3
+                    WHEN 'Conversando' THEN 4
+                    WHEN 'Agendou avaliação' THEN 5
+                    WHEN 'Em negociação' THEN 6
+                    WHEN 'Convertido' THEN 7
+                    WHEN 'Perdido' THEN 8
+                    ELSE 99
+                END,
+                lower(COALESCE(p.nome, '')),
+                crm.id DESC
+            """
+        ).fetchall()
+        pipeline = [mapear_crm_paciente_item(row) for row in pipeline_rows]
+        finalizados = [item for item in pipeline if item.origemFinalizado]
+        avaliacoes = listar_avaliacoes_crm(conn)
+        return CrmPainelResposta(
+            pipeline=pipeline,
+            finalizados=finalizados,
+            avaliacoes=avaliacoes,
+        )
+    finally:
+        conn.close()
+
+
+@app.post("/api/crm/pacientes/{paciente_id}/finalizado", response_model=CrmPacienteItemResposta)
+def marcar_paciente_finalizado_crm(paciente_id: int, request: Request):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        crm = upsert_crm_origem(
+            conn,
+            paciente_id=int(paciente_id),
+            marcar_finalizado=True,
+            usuario=usuario_request(request),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm["id"]),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Paciente finalizado",
+        info=str(paciente["nome"] or f"Paciente {paciente_id}"),
+        metodo_http="POST",
+        rota=f"/api/crm/pacientes/{paciente_id}/finalizado",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.post("/api/crm/pacientes/{paciente_id}/avaliacao", response_model=CrmPacienteItemResposta)
+def adicionar_paciente_avaliacao_crm(paciente_id: int, request: Request):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        avaliacao = next((item for item in listar_avaliacoes_crm(conn) if item.pacienteId == int(paciente_id)), None)
+        ultima_avaliacao_iso = ""
+        if avaliacao and str(avaliacao.dataAvaliacao or "").strip():
+            data_avaliacao = parse_data_contrato(str(avaliacao.dataAvaliacao).split(" ")[0])
+            ultima_avaliacao_iso = data_avaliacao.isoformat() if data_avaliacao else ""
+        crm = upsert_crm_origem(
+            conn,
+            paciente_id=int(paciente_id),
+            marcar_avaliacao=True,
+            usuario=usuario_request(request),
+            ultima_avaliacao_em=ultima_avaliacao_iso,
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm["id"]),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Paciente avaliação",
+        info=str(paciente["nome"] or f"Paciente {paciente_id}"),
+        metodo_http="POST",
+        rota=f"/api/crm/pacientes/{paciente_id}/avaliacao",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.put("/api/crm/{crm_id}", response_model=CrmPacienteItemResposta)
+def atualizar_item_crm(crm_id: int, payload: CrmAtualizacaoPayload, request: Request):
+    conn = conectar()
+    try:
+        atual = conn.execute("SELECT * FROM crm_pacientes WHERE id=? LIMIT 1", (int(crm_id),)).fetchone()
+        if atual is None:
+            raise HTTPException(status_code=404, detail="Registro de CRM não encontrado.")
+        etapa_funil = str(payload.etapa_funil or atual["etapa_funil"] or "Novo lead").strip() or "Novo lead"
+        if etapa_funil not in CRM_ETAPAS_PADRAO:
+            etapa_funil = "Novo lead"
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET etapa_funil=?, canal=?, campanha=?, conjunto_anuncio=?, anuncio=?,
+                responsavel=?, proximo_contato=?, observacao=?, ultima_interacao=?,
+                atualizado_por=?, atualizado_em=?
+            WHERE id=?
+            """,
+            (
+                etapa_funil,
+                str(payload.canal or atual["canal"] or "Facebook").strip() or "Facebook",
+                str(payload.campanha or "").strip(),
+                str(payload.conjunto_anuncio or "").strip(),
+                str(payload.anuncio or "").strip(),
+                str(payload.responsavel or "").strip(),
+                str(payload.proximo_contato or "").strip(),
+                str(payload.observacao or "").strip(),
+                str(payload.ultima_interacao or "").strip(),
+                usuario_request(request),
+                agora_str(),
+                int(crm_id),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Atualização do funil",
+        info=str(row["nome"] or f"CRM {crm_id}"),
+        metodo_http="PUT",
+        rota=f"/api/crm/{crm_id}",
+    )
+    return mapear_crm_paciente_item(row)
 
 
 @app.put("/api/pacientes/{paciente_id}/recebiveis/{recebivel_id}", response_model=RecebivelResumo)

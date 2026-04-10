@@ -640,6 +640,32 @@ def inicializar_banco():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS crm_pacientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            paciente_id INTEGER UNIQUE,
+            origem_finalizado INTEGER DEFAULT 0,
+            origem_avaliacao INTEGER DEFAULT 0,
+            etapa_funil TEXT DEFAULT 'Novo lead',
+            canal TEXT DEFAULT 'Facebook',
+            campanha TEXT,
+            conjunto_anuncio TEXT,
+            anuncio TEXT,
+            responsavel TEXT,
+            proximo_contato TEXT,
+            observacao TEXT,
+            ultima_interacao TEXT,
+            ultima_avaliacao_em TEXT,
+            finalizado_em TEXT,
+            criado_por TEXT,
+            atualizado_por TEXT,
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS lembretes_agendamento (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             agendamento_id INTEGER,
@@ -1078,6 +1104,24 @@ def inicializar_banco():
     garantir_coluna(conn, "ordem_servico_protetico_etapas", "etapa TEXT")
     garantir_coluna(conn, "ordem_servico_protetico_etapas", "descricao_outro TEXT")
     garantir_coluna(conn, "ordem_servico_protetico_etapas", "criado_em TEXT")
+    garantir_coluna(conn, "crm_pacientes", "paciente_id INTEGER UNIQUE")
+    garantir_coluna(conn, "crm_pacientes", "origem_finalizado INTEGER DEFAULT 0")
+    garantir_coluna(conn, "crm_pacientes", "origem_avaliacao INTEGER DEFAULT 0")
+    garantir_coluna(conn, "crm_pacientes", "etapa_funil TEXT DEFAULT 'Novo lead'")
+    garantir_coluna(conn, "crm_pacientes", "canal TEXT DEFAULT 'Facebook'")
+    garantir_coluna(conn, "crm_pacientes", "campanha TEXT")
+    garantir_coluna(conn, "crm_pacientes", "conjunto_anuncio TEXT")
+    garantir_coluna(conn, "crm_pacientes", "anuncio TEXT")
+    garantir_coluna(conn, "crm_pacientes", "responsavel TEXT")
+    garantir_coluna(conn, "crm_pacientes", "proximo_contato TEXT")
+    garantir_coluna(conn, "crm_pacientes", "observacao TEXT")
+    garantir_coluna(conn, "crm_pacientes", "ultima_interacao TEXT")
+    garantir_coluna(conn, "crm_pacientes", "ultima_avaliacao_em TEXT")
+    garantir_coluna(conn, "crm_pacientes", "finalizado_em TEXT")
+    garantir_coluna(conn, "crm_pacientes", "criado_por TEXT")
+    garantir_coluna(conn, "crm_pacientes", "atualizado_por TEXT")
+    garantir_coluna(conn, "crm_pacientes", "criado_em TEXT")
+    garantir_coluna(conn, "crm_pacientes", "atualizado_em TEXT")
     conn.execute(
         """
         UPDATE agendamentos
@@ -1138,6 +1182,7 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_lembretes_agendamento_id ON lembretes_agendamento(agendamento_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_paciente_id ON ordens_servico_protetico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_etapas_ordem_id ON ordem_servico_protetico_etapas(ordem_servico_id)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pacientes_paciente_id ON crm_pacientes(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")

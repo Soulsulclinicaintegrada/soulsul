@@ -37,7 +37,7 @@ type AgendaConfigUsuario = {
   configuracaoDias: Record<string, AgendaDiaUsuario>;
 };
 
-const MODULOS_BASE = ["Dashboard", "Pacientes", "Agenda", "Financeiro", "Tabelas", "Usuarios"] as const;
+const MODULOS_BASE = ["Dashboard", "Pacientes", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"] as const;
 const ABAS_PACIENTES = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"] as const;
 const OPCOES_PERMISSAO: NivelPermissao[] = ["Sem acesso", "Visualizacao", "Edicao"];
 const DIAS_CURTOS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"] as const;
@@ -97,6 +97,7 @@ function fallbackPermissoesProfissional() {
   const pacientesAbas = Object.fromEntries(ABAS_PACIENTES.map((aba) => [aba, "Sem acesso"])) as Record<string, NivelPermissao>;
   modulos.Pacientes = "Edicao";
   modulos.Agenda = "Visualizacao";
+  modulos.CRM = "Sem acesso";
   pacientesAbas.Documentos = "Edicao";
   pacientesAbas["Plano e Ficha Clinica"] = "Visualizacao";
   pacientesAbas.Odontograma = "Visualizacao";
@@ -116,6 +117,7 @@ function fallbackPermissoesRecepcionista() {
   modulos.Dashboard = "Visualizacao";
   modulos.Pacientes = "Edicao";
   modulos.Agenda = "Edicao";
+  modulos.CRM = "Edicao";
   modulos.Financeiro = "Visualizacao";
   pacientesAbas.Cadastro = "Edicao";
   pacientesAbas.Orcamentos = "Visualizacao";

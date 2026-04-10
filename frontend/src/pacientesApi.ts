@@ -563,6 +563,70 @@ export type FichaPacienteApi = {
   documentos: ArquivoPacienteItemApi[];
   exames: ArquivoPacienteItemApi[];
   recibos: RecebivelResumoApi[];
+  crm?: CrmPacienteResumoApi | null;
+};
+
+export type CrmPacienteResumoApi = {
+  crmId?: number | null;
+  finalizado?: boolean;
+  avaliacao?: boolean;
+  etapaFunil?: string;
+  campanha?: string;
+  canal?: string;
+  ultimaAvaliacaoEm?: string;
+  finalizadoEm?: string;
+};
+
+export type CrmPacienteItemApi = {
+  id: number;
+  pacienteId: number;
+  nome: string;
+  prontuario?: string;
+  telefone?: string;
+  origemFinalizado?: boolean;
+  origemAvaliacao?: boolean;
+  etapaFunil?: string;
+  canal?: string;
+  campanha?: string;
+  conjuntoAnuncio?: string;
+  anuncio?: string;
+  responsavel?: string;
+  proximoContato?: string;
+  observacao?: string;
+  ultimaInteracao?: string;
+  ultimaAvaliacaoEm?: string;
+  finalizadoEm?: string;
+  atualizadoEm?: string;
+};
+
+export type CrmAvaliacaoItemApi = {
+  pacienteId: number;
+  nome: string;
+  prontuario?: string;
+  telefone?: string;
+  dataAvaliacao?: string;
+  profissional?: string;
+  status?: string;
+  procedimento?: string;
+  jaNoCrm?: boolean;
+};
+
+export type CrmPainelApi = {
+  pipeline: CrmPacienteItemApi[];
+  finalizados: CrmPacienteItemApi[];
+  avaliacoes: CrmAvaliacaoItemApi[];
+};
+
+export type CrmAtualizacaoPayloadApi = {
+  etapa_funil: string;
+  canal: string;
+  campanha: string;
+  conjunto_anuncio: string;
+  anuncio: string;
+  responsavel: string;
+  proximo_contato: string;
+  observacao: string;
+  ultima_interacao: string;
 };
 
 function normalizarErro(detail: unknown, fallback: string) {
@@ -680,6 +744,29 @@ export async function detalharPacienteApi(pacienteId: number) {
 
 export async function fichaPacienteApi(pacienteId: number) {
   return fetchJson<FichaPacienteApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/ficha`);
+}
+
+export async function listarCrmApi() {
+  return fetchJson<CrmPainelApi>(`${API_BASE_URL}/api/crm`);
+}
+
+export async function marcarPacienteFinalizadoCrmApi(pacienteId: number) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/finalizado`, {
+    method: "POST"
+  });
+}
+
+export async function adicionarPacienteAvaliacaoCrmApi(pacienteId: number) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/avaliacao`, {
+    method: "POST"
+  });
+}
+
+export async function atualizarCrmApi(crmId: number, payload: CrmAtualizacaoPayloadApi) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/${crmId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function odontogramaPacienteApi(pacienteId: number) {

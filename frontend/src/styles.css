@@ -5427,6 +5427,174 @@ textarea::placeholder {
   font-weight: 700;
 }
 
+.crm-shell {
+  gap: 1rem;
+}
+
+.crm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.crm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.crm-list,
+.crm-pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.crm-list-item,
+.crm-pipeline-card {
+  border: 1px solid rgba(198, 176, 139, 0.28);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.crm-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.crm-list-item strong,
+.crm-pipeline-card strong {
+  display: block;
+  color: #2f241d;
+}
+
+.crm-list-item span,
+.crm-pipeline-card span {
+  color: #7d6b5d;
+  font-size: 0.92rem;
+}
+
+.crm-list-item-meta,
+.crm-inline-actions,
+.crm-footer-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.crm-pipeline-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.crm-pipeline-card-header,
+.crm-pipeline-card-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.crm-origin-tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.crm-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(62, 113, 89, 0.12);
+  color: #2f6d55;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.crm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+
+.crm-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.crm-form-grid label span {
+  color: #7a685a;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.crm-form-grid input,
+.crm-form-grid select,
+.crm-form-grid textarea {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 176, 139, 0.38);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.8rem 0.95rem;
+  font: inherit;
+  color: #2d241c;
+}
+
+.crm-form-grid textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.crm-field-wide {
+  grid-column: 1 / -1;
+}
+
+.crm-pipeline-panel {
+  margin-top: 0.25rem;
+}
+
+.patient-record-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.patient-record-topbar .icon-action {
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .crm-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-pipeline-card-header,
+  .crm-pipeline-card-footer,
+  .crm-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .patient-record-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .agenda-horarios-block-tight {
   padding: 8px 10px;
   border: 1px solid rgba(199, 170, 120, 0.16);

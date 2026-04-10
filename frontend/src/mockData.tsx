@@ -16,6 +16,7 @@ export type MenuKey =
   | "Dashboard"
   | "Pacientes"
   | "Agenda"
+  | "CRM"
   | "Tabelas"
   | "Financeiro"
   | "Usuários";
@@ -111,6 +112,7 @@ export const menuItems: MenuItem[] = [
   { key: "Dashboard", label: "Dashboard", icon: <LayoutDashboard size={19} /> },
   { key: "Pacientes", label: "Pacientes", icon: <CircleUserRound size={19} /> },
   { key: "Agenda", label: "Agenda", icon: <CalendarDays size={19} /> },
+  { key: "CRM", label: "CRM", icon: <TrendingUp size={19} /> },
   { key: "Tabelas", label: "Tabelas", icon: <Import size={19} /> },
   { key: "Financeiro", label: "Financeiro", icon: <BadgeDollarSign size={19} /> },
   { key: "Usuários", label: "Usuários", icon: <Settings size={19} /> }

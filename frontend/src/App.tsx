@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import logoUrl from "../../assets/sou sul marca preta fundo.png";
 import { carregarUsuarioSessao, salvarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { AgendaPage } from "./AgendaPage";
+import { CRMPage } from "./CRMPage";
 import { DashboardPage } from "./DashboardPage";
 import { FinanceiroPage } from "./FinanceiroPage";
 import { ImportacoesPage } from "./ImportacoesPage";
@@ -24,6 +25,7 @@ const MENU_TO_MODULO: Record<MenuKey, string> = {
   Dashboard: "Dashboard",
   Pacientes: "Pacientes",
   Agenda: "Agenda",
+  CRM: "CRM",
   Financeiro: "Financeiro",
   Tabelas: "Tabelas",
   "Usuários": "Usuarios"
@@ -43,6 +45,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
     Dashboard: "Sem acesso",
     Pacientes: "Sem acesso",
     Agenda: "Sem acesso",
+    CRM: "Sem acesso",
     Financeiro: "Sem acesso",
     Tabelas: "Sem acesso",
     Usuarios: "Sem acesso"
@@ -68,6 +71,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   if (cargo === "profissional") {
     modulos.Pacientes = "Edicao";
     modulos.Agenda = "Visualizacao";
+    modulos.CRM = "Sem acesso";
     pacientesAbas.Documentos = "Edicao";
     pacientesAbas["Plano e Ficha Clinica"] = "Visualizacao";
     pacientesAbas.Odontograma = "Visualizacao";
@@ -77,6 +81,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   modulos.Dashboard = "Visualizacao";
   modulos.Pacientes = "Edicao";
   modulos.Agenda = "Edicao";
+  modulos.CRM = "Edicao";
   modulos.Financeiro = "Visualizacao";
   pacientesAbas.Cadastro = "Edicao";
   pacientesAbas.Orcamentos = "Visualizacao";
@@ -156,6 +161,7 @@ function App() {
     if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente, contrato, venda ou vencimento..." };
     if (menuAtivo === "Pacientes") return { titulo: "Pacientes", busca: "Buscar paciente, prontuario, telefone ou CPF..." };
     if (menuAtivo === "Agenda") return { titulo: "Agenda Clinica", busca: "Buscar paciente, profissional, procedimento ou horario..." };
+    if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar lead, paciente, campanha ou etapa..." };
     if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar recebivel, conta a pagar, categoria ou vencimento..." };
     if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar procedimento, categoria ou valor..." };
     return { titulo: "Usuarios", busca: "Buscar usuario, perfil ou permissao..." };
@@ -191,6 +197,21 @@ function App() {
           onAbrirNovoPaciente={() => {
             setNavegacaoPaciente({
               abrirNovoPaciente: true,
+              abaPrincipal: "Cadastro",
+              chave: Date.now()
+            });
+            setMenuAtivo("Pacientes");
+          }}
+        />
+      );
+    }
+    if (menuAtivo === "CRM") {
+      return (
+        <CRMPage
+          busca={buscaGlobal}
+          onAbrirPaciente={(pacienteId) => {
+            setNavegacaoPaciente({
+              pacienteId,
               abaPrincipal: "Cadastro",
               chave: Date.now()
             });

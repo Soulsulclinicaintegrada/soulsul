@@ -1,0 +1,351 @@
+import { CalendarDays, CheckCircle2, Megaphone, Save, Search, UserRoundPlus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  adicionarPacienteAvaliacaoCrmApi,
+  atualizarCrmApi,
+  listarCrmApi,
+  type CrmAvaliacaoItemApi,
+  type CrmPacienteItemApi,
+} from "./pacientesApi";
+
+type CRMPageProps = {
+  busca: string;
+  onAbrirPaciente?: (pacienteId: number) => void;
+};
+
+const ETAPAS_CRM = [
+  "Novo lead",
+  "Contato inicial",
+  "Tentando contato",
+  "Conversando",
+  "Agendou avaliação",
+  "Em negociação",
+  "Convertido",
+  "Perdido",
+] as const;
+
+function paraDataInput(valor?: string) {
+  const texto = String(valor || "").trim();
+  if (!texto) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(texto)) {
+    const [dia, mes, ano] = texto.split("/");
+    return `${ano}-${mes}-${dia}`;
+  }
+  return "";
+}
+
+function normalizarItemCrm(item: CrmPacienteItemApi): CrmPacienteItemApi {
+  return {
+    ...item,
+    proximoContato: paraDataInput(item.proximoContato),
+    ultimaInteracao: paraDataInput(item.ultimaInteracao),
+  };
+}
+
+function normalizarTexto(valor: string) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function correspondeBusca(item: { nome?: string; prontuario?: string; telefone?: string; campanha?: string; etapaFunil?: string }, termo: string) {
+  if (!termo) return true;
+  const alvo = normalizarTexto([
+    item.nome || "",
+    item.prontuario || "",
+    item.telefone || "",
+    item.campanha || "",
+    item.etapaFunil || "",
+  ].join(" "));
+  return alvo.includes(termo);
+}
+
+export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
+  const [pipeline, setPipeline] = useState<CrmPacienteItemApi[]>([]);
+  const [finalizados, setFinalizados] = useState<CrmPacienteItemApi[]>([]);
+  const [avaliacoes, setAvaliacoes] = useState<CrmAvaliacaoItemApi[]>([]);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [salvandoId, setSalvandoId] = useState<number | null>(null);
+  const [adicionandoAvaliacaoId, setAdicionandoAvaliacaoId] = useState<number | null>(null);
+
+  async function carregarPainel() {
+    setCarregando(true);
+    setErro(null);
+    try {
+      const resposta = await listarCrmApi();
+      setPipeline((resposta.pipeline || []).map(normalizarItemCrm));
+      setFinalizados((resposta.finalizados || []).map(normalizarItemCrm));
+      setAvaliacoes(resposta.avaliacoes || []);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao carregar o CRM.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  useEffect(() => {
+    void carregarPainel();
+  }, []);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
+  const termoBusca = normalizarTexto(busca);
+
+  const pipelineFiltrado = useMemo(
+    () => pipeline.filter((item) => correspondeBusca(item, termoBusca)),
+    [pipeline, termoBusca]
+  );
+  const finalizadosFiltrados = useMemo(
+    () => finalizados.filter((item) => correspondeBusca(item, termoBusca)),
+    [finalizados, termoBusca]
+  );
+  const avaliacoesFiltradas = useMemo(
+    () =>
+      avaliacoes.filter((item) =>
+        correspondeBusca(
+          {
+            nome: item.nome,
+            prontuario: item.prontuario,
+            telefone: item.telefone,
+            campanha: item.procedimento,
+            etapaFunil: item.status,
+          },
+          termoBusca
+        )
+      ),
+    [avaliacoes, termoBusca]
+  );
+
+  function atualizarItemLocal(crmId: number, parcial: Partial<CrmPacienteItemApi>) {
+    const aplicar = (lista: CrmPacienteItemApi[]) =>
+      lista.map((item) => (item.id === crmId ? { ...item, ...parcial } : item));
+    setPipeline((atual) => aplicar(atual));
+    setFinalizados((atual) => aplicar(atual));
+  }
+
+  async function salvarItem(item: CrmPacienteItemApi) {
+    setSalvandoId(item.id);
+    setErro(null);
+    try {
+      const atualizado = await atualizarCrmApi(item.id, {
+        etapa_funil: item.etapaFunil || "Novo lead",
+        canal: item.canal || "Facebook",
+        campanha: item.campanha || "",
+        conjunto_anuncio: item.conjuntoAnuncio || "",
+        anuncio: item.anuncio || "",
+        responsavel: item.responsavel || "",
+        proximo_contato: item.proximoContato || "",
+        observacao: item.observacao || "",
+        ultima_interacao: item.ultimaInteracao || "",
+      });
+      atualizarItemLocal(item.id, normalizarItemCrm(atualizado));
+      setFeedback(`CRM salvo para ${atualizado.nome}.`);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar o CRM.");
+    } finally {
+      setSalvandoId(null);
+    }
+  }
+
+  async function adicionarAvaliacaoAoCrm(pacienteId: number) {
+    setAdicionandoAvaliacaoId(pacienteId);
+    setErro(null);
+    try {
+      await adicionarPacienteAvaliacaoCrmApi(pacienteId);
+      setFeedback("Paciente de avaliação enviado para o CRM.");
+      await carregarPainel();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao levar avaliação para o CRM.");
+    } finally {
+      setAdicionandoAvaliacaoId(null);
+    }
+  }
+
+  return (
+    <section className="module-shell crm-shell">
+      <section className="module-kpis">
+        <article className="panel module-kpi-card">
+          <span className="panel-kicker">Funil</span>
+          <strong>{pipeline.length}</strong>
+          <span>pacientes trabalhando no CRM</span>
+        </article>
+        <article className="panel module-kpi-card">
+          <span className="panel-kicker">Finalizados</span>
+          <strong>{finalizados.length}</strong>
+          <span>vindos do botão do paciente</span>
+        </article>
+        <article className="panel module-kpi-card">
+          <span className="panel-kicker">Avaliações</span>
+          <strong>{avaliacoes.length}</strong>
+          <span>detectadas pelos agendamentos</span>
+        </article>
+      </section>
+
+      {erro ? <p className="users-password-feedback error">{erro}</p> : null}
+      {feedback ? <p className="users-password-feedback success">{feedback}</p> : null}
+
+      <section className="crm-grid">
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Entrada manual</span>
+              <h2>Pacientes finalizados</h2>
+            </div>
+            <CheckCircle2 size={18} />
+          </div>
+          <div className="crm-list">
+            {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
+            {!carregando && finalizadosFiltrados.map((item) => (
+              <article key={`finalizado-${item.id}`} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.finalizadoEm ? `Finalizado em ${item.finalizadoEm}` : "No CRM"}</span>
+                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                </div>
+              </article>
+            ))}
+            {!carregando && !finalizadosFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente finalizado no CRM.</strong></div> : null}
+          </div>
+        </article>
+
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Entrada automática</span>
+              <h2>Pacientes que fizeram avaliação</h2>
+            </div>
+            <CalendarDays size={18} />
+          </div>
+          <div className="crm-list">
+            {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
+            {!carregando && avaliacoesFiltradas.map((item) => (
+              <article key={`avaliacao-${item.pacienteId}`} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.dataAvaliacao || "-"} · {item.procedimento || "Avaliação"} · {item.profissional || "-"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.jaNoCrm ? "Já está no CRM" : item.telefone || "Sem telefone"}</span>
+                  <div className="crm-inline-actions">
+                    <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                    <button
+                      type="button"
+                      className="primary-action"
+                      onClick={() => void adicionarAvaliacaoAoCrm(item.pacienteId)}
+                      disabled={item.jaNoCrm || adicionandoAvaliacaoId === item.pacienteId}
+                    >
+                      <UserRoundPlus size={15} />
+                      {item.jaNoCrm ? "No CRM" : adicionandoAvaliacaoId === item.pacienteId ? "Enviando..." : "Levar ao CRM"}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {!carregando && !avaliacoesFiltradas.length ? <div className="module-subitem"><strong>Nenhuma avaliação encontrada.</strong></div> : null}
+          </div>
+        </article>
+      </section>
+
+      <section className="panel crm-panel crm-pipeline-panel">
+        <div className="section-title-row">
+          <div>
+            <span className="panel-kicker">Campanhas</span>
+            <h2>Fluxo do Facebook</h2>
+          </div>
+          <Megaphone size={18} />
+        </div>
+
+        <div className="crm-pipeline-list">
+          {carregando ? <div className="module-subitem"><strong>Carregando funil...</strong></div> : null}
+          {!carregando && pipelineFiltrado.map((item) => (
+            <article key={item.id} className="crm-pipeline-card">
+              <header className="crm-pipeline-card-header">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-origin-tags">
+                  {item.origemFinalizado ? <span className="crm-tag">Finalizado</span> : null}
+                  {item.origemAvaliacao ? <span className="crm-tag">Avaliação</span> : null}
+                </div>
+              </header>
+
+              <div className="crm-form-grid">
+                <label>
+                  <span>Etapa do funil</span>
+                  <select value={item.etapaFunil || "Novo lead"} onChange={(event) => atualizarItemLocal(item.id, { etapaFunil: event.target.value })}>
+                    {ETAPAS_CRM.map((etapa) => (
+                      <option key={etapa} value={etapa}>{etapa}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Canal</span>
+                  <input value={item.canal || "Facebook"} onChange={(event) => atualizarItemLocal(item.id, { canal: event.target.value })} />
+                </label>
+                <label>
+                  <span>Campanha</span>
+                  <input value={item.campanha || ""} onChange={(event) => atualizarItemLocal(item.id, { campanha: event.target.value })} />
+                </label>
+                <label>
+                  <span>Conjunto</span>
+                  <input value={item.conjuntoAnuncio || ""} onChange={(event) => atualizarItemLocal(item.id, { conjuntoAnuncio: event.target.value })} />
+                </label>
+                <label>
+                  <span>Anúncio</span>
+                  <input value={item.anuncio || ""} onChange={(event) => atualizarItemLocal(item.id, { anuncio: event.target.value })} />
+                </label>
+                <label>
+                  <span>Responsável</span>
+                  <input value={item.responsavel || ""} onChange={(event) => atualizarItemLocal(item.id, { responsavel: event.target.value })} />
+                </label>
+                <label>
+                  <span>Próximo contato</span>
+                  <input type="date" value={item.proximoContato || ""} onChange={(event) => atualizarItemLocal(item.id, { proximoContato: event.target.value })} />
+                </label>
+                <label>
+                  <span>Última interação</span>
+                  <input type="date" value={item.ultimaInteracao || ""} onChange={(event) => atualizarItemLocal(item.id, { ultimaInteracao: event.target.value })} />
+                </label>
+                <label className="crm-field-wide">
+                  <span>Observações da campanha</span>
+                  <textarea value={item.observacao || ""} rows={4} onChange={(event) => atualizarItemLocal(item.id, { observacao: event.target.value })} />
+                </label>
+              </div>
+
+              <footer className="crm-pipeline-card-footer">
+                <div className="crm-footer-meta">
+                  <span>{item.ultimaAvaliacaoEm ? `Avaliação: ${item.ultimaAvaliacaoEm}` : "Sem avaliação registrada"}</span>
+                  <span>{item.finalizadoEm ? `Finalizado: ${item.finalizadoEm}` : "Sem finalização registrada"}</span>
+                </div>
+                <div className="crm-inline-actions">
+                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>
+                    <Search size={15} />
+                    Abrir paciente
+                  </button>
+                  <button type="button" className="primary-action" onClick={() => void salvarItem(item)} disabled={salvandoId === item.id}>
+                    <Save size={15} />
+                    {salvandoId === item.id ? "Salvando..." : "Salvar CRM"}
+                  </button>
+                </div>
+              </footer>
+            </article>
+          ))}
+          {!carregando && !pipelineFiltrado.length ? <div className="module-subitem"><strong>Nenhum lead no funil.</strong></div> : null}
+        </div>
+      </section>
+    </section>
+  );
+}
