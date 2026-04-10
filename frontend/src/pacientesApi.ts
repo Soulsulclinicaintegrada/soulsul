@@ -86,6 +86,7 @@ export type ProcedimentoResumoApi = {
   duracaoPadraoMinutos?: number;
   descricao?: string;
   etapasPadrao?: string[];
+  materiaisPadrao?: string[];
   ativo: boolean;
 };
 
@@ -124,6 +125,7 @@ export type ProcedimentoPayload = {
   duracao_padrao_minutos: number;
   descricao: string;
   etapas_padrao: string[];
+  materiais_padrao: string[];
   ativo: boolean;
 };
 

@@ -17,6 +17,7 @@ type ProcedimentoForm = {
   duracaoPadraoMinutos: string;
   descricao: string;
   etapasPadrao: string;
+  materiaisPadrao: string;
   ativo: boolean;
 };
 
@@ -27,6 +28,7 @@ const FORM_INICIAL: ProcedimentoForm = {
   duracaoPadraoMinutos: "60",
   descricao: "",
   etapasPadrao: "",
+  materiaisPadrao: "",
   ativo: true
 };
 
@@ -52,6 +54,7 @@ function mapProcedimentoParaForm(item?: ProcedimentoResumoApi | null): Procedime
     duracaoPadraoMinutos: String(item.duracaoPadraoMinutos || 60),
     descricao: item.descricao || "",
     etapasPadrao: (item.etapasPadrao || []).join("\n"),
+    materiaisPadrao: (item.materiaisPadrao || []).join("\n"),
     ativo: item.ativo
   };
 }
@@ -132,6 +135,7 @@ export function ImportacoesPage() {
       duracao_padrao_minutos: Number(form.duracaoPadraoMinutos || 60),
       descricao: form.descricao.trim(),
       etapas_padrao: form.etapasPadrao.split("\n").map((item) => item.trim()).filter(Boolean),
+      materiais_padrao: form.materiaisPadrao.split("\n").map((item) => item.trim()).filter(Boolean),
       ativo: form.ativo
     };
     if (!payload.nome) {
@@ -300,6 +304,10 @@ export function ImportacoesPage() {
               <label className="procedures-form-wide">
                 <span>Etapas de laboratório (uma por linha)</span>
                 <textarea value={form.etapasPadrao} onChange={(event) => setForm((atual) => ({ ...atual, etapasPadrao: event.target.value }))} rows={6} />
+              </label>
+              <label className="procedures-form-wide">
+                <span>Materiais permitidos na ordem de serviço (um por linha)</span>
+                <textarea value={form.materiaisPadrao} onChange={(event) => setForm((atual) => ({ ...atual, materiaisPadrao: event.target.value }))} rows={6} />
               </label>
               <label className="procedures-inline-check">
                 <input type="checkbox" checked={form.ativo} onChange={(event) => setForm((atual) => ({ ...atual, ativo: event.target.checked }))} />

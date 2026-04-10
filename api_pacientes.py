@@ -813,6 +813,7 @@ class ProcedimentoResumoResposta(BaseModel):
     duracaoPadraoMinutos: int = 60
     descricao: str = ""
     etapasPadrao: list[str] = Field(default_factory=list)
+    materiaisPadrao: list[str] = Field(default_factory=list)
     ativo: bool = True
 
 
@@ -823,6 +824,7 @@ class ProcedimentoPayload(BaseModel):
     duracao_padrao_minutos: int = 60
     descricao: str = ""
     etapas_padrao: list[str] = Field(default_factory=list)
+    materiais_padrao: list[str] = Field(default_factory=list)
     ativo: bool = True
 
 
@@ -1223,6 +1225,7 @@ def mapear_usuario_resumo(usuario_row: sqlite3.Row) -> UsuarioResumoResposta:
 
 def mapear_procedimento_resumo(row: sqlite3.Row) -> ProcedimentoResumoResposta:
     etapas: list[str] = []
+    materiais: list[str] = []
     texto_etapas = str(row["etapas_json"] or "").strip()
     if texto_etapas:
         try:
@@ -1231,6 +1234,14 @@ def mapear_procedimento_resumo(row: sqlite3.Row) -> ProcedimentoResumoResposta:
                 etapas = [corrigir_texto_importado(str(item).strip()) for item in bruto if str(item).strip()]
         except Exception:
             etapas = []
+    texto_materiais = str(row["materiais_json"] or "").strip()
+    if texto_materiais:
+        try:
+            bruto = json.loads(texto_materiais)
+            if isinstance(bruto, list):
+                materiais = [corrigir_texto_importado(str(item).strip()) for item in bruto if str(item).strip()]
+        except Exception:
+            materiais = []
     return ProcedimentoResumoResposta(
         id=int(row["id"]),
         nome=corrigir_texto_importado(str(row["nome"] or "")),
@@ -1239,6 +1250,7 @@ def mapear_procedimento_resumo(row: sqlite3.Row) -> ProcedimentoResumoResposta:
         duracaoPadraoMinutos=int(row["duracao_padrao_minutos"] or 60),
         descricao=corrigir_texto_importado(str(row["descricao"] or "")),
         etapasPadrao=etapas,
+        materiaisPadrao=materiais,
         ativo=bool(int(row["ativo"] or 0)),
     )
 
@@ -1624,6 +1636,7 @@ def criar_procedimento(payload: ProcedimentoPayload, request: Request):
     nome = corrigir_texto_importado(str(payload.nome or "").strip())
     categoria = corrigir_texto_importado(str(payload.categoria or "").strip())
     descricao = corrigir_texto_importado(str(payload.descricao or "").strip())
+    materiais_padrao = [corrigir_texto_importado(str(item).strip()) for item in payload.materiais_padrao if str(item).strip()]
     if not nome:
         raise HTTPException(status_code=400, detail="Informe o nome do procedimento.")
 
@@ -1638,8 +1651,8 @@ def criar_procedimento(payload: ProcedimentoPayload, request: Request):
         cursor = conn.execute(
             """
             INSERT INTO procedimentos
-            (nome, categoria, valor_padrao, duracao_padrao_minutos, descricao, etapas_json, cor_opcional, ativo, criado_em, atualizado_em)
-            VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?)
+            (nome, categoria, valor_padrao, duracao_padrao_minutos, descricao, etapas_json, materiais_json, cor_opcional, ativo, criado_em, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
             """,
             (
                 nome,
@@ -1648,6 +1661,7 @@ def criar_procedimento(payload: ProcedimentoPayload, request: Request):
                 max(5, int(payload.duracao_padrao_minutos or 60)),
                 descricao,
                 json.dumps([corrigir_texto_importado(str(item).strip()) for item in payload.etapas_padrao if str(item).strip()], ensure_ascii=False),
+                json.dumps(materiais_padrao, ensure_ascii=False),
                 1 if payload.ativo else 0,
                 agora_str(),
                 agora_str(),
@@ -1673,6 +1687,7 @@ def atualizar_procedimento(procedimento_id: int, payload: ProcedimentoPayload, r
     nome = corrigir_texto_importado(str(payload.nome or "").strip())
     categoria = corrigir_texto_importado(str(payload.categoria or "").strip())
     descricao = corrigir_texto_importado(str(payload.descricao or "").strip())
+    materiais_padrao = [corrigir_texto_importado(str(item).strip()) for item in payload.materiais_padrao if str(item).strip()]
     if not nome:
         raise HTTPException(status_code=400, detail="Informe o nome do procedimento.")
 
@@ -1690,7 +1705,7 @@ def atualizar_procedimento(procedimento_id: int, payload: ProcedimentoPayload, r
         conn.execute(
             """
             UPDATE procedimentos
-            SET nome=?, categoria=?, valor_padrao=?, duracao_padrao_minutos=?, descricao=?, etapas_json=?, ativo=?, atualizado_em=?
+            SET nome=?, categoria=?, valor_padrao=?, duracao_padrao_minutos=?, descricao=?, etapas_json=?, materiais_json=?, ativo=?, atualizado_em=?
             WHERE id=?
             """,
             (
@@ -1700,6 +1715,7 @@ def atualizar_procedimento(procedimento_id: int, payload: ProcedimentoPayload, r
                 max(5, int(payload.duracao_padrao_minutos or 60)),
                 descricao,
                 json.dumps([corrigir_texto_importado(str(item).strip()) for item in payload.etapas_padrao if str(item).strip()], ensure_ascii=False),
+                json.dumps(materiais_padrao, ensure_ascii=False),
                 1 if payload.ativo else 0,
                 agora_str(),
                 int(procedimento_id),
@@ -1833,6 +1849,9 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         carga_imediata = bool(payload.carga_imediata)
         if not material:
             raise HTTPException(status_code=400, detail="Selecione o material.")
+        materiais_validos = mapear_procedimento_resumo(procedimento).materiaisPadrao
+        if materiais_validos and material not in materiais_validos:
+            raise HTTPException(status_code=400, detail="Selecione um material permitido para o procedimento.")
         if normalizar_texto(material) == "outro" and not material_outro:
             raise HTTPException(status_code=400, detail="Descreva o material quando selecionar Outro.")
         if not elemento_arcada:

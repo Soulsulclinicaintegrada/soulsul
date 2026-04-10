@@ -567,6 +567,7 @@ def inicializar_banco():
             duracao_padrao_minutos INTEGER DEFAULT 60,
             descricao TEXT,
             etapas_json TEXT,
+            materiais_json TEXT,
             cor_opcional TEXT,
             ativo INTEGER DEFAULT 1,
             criado_em TEXT,
@@ -915,6 +916,7 @@ def inicializar_banco():
     garantir_coluna(conn, "procedimentos", "duracao_padrao_minutos INTEGER DEFAULT 60")
     garantir_coluna(conn, "procedimentos", "descricao TEXT")
     garantir_coluna(conn, "procedimentos", "etapas_json TEXT")
+    garantir_coluna(conn, "procedimentos", "materiais_json TEXT")
     garantir_coluna(conn, "procedimentos", "cor_opcional TEXT")
     garantir_coluna(conn, "procedimentos", "ativo INTEGER DEFAULT 1")
     garantir_coluna(conn, "procedimentos", "criado_em TEXT")

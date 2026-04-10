@@ -174,6 +174,7 @@ type ProcedimentoCatalogo = {
   duracaoPadraoMinutos?: number;
   ativo?: boolean;
   etapasPadrao?: string[];
+  materiaisPadrao?: string[];
 };
 
 type OrdemServicoForm = {
@@ -784,7 +785,8 @@ function mapProcedimentoCatalogoApi(item: ProcedimentoResumoApi): ProcedimentoCa
     categoria: item.categoria || "",
     duracaoPadraoMinutos: item.duracaoPadraoMinutos || 60,
     ativo: item.ativo,
-    etapasPadrao: item.etapasPadrao || []
+    etapasPadrao: item.etapasPadrao || [],
+    materiaisPadrao: item.materiaisPadrao || []
   };
 }
 
@@ -1102,6 +1104,11 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     () => procedimentosCatalogo.find((item) => item.id === Number(ordemServicoForm.procedimentoId)) || null,
     [ordemServicoForm.procedimentoId, procedimentosCatalogo]
   );
+  const materiaisOrdemServicoDisponiveis = useMemo(() => {
+    if (!procedimentoOrdemServicoSelecionado) return [...MATERIAIS_ORDEM_SERVICO];
+    const materiais = (procedimentoOrdemServicoSelecionado.materiaisPadrao || []).filter(Boolean);
+    return materiais.length ? materiais : [...MATERIAIS_ORDEM_SERVICO];
+  }, [procedimentoOrdemServicoSelecionado]);
   const procedimentosContratadosPaciente = useMemo(() => {
     const nomesContratados = new Set(
       (ficha?.contratos || [])
@@ -1123,6 +1130,16 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     if (!modalPagamentoAberto) return;
     setPlanoPagamentoEditor((atual) => normalizarPlanoPagamento(atual, totalOrcamentoFinal, orcamentoDraft.data));
   }, [modalPagamentoAberto, totalOrcamentoFinal, orcamentoDraft.data]);
+
+  useEffect(() => {
+    if (!ordemServicoForm.material) return;
+    if (materiaisOrdemServicoDisponiveis.includes(ordemServicoForm.material)) return;
+    setOrdemServicoForm((atual) => ({
+      ...atual,
+      material: "",
+      materialOutro: ""
+    }));
+  }, [materiaisOrdemServicoDisponiveis, ordemServicoForm.material]);
 
   async function salvarNovoPaciente() {
     setSalvandoNovo(true);
@@ -2922,7 +2939,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
               }
             >
               <option value="">Selecione</option>
-              {MATERIAIS_ORDEM_SERVICO.map((item) => (
+              {materiaisOrdemServicoDisponiveis.map((item) => (
                 <option key={item} value={item}>{item}</option>
               ))}
             </select>
