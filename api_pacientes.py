@@ -3674,7 +3674,6 @@ def gerar_documento_ordem_servico(
     if not tabelas:
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico invalido.")
 
-    tabela = tabelas[0]
     data_emissao = agora_local().strftime("%d/%m/%Y %H:%M")
     material_final = material if normalizar_texto(material) != "outro" else f"OUTRO - {material_outro}"
     etapas_texto = " | ".join(
@@ -3695,8 +3694,10 @@ def gerar_documento_ordem_servico(
         f"ESCALA: {escala}" if str(escala or "").strip() else "ESCALA:",
         f"COR: {cor}" if str(cor or "").strip() else "COR:",
     ]
-    linhas_final = [
+    linhas_carga = [
         f"CARGA IMEDIATA: {texto_ordem_servico_carga_imediata(carga_imediata)}",
+    ]
+    linhas_final = [
         "FORA DE PRAZO:",
         f"ETAPAS: {etapas_texto}" if etapas_texto else "ETAPAS:",
     ]
@@ -3704,13 +3705,15 @@ def gerar_documento_ordem_servico(
         linhas_final.append(f"OBSERVAÇÃO: {observacao.strip()}")
 
     try:
-        total_colunas = len(tabela.columns)
-        colunas_alvo = range(total_colunas) if total_colunas else [0]
-        for coluna in colunas_alvo:
-            preencher_celula_multilinha(tabela.cell(0, coluna), linhas_topo)
-            preencher_celula_multilinha(tabela.cell(1, coluna), linhas_servico)
-            preencher_celula_multilinha(tabela.cell(2, coluna), linhas_final)
-        remover_linhas_extras_tabela_docx(tabela, 3)
+        for tabela in tabelas:
+            total_colunas = len(tabela.columns)
+            colunas_alvo = range(total_colunas) if total_colunas else [0]
+            for coluna in colunas_alvo:
+                preencher_celula_multilinha(tabela.cell(0, coluna), linhas_topo)
+                preencher_celula_multilinha(tabela.cell(1, coluna), linhas_servico)
+                preencher_celula_multilinha(tabela.cell(2, coluna), linhas_carga)
+                preencher_celula_multilinha(tabela.cell(3, coluna), linhas_final)
+            remover_linhas_extras_tabela_docx(tabela, 4)
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Falha ao preencher ordem de servico: {exc}") from exc
 
