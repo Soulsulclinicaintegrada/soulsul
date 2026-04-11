@@ -3404,6 +3404,49 @@ def listar_documentos_paciente(paciente_row: sqlite3.Row) -> list[ArquivoPacient
     return itens
 
 
+def extrair_contrato_id_documento(nome_arquivo: str) -> int | None:
+    nome = os.path.basename(str(nome_arquivo or "").strip())
+    if not nome.upper().startswith("CONTRATO_"):
+        return None
+    sem_extensao, _ = os.path.splitext(nome)
+    partes = sem_extensao.split("_")
+    for indice, parte in enumerate(partes):
+        if parte.isdigit() and indice + 1 < len(partes) and partes[indice + 1].isdigit():
+            return int(parte)
+    return None
+
+
+def limpar_documentos_contrato_variantes(paciente_row: sqlite3.Row, contrato_id: int) -> None:
+    if not os.path.isdir(DOCS_DIR):
+        return
+    prefixo = nome_base_contrato(paciente_row, contrato_id).upper()
+    for nome_arquivo in os.listdir(DOCS_DIR):
+        caminho = os.path.join(DOCS_DIR, nome_arquivo)
+        if not os.path.isfile(caminho):
+            continue
+        nome_upper = str(nome_arquivo or "").upper()
+        if nome_upper.startswith(prefixo) and nome_upper.endswith((".DOCX", ".HTML")):
+            os.remove(caminho)
+
+
+def resolver_documento_contrato_atual(
+    conn: sqlite3.Connection,
+    paciente_row: sqlite3.Row,
+    nome_arquivo: str,
+) -> str | None:
+    contrato_id = extrair_contrato_id_documento(nome_arquivo)
+    if contrato_id is None:
+        return None
+    contrato = conn.execute(
+        "SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1",
+        (contrato_id, int(paciente_row["id"])),
+    ).fetchone()
+    if contrato is None:
+        return None
+    limpar_documentos_contrato_variantes(paciente_row, contrato_id)
+    return gerar_documento_contrato(conn, paciente_row, contrato, contrato_id)
+
+
 def buscar_documento_paciente(paciente_row: sqlite3.Row, nome_arquivo: str) -> str:
     nome_busca = os.path.basename(str(nome_arquivo or "").strip())
     if not nome_busca:
@@ -4466,11 +4509,7 @@ def gerar_documento_contrato(
 
 
 def limpar_documento_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> None:
-    base = nome_base_contrato(paciente_row, contrato_id)
-    for extensao in (".docx", ".html"):
-        caminho = os.path.join(DOCS_DIR, f"{base}{extensao}")
-        if os.path.isfile(caminho):
-            os.remove(caminho)
+    limpar_documentos_contrato_variantes(paciente_row, contrato_id)
 
 
 def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqlite3.Row, contrato: sqlite3.Row, contrato_id: int) -> None:
@@ -5579,7 +5618,7 @@ def abrir_documento_paciente(paciente_id: int, nome_arquivo: str, download: int 
     conn = conectar()
     try:
         paciente_row = carregar_paciente_por_id(conn, paciente_id)
-        caminho = buscar_documento_paciente(paciente_row, nome_arquivo)
+        caminho = resolver_documento_contrato_atual(conn, paciente_row, nome_arquivo) or buscar_documento_paciente(paciente_row, nome_arquivo)
         media_type = None
         extensao = os.path.splitext(caminho)[1].lower()
         if extensao == ".html":
