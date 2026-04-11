@@ -11,6 +11,10 @@ import json
 from datetime import date, datetime
 from shutil import copyfile
 import base64
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,10 +70,17 @@ FOTOS_DIR = os.path.join("dados_pacientes", "fotos")
 TEMPLATE_PATH = "modelo_documento.docx"
 TEMPLATE_ORDEM_SERVICO_PATH = "ORDEM DE SERVIÇO PROTÉTICO.docx"
 CONTAS_CAIXA_MODELO = ["CAIXA", "SICOOB", "INFINITEPAY", "PAGBANK", "C6"]
+TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo") if ZoneInfo is not None else None
 
 
 def agora_str() -> str:
     return datetime.now().isoformat(sep=" ", timespec="seconds")
+
+
+def agora_local() -> datetime:
+    if TIMEZONE_LOCAL is not None:
+        return datetime.now(TIMEZONE_LOCAL)
+    return datetime.now()
 
 
 def formatar_data_br(data_obj: date | None) -> str:
@@ -3552,14 +3563,14 @@ def nome_base_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> str:
 
 
 def nome_arquivo_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> str:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = agora_local().strftime("%Y%m%d_%H%M%S")
     return f"{nome_base_contrato(paciente_row, contrato_id)}_{timestamp}.docx"
 
 
 def nome_arquivo_ordem_servico(paciente_row: sqlite3.Row, ordem_id: int) -> str:
     nome = limpar_nome(str(paciente_row["nome"] or "")).replace(" ", "_")
     prontuario = formatar_prontuario_valor(paciente_row["prontuario"])
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = agora_local().strftime("%Y%m%d_%H%M%S")
     return f"ORDEM_SERVICO_{nome}_{prontuario}_{ordem_id}_{timestamp}.docx"
 
 
@@ -3593,6 +3604,11 @@ def preencher_celula_multilinha(celula, linhas: list[str]) -> None:
             celula.add_paragraph(linha)
 
 
+def remover_linhas_extras_tabela_docx(tabela, manter_total: int) -> None:
+    while len(tabela.rows) > manter_total:
+        tabela._tbl.remove(tabela.rows[-1]._tr)
+
+
 def gerar_documento_ordem_servico(
     paciente_row: sqlite3.Row,
     ordem_id: int,
@@ -3616,7 +3632,7 @@ def gerar_documento_ordem_servico(
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico invalido.")
 
     tabela = tabelas[0]
-    data_emissao = datetime.now().strftime("%d/%m/%Y %H:%M")
+    data_emissao = agora_local().strftime("%d/%m/%Y %H:%M")
     material_final = material if normalizar_texto(material) != "outro" else f"OUTRO - {material_outro}"
     etapas_texto = " | ".join(
         f"{etapa}: {descricao}" if normalizar_texto(etapa) == "outro" and descricao else etapa
@@ -3651,8 +3667,7 @@ def gerar_documento_ordem_servico(
             preencher_celula_multilinha(tabela.cell(0, coluna), linhas_topo)
             preencher_celula_multilinha(tabela.cell(1, coluna), linhas_servico)
             preencher_celula_multilinha(tabela.cell(2, coluna), linhas_final)
-            if len(tabela.rows) > 3:
-                preencher_celula_multilinha(tabela.cell(3, coluna), [])
+        remover_linhas_extras_tabela_docx(tabela, 3)
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Falha ao preencher ordem de servico: {exc}") from exc
 
@@ -4308,6 +4323,59 @@ def gerar_html_contrato_fallback(
     return caminho_html
 
 
+def gerar_docx_contrato_fallback(
+    paciente_row: sqlite3.Row,
+    contrato_id: int,
+    procedimentos: list[dict],
+    plano: list[dict],
+) -> str:
+    if Document is None:
+        return gerar_html_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
+
+    nome_arquivo = nome_arquivo_contrato(paciente_row, contrato_id)
+    caminho = os.path.join(DOCS_DIR, nome_arquivo)
+    doc = Document()
+    doc.add_heading(f"Contrato #{contrato_id}", level=1)
+    doc.add_paragraph(f"Paciente: {formatar_titulo(valor_row(paciente_row, 'nome'))}")
+    doc.add_paragraph(f"Prontuário: {formatar_prontuario_valor(paciente_row['prontuario'])}")
+    doc.add_paragraph("")
+
+    doc.add_paragraph("Procedimentos")
+    tabela_proc = doc.add_table(rows=1, cols=4)
+    header_proc = tabela_proc.rows[0].cells
+    header_proc[0].text = "Procedimento"
+    header_proc[1].text = "Profissional"
+    header_proc[2].text = "Dentição"
+    header_proc[3].text = "Valor"
+    for row in procedimentos:
+        cells = tabela_proc.add_row().cells
+        cells[0].text = str(row.get("procedimento", "") or "")
+        cells[1].text = str(row.get("profissional_snapshot", "") or "")
+        cells[2].text = str(row.get("denticao_snapshot", "") or "")
+        cells[3].text = formatar_moeda_br(row.get("valor", 0))
+
+    doc.add_paragraph("")
+    doc.add_paragraph("Plano de pagamento")
+    tabela_pag = doc.add_table(rows=1, cols=4)
+    header_pag = tabela_pag.rows[0].cells
+    header_pag[0].text = "Descrição"
+    header_pag[1].text = "Data"
+    header_pag[2].text = "Forma"
+    header_pag[3].text = "Valor"
+    for item in plano:
+        if float(item.get("valor", 0) or 0) <= 0:
+            continue
+        cells = tabela_pag.add_row().cells
+        cells[0].text = str(item.get("descricao", "") or "")
+        cells[1].text = formatar_data_br_valor(item.get("data"))
+        cells[2].text = str(item.get("forma", "") or "").replace("_", " ")
+        cells[3].text = formatar_moeda_br(item.get("valor", 0))
+
+    aplicar_fonte_times_new_roman(doc)
+    doc.save(caminho)
+    return caminho
+
+
 def gerar_documento_contrato(
     conn: sqlite3.Connection,
     paciente_row: sqlite3.Row,
@@ -4321,7 +4389,7 @@ def gerar_documento_contrato(
     caminho = os.path.join(DOCS_DIR, nome_arquivo)
 
     if Document is None or not os.path.isfile(TEMPLATE_PATH):
-        return gerar_html_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
+        return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
     try:
         doc = Document(TEMPLATE_PATH)
@@ -4392,8 +4460,9 @@ def gerar_documento_contrato(
         aplicar_fonte_times_new_roman(doc)
         doc.save(caminho)
         return caminho
-    except Exception:
-        return gerar_html_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
+    except Exception as exc:
+        print(f"[contrato] fallback docx acionado contrato={contrato_id} erro={exc}", flush=True)
+        return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
 
 def limpar_documento_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> None:
