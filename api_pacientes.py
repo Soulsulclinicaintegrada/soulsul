@@ -3451,7 +3451,7 @@ def extrair_contrato_id_documento(nome_arquivo: str) -> int | None:
     numericos = [parte for parte in partes if parte.isdigit()]
     if not numericos:
         return None
-    if len(numericos) >= 2 and len(numericos[-1]) >= 8:
+    if len(numericos) >= 3 and len(numericos[-1]) >= 8 and len(numericos[-2]) >= 8:
         return int(numericos[-2])
     return int(numericos[-1])
 
