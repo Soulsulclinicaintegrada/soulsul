@@ -3383,27 +3383,63 @@ def listar_exames_paciente(paciente_row: sqlite3.Row) -> list[ArquivoPacienteIte
     return itens
 
 
-def listar_documentos_paciente(paciente_row: sqlite3.Row) -> list[ArquivoPacienteItem]:
+def listar_documentos_paciente(paciente_row: sqlite3.Row, conn: sqlite3.Connection | None = None) -> list[ArquivoPacienteItem]:
     if not os.path.isdir(DOCS_DIR):
-        return []
-    prontuario = normalizar_texto(formatar_prontuario_valor(paciente_row["prontuario"]))
-    nome = normalizar_texto(limpar_nome(paciente_row["nome"]))
-    itens: list[ArquivoPacienteItem] = []
-    for nome_arquivo in sorted(os.listdir(DOCS_DIR), reverse=True):
-        caminho = os.path.join(DOCS_DIR, nome_arquivo)
-        if not os.path.isfile(caminho):
-            continue
-        nome_norm = normalizar_texto(nome_arquivo)
-        if (prontuario and prontuario in nome_norm) or (nome and nome in nome_norm):
+        itens: list[ArquivoPacienteItem] = []
+    else:
+        prontuario = normalizar_texto(formatar_prontuario_valor(paciente_row["prontuario"]))
+        nome = normalizar_texto(limpar_nome(paciente_row["nome"]))
+        itens = []
+        for nome_arquivo in sorted(os.listdir(DOCS_DIR), reverse=True):
+            caminho = os.path.join(DOCS_DIR, nome_arquivo)
+            if not os.path.isfile(caminho):
+                continue
+            if str(nome_arquivo or "").upper().startswith("CONTRATO_"):
+                continue
+            nome_norm = normalizar_texto(nome_arquivo)
+            if (prontuario and prontuario in nome_norm) or (nome and nome in nome_norm):
+                itens.append(
+                    ArquivoPacienteItem(
+                        nome=nome_arquivo,
+                        caminho=caminho,
+                        modificadoEm=formatar_data_br(datetime.fromtimestamp(os.path.getmtime(caminho)).date()),
+                        extensao=os.path.splitext(nome_arquivo)[1].lower(),
+                    )
+                )
+
+    conexao_local = False
+    if conn is None:
+        conn = conectar()
+        conexao_local = True
+    try:
+        contratos_rows = conn.execute(
+            "SELECT id, data_criacao FROM contratos WHERE paciente_id=? ORDER BY COALESCE(data_criacao, '') DESC, id DESC",
+            (int(paciente_row["id"]),),
+        ).fetchall()
+        for row in contratos_rows:
+            contrato_id = int(row["id"])
+            nome_virtual = f"{nome_base_contrato(paciente_row, contrato_id)}.docx"
+            data_ref = parse_data_contrato(row["data_criacao"]) or date.today()
             itens.append(
                 ArquivoPacienteItem(
-                    nome=nome_arquivo,
-                    caminho=caminho,
-                    modificadoEm=formatar_data_br(datetime.fromtimestamp(os.path.getmtime(caminho)).date()),
-                    extensao=os.path.splitext(nome_arquivo)[1].lower(),
+                    nome=nome_virtual,
+                    caminho=os.path.join(DOCS_DIR, nome_virtual),
+                    modificadoEm=formatar_data_br(data_ref),
+                    extensao=".docx",
                 )
             )
-    return itens
+    finally:
+        if conexao_local and conn is not None:
+            conn.close()
+
+    vistos: set[str] = set()
+    itens_unicos: list[ArquivoPacienteItem] = []
+    for item in itens:
+        if item.nome in vistos:
+            continue
+        vistos.add(item.nome)
+        itens_unicos.append(item)
+    return itens_unicos
 
 
 def extrair_contrato_id_documento(nome_arquivo: str) -> int | None:
@@ -3412,10 +3448,12 @@ def extrair_contrato_id_documento(nome_arquivo: str) -> int | None:
         return None
     sem_extensao, _ = os.path.splitext(nome)
     partes = sem_extensao.split("_")
-    for indice, parte in enumerate(partes):
-        if parte.isdigit() and indice + 1 < len(partes) and partes[indice + 1].isdigit():
-            return int(parte)
-    return None
+    numericos = [parte for parte in partes if parte.isdigit()]
+    if not numericos:
+        return None
+    if len(numericos) >= 2 and len(numericos[-1]) >= 8:
+        return int(numericos[-2])
+    return int(numericos[-1])
 
 
 def limpar_documentos_contrato_variantes(paciente_row: sqlite3.Row, contrato_id: int) -> None:
@@ -4837,7 +4875,7 @@ def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -
         financeiro=resumo_financeiro_paciente(recebiveis_rows),
         agendamentos=agendamentos,
         proximoAgendamento=mapear_agendamento(proximo) if proximo else None,
-        documentos=listar_documentos_paciente(paciente_row),
+        documentos=listar_documentos_paciente(paciente_row, conn),
         exames=listar_exames_paciente(paciente_row),
         recibos=recibos,
         crm=mapear_crm_paciente_resumo(crm_entry_por_paciente(conn, int(paciente_row["id"]))),
