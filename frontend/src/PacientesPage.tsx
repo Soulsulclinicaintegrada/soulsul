@@ -845,11 +845,14 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
   const [salvandoRecebivel, setSalvandoRecebivel] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [fotoVersao, setFotoVersao] = useState(0);
+  const [fotoErro, setFotoErro] = useState(false);
   const ultimoCepNovo = useRef("");
   const ultimoCepEdicao = useRef("");
   const inputFotoPacienteRef = useRef<HTMLInputElement | null>(null);
 
   const pacienteDetalhe = ficha?.paciente ?? null;
+  const fotoPacienteSrc = pacienteDetalhe?.fotoUrl ? `${urlFotoPaciente(pacienteDetalhe.id)}?v=${fotoVersao}` : "";
   const buscaAtiva = busca.trim().length > 0;
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
   const orcamentoBloqueado = orcamentoStatusAtual === "APROVADO";
@@ -1199,6 +1202,8 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     setErro(null);
     try {
       await enviarFotoPacienteApi(pacienteAtivoId, arquivo);
+      setFotoErro(false);
+      setFotoVersao(Date.now());
       setFeedback("Foto do paciente atualizada com sucesso.");
       await carregarLista();
       await carregarFicha(pacienteAtivoId);
@@ -1209,6 +1214,11 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       event.target.value = "";
     }
   }
+
+  useEffect(() => {
+    setFotoErro(false);
+    setFotoVersao(Date.now());
+  }, [pacienteDetalhe?.id, pacienteDetalhe?.fotoUrl]);
 
   async function aplicarCep(form: PacienteForm, setter: (valor: PacienteForm) => void) {
     const cep = form.cep.replace(/\D/g, "");
@@ -2046,8 +2056,8 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       <article className="patient-hero">
         <div className="patient-hero-left">
           <button type="button" className="patient-big-avatar patient-big-avatar-button" onClick={() => inputFotoPacienteRef.current?.click()}>
-            {pacienteDetalhe.fotoUrl ? (
-              <img src={urlFotoPaciente(pacienteDetalhe.id)} alt={pacienteDetalhe.nome} />
+            {pacienteDetalhe.fotoUrl && !fotoErro ? (
+              <img src={fotoPacienteSrc} alt={pacienteDetalhe.nome} onError={() => setFotoErro(true)} />
             ) : (
               iniciais(pacienteDetalhe.nome)
             )}
@@ -2431,7 +2441,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
           </div>
           <button
             type="button"
-            className="icon-action"
+            className="icon-action patient-finalizar-action"
             onClick={() => void enviarPacienteFinalizadoParaCrm()}
             disabled={salvandoCrmFinalizado}
           >
@@ -2482,8 +2492,8 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                     </div>
                     <div className="patient-photo-upload-row">
                       <button type="button" className="patient-photo-upload" onClick={() => inputFotoPacienteRef.current?.click()} disabled={enviandoFoto}>
-                        {pacienteDetalhe?.fotoUrl ? (
-                          <img src={urlFotoPaciente(pacienteDetalhe.id)} alt={pacienteDetalhe.nome} />
+                        {pacienteDetalhe?.fotoUrl && !fotoErro ? (
+                          <img src={fotoPacienteSrc} alt={pacienteDetalhe.nome} onError={() => setFotoErro(true)} />
                         ) : (
                           <span>{iniciais(editForm.nome || pacienteDetalhe?.nome || "P")}</span>
                         )}

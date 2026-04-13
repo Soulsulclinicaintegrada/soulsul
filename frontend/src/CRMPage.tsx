@@ -3,14 +3,25 @@ import { useEffect, useMemo, useState } from "react";
 import {
   adicionarPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
+  listarPacientesApi,
   listarCrmApi,
   type CrmAvaliacaoItemApi,
   type CrmPacienteItemApi,
 } from "./pacientesApi";
+import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
 
 type CRMPageProps = {
   busca: string;
   onAbrirPaciente?: (pacienteId: number) => void;
+};
+
+type RelatorioCrmItem = {
+  chave: string;
+  pacienteId: number;
+  nome: string;
+  prontuario: string;
+  telefone: string;
+  detalhe: string;
 };
 
 const ETAPAS_CRM = [
@@ -63,10 +74,32 @@ function correspondeBusca(item: { nome?: string; prontuario?: string; telefone?:
   return alvo.includes(termo);
 }
 
+function hojeIso() {
+  const agora = new Date();
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+}
+
+function adicionarDias(dataIso: string, dias: number) {
+  const data = new Date(`${dataIso}T12:00:00`);
+  data.setDate(data.getDate() + dias);
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+}
+
+function dataNascimentoDiaMes(valor?: string) {
+  const texto = String(valor || "").trim();
+  const match = texto.match(/^(\d{2})\/(\d{2})\/\d{4}$/);
+  if (!match) return null;
+  return { dia: Number(match[1]), mes: Number(match[2]) };
+}
+
 export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [pipeline, setPipeline] = useState<CrmPacienteItemApi[]>([]);
   const [finalizados, setFinalizados] = useState<CrmPacienteItemApi[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<CrmAvaliacaoItemApi[]>([]);
+  const [relatorioSemAgendamento, setRelatorioSemAgendamento] = useState<RelatorioCrmItem[]>([]);
+  const [relatorioAniversariantes, setRelatorioAniversariantes] = useState<RelatorioCrmItem[]>([]);
+  const [relatorioFaltaram, setRelatorioFaltaram] = useState<RelatorioCrmItem[]>([]);
+  const [relatorioDesmarcaram, setRelatorioDesmarcaram] = useState<RelatorioCrmItem[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -77,10 +110,79 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setCarregando(true);
     setErro(null);
     try {
-      const resposta = await listarCrmApi();
+      const hoje = hojeIso();
+      const inicioHistorico = adicionarDias(hoje, -90);
+      const fimFuturo = adicionarDias(hoje, 180);
+      const [resposta, pacientes, agendamentos] = await Promise.all([
+        listarCrmApi(),
+        listarPacientesApi(""),
+        listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/")),
+      ]);
       setPipeline((resposta.pipeline || []).map(normalizarItemCrm));
       setFinalizados((resposta.finalizados || []).map(normalizarItemCrm));
       setAvaliacoes(resposta.avaliacoes || []);
+
+      const finalizadosIds = new Set((resposta.finalizados || []).map((item) => item.pacienteId));
+      const futurosAtivos = agendamentos.filter((item) => {
+        const status = normalizarTexto(item.status || "");
+        if (status === "desmarcado" || status === "cancelado" || status === "faltou") return false;
+        const dataIso = (item.data || "").split("/").reverse().join("-");
+        return dataIso >= hoje;
+      });
+      const idsComAgendaFutura = new Set(futurosAtivos.map((item) => item.pacienteId).filter((id): id is number => Boolean(id)));
+
+      setRelatorioSemAgendamento(
+        pacientes
+          .filter((item) => !finalizadosIds.has(item.id) && !idsComAgendaFutura.has(item.id))
+          .map((item) => ({
+            chave: `sem-agenda-${item.id}`,
+            pacienteId: item.id,
+            nome: item.nome,
+            prontuario: item.prontuario || "",
+            telefone: item.telefone || "",
+            detalhe: "Sem agendamento futuro e não finalizado",
+          }))
+          .slice(0, 80)
+      );
+
+      const mesAtual = Number(hoje.split("-")[1]);
+      setRelatorioAniversariantes(
+        pacientes
+          .map((item) => ({ item, nascimento: dataNascimentoDiaMes(item.dataNascimento) }))
+          .filter((item) => item.nascimento?.mes === mesAtual)
+          .sort((a, b) => (a.nascimento?.dia || 0) - (b.nascimento?.dia || 0))
+          .map(({ item, nascimento }) => ({
+            chave: `aniversario-${item.id}`,
+            pacienteId: item.id,
+            nome: item.nome,
+            prontuario: item.prontuario || "",
+            telefone: item.telefone || "",
+            detalhe: nascimento ? `Aniversário em ${String(nascimento.dia).padStart(2, "0")}/${String(nascimento.mes).padStart(2, "0")}` : "Sem data válida",
+          }))
+      );
+
+      const mapearAgendamentoRelatorio = (prefixo: string, item: AgendaApiAgendamento): RelatorioCrmItem => ({
+        chave: `${prefixo}-${item.id}`,
+        pacienteId: item.pacienteId || 0,
+        nome: item.paciente || "Paciente",
+        prontuario: item.prontuario || "",
+        telefone: item.telefone || "",
+        detalhe: `${item.data || "-"} · ${item.inicio || "-"} · ${item.profissional || "-"} · ${(item.procedimentos || []).join(", ") || "-"}`,
+      });
+
+      setRelatorioFaltaram(
+        agendamentos
+          .filter((item) => normalizarTexto(item.status || "") === "faltou")
+          .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
+          .map((item) => mapearAgendamentoRelatorio("faltou", item))
+      );
+
+      setRelatorioDesmarcaram(
+        agendamentos
+          .filter((item) => normalizarTexto(item.status || "") === "desmarcado")
+          .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
+          .map((item) => mapearAgendamentoRelatorio("desmarcou", item))
+      );
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar o CRM.");
     } finally {
@@ -123,6 +225,22 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         )
       ),
     [avaliacoes, termoBusca]
+  );
+  const semAgendamentoFiltrados = useMemo(
+    () => relatorioSemAgendamento.filter((item) => correspondeBusca(item, termoBusca)),
+    [relatorioSemAgendamento, termoBusca]
+  );
+  const aniversariantesFiltrados = useMemo(
+    () => relatorioAniversariantes.filter((item) => correspondeBusca(item, termoBusca)),
+    [relatorioAniversariantes, termoBusca]
+  );
+  const faltaramFiltrados = useMemo(
+    () => relatorioFaltaram.filter((item) => correspondeBusca(item, termoBusca)),
+    [relatorioFaltaram, termoBusca]
+  );
+  const desmarcaramFiltrados = useMemo(
+    () => relatorioDesmarcaram.filter((item) => correspondeBusca(item, termoBusca)),
+    [relatorioDesmarcaram, termoBusca]
   );
 
   function atualizarItemLocal(crmId: number, parcial: Partial<CrmPacienteItemApi>) {
@@ -254,6 +372,110 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </article>
             ))}
             {!carregando && !avaliacoesFiltradas.length ? <div className="module-subitem"><strong>Nenhuma avaliação encontrada.</strong></div> : null}
+          </div>
+        </article>
+      </section>
+
+      <section className="crm-grid">
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Relatório</span>
+              <h2>Não finalizados sem agendamento</h2>
+            </div>
+            <Search size={18} />
+          </div>
+          <div className="crm-list">
+            {!carregando && semAgendamentoFiltrados.map((item) => (
+              <article key={item.chave} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.detalhe}</span>
+                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                </div>
+              </article>
+            ))}
+            {!carregando && !semAgendamentoFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente nesta condição.</strong></div> : null}
+          </div>
+        </article>
+
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Relatório</span>
+              <h2>Aniversariantes do mês</h2>
+            </div>
+            <CalendarDays size={18} />
+          </div>
+          <div className="crm-list">
+            {!carregando && aniversariantesFiltrados.map((item) => (
+              <article key={item.chave} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.detalhe}</span>
+                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                </div>
+              </article>
+            ))}
+            {!carregando && !aniversariantesFiltrados.length ? <div className="module-subitem"><strong>Nenhum aniversariante encontrado.</strong></div> : null}
+          </div>
+        </article>
+      </section>
+
+      <section className="crm-grid">
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Relatório</span>
+              <h2>Pacientes que faltaram</h2>
+            </div>
+            <CalendarDays size={18} />
+          </div>
+          <div className="crm-list">
+            {!carregando && faltaramFiltrados.map((item) => (
+              <article key={item.chave} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.detalhe}</span>
+                  {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
+                </div>
+              </article>
+            ))}
+            {!carregando && !faltaramFiltrados.length ? <div className="module-subitem"><strong>Nenhuma falta registrada.</strong></div> : null}
+          </div>
+        </article>
+
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Relatório</span>
+              <h2>Pacientes que desmarcaram</h2>
+            </div>
+            <CalendarDays size={18} />
+          </div>
+          <div className="crm-list">
+            {!carregando && desmarcaramFiltrados.map((item) => (
+              <article key={item.chave} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.detalhe}</span>
+                  {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
+                </div>
+              </article>
+            ))}
+            {!carregando && !desmarcaramFiltrados.length ? <div className="module-subitem"><strong>Nenhuma desmarcação registrada.</strong></div> : null}
           </div>
         </article>
       </section>

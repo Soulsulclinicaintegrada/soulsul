@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
@@ -17,15 +18,18 @@ from importar_pacientes_planilha import should_import_row as should_import_patie
 
 
 BASE_DOWNLOADS = Path(r"C:\Users\jusgo\Downloads")
-PATIENTS_XLSX = BASE_DOWNLOADS / "Patient (1).xlsx"
-BUDGETS_XLSX = BASE_DOWNLOADS / "Budgets (1).xlsx"
-PAYMENT_HEADER_XLSX = BASE_DOWNLOADS / "PaymentHeader (1).xlsx"
-PAYMENT_ITEM_XLSX = BASE_DOWNLOADS / "PaymentItem (1).xlsx"
+PATIENTS_XLSX = BASE_DOWNLOADS / "Patient (2).xlsx"
+BUDGETS_XLSX = BASE_DOWNLOADS / "Budgets (2).xlsx"
+PAYMENT_HEADER_XLSX = BASE_DOWNLOADS / "PaymentHeader (2).xlsx"
+PAYMENT_ITEM_XLSX = BASE_DOWNLOADS / "PaymentItem (2).xlsx"
 BOOK_ENTRY_FILES = [
+    BASE_DOWNLOADS / "BookEntry (4).xlsx",
     BASE_DOWNLOADS / "BookEntry.xlsx",
     BASE_DOWNLOADS / "BookEntry (1).xlsx",
+    BASE_DOWNLOADS / "BookEntry (2).xlsx",
+    BASE_DOWNLOADS / "BookEntry (3).xlsx",
 ]
-APPOINTMENT_XLSX = BASE_DOWNLOADS / "Appointment (1).xlsx"
+APPOINTMENT_XLSX = BASE_DOWNLOADS / "Appointment (3).xlsx"
 TREATMENT_OPERATION_XLSX = BASE_DOWNLOADS / "TreatmentOperation.xlsx"
 
 NOW = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -89,10 +93,11 @@ def parse_datetime(value: Any) -> str:
     text = clean_str(value)
     if not text:
         return ""
+    iso_like = bool(re.match(r"^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$", text))
     try:
-        parsed = pd.to_datetime(text, utc=False, errors="coerce", dayfirst=True)
+        parsed = pd.to_datetime(text, utc=False, errors="coerce", dayfirst=not iso_like)
     except Exception:
-        parsed = pd.to_datetime(text, errors="coerce", dayfirst=True)
+        parsed = pd.to_datetime(text, errors="coerce", dayfirst=not iso_like)
     if pd.isna(parsed):
         return ""
     try:
@@ -801,7 +806,7 @@ def import_operational_data() -> dict[str, int]:
     headers_df = load_dataframe(PAYMENT_HEADER_XLSX)
     items_df = load_dataframe(PAYMENT_ITEM_XLSX)
     appointment_df = load_dataframe(APPOINTMENT_XLSX)
-    treatment_operation_df = load_dataframe(TREATMENT_OPERATION_XLSX)
+    treatment_operation_df = load_dataframe(TREATMENT_OPERATION_XLSX) if TREATMENT_OPERATION_XLSX.exists() else pd.DataFrame()
     _ = treatment_operation_df  # reservado para uso futuro; orçamento já leva ProcedureCondition.
 
     book_parts = [load_dataframe(path) for path in BOOK_ENTRY_FILES if path.exists()]

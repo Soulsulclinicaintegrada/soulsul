@@ -131,10 +131,11 @@ type ConfigProfissionalAgenda = {
   cor: string;
   corSuave: string;
   maxAgendamentosPorHorario: number;
-  configuracaoDias: Record<number, { ativo: boolean; inicio: string; fim: string; almocoInicio: string; almocoFim: string }>;
+  configuracaoDias: Record<number, { ativo: boolean; inicio: string; fim: string; almocoInicio: string; almocoFim: string; consultorio?: string }>;
 };
 
 type AgendaConfiguracaoPersistida = {
+  totalConsultorios?: number;
   ordemProfissionais: number[];
   configClinicaDias: Record<number, { ativo: boolean; inicio: string; fim: string; almocoInicio: string; almocoFim: string }>;
   configProfissionais: ConfigProfissionalAgenda[];
@@ -247,6 +248,17 @@ function construirProfissionaisBase(usuarios: UsuarioResumoApi[]) {
     }));
 }
 
+function construirProfissionalImportado(nome: string, indice: number) {
+  const nomeLimpo = nome.trim() || "Profissional";
+  return {
+    id: idProfissionalImportado(nomeLimpo),
+    nome: nomeLimpo,
+    usuarioVinculado: nomeLimpo,
+    cor: CORES_AGENDA[indice % CORES_AGENDA.length],
+    corSuave: suavizarCor(CORES_AGENDA[indice % CORES_AGENDA.length])
+  };
+}
+
 function normalizarTextoAgenda(valor: string) {
   return (valor || "")
     .normalize("NFD")
@@ -307,10 +319,11 @@ function criarConfiguracaoDiasPadrao() {
         inicio: "08:00",
         fim: indice === 4 ? "18:00" : "19:00",
         almocoInicio: "12:00",
-        almocoFim: "13:00"
+        almocoFim: "13:00",
+        consultorio: ""
       }
     ])
-  ) as Record<number, { ativo: boolean; inicio: string; fim: string; almocoInicio: string; almocoFim: string }>;
+  ) as Record<number, { ativo: boolean; inicio: string; fim: string; almocoInicio: string; almocoFim: string; consultorio?: string }>;
 }
 
 function criarConfigProfissionaisPadrao(profissionaisBase: Array<{ id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>) {
@@ -539,8 +552,16 @@ function ProcedimentoBadge({
 export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente }: AgendaPageProps) {
   const usuarioAtual = (usuarioLogado?.nome || "Usuário").trim() || "Usuário";
   const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioResumoApi[]>([]);
+  const [profissionaisImportados, setProfissionaisImportados] = useState<Array<{ id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>>([]);
   const profissionaisUsuariosBase = useMemo(() => construirProfissionaisBase(usuariosAgenda), [usuariosAgenda]);
-  const profissionaisBase = profissionaisUsuariosBase;
+  const profissionaisBase = useMemo(() => {
+    const mapa = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
+    profissionaisUsuariosBase.forEach((item) => mapa.set(item.id, item));
+    profissionaisImportados.forEach((item) => {
+      if (!mapa.has(item.id)) mapa.set(item.id, item);
+    });
+    return Array.from(mapa.values());
+  }, [profissionaisImportados, profissionaisUsuariosBase]);
   const usuariosAgendaDisponiveis = useMemo(() => profissionaisBase.map((item) => item.nome), [profissionaisBase]);
   const dataInicialHoje = hojeIso();
   const [visao, setVisao] = useState<AgendaView>("Dia");
@@ -991,6 +1012,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setProfissionaisSelecionados((atual) =>
       atual.includes(profissionalId) ? atual.filter((id) => id !== profissionalId) : [...atual, profissionalId]
     );
+  }
+
+  function selecionarSomenteProfissional(profissionalId: number) {
+    setProfissionaisSelecionados([profissionalId]);
   }
 
   function abrirNovoAgendamento(slot: SlotRascunho) {
@@ -1618,15 +1643,26 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       ])
     );
 
-    const ajustados: AgendaEventoUI[] = carregados.flatMap((evento) => {
-        const profissionalIdResolvido =
-          evento.profissionalId && evento.profissionalId > 0
-            ? evento.profissionalId
-            : mapaProfissionais.get(normalizarTextoAgenda(evento.profissional));
-        if (!profissionalIdResolvido) return [];
-        return [{ ...evento, profissionalId: profissionalIdResolvido, marcadores: [] }];
-      });
+    const importadosMap = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
+    const ajustados: AgendaEventoUI[] = carregados.map((evento) => {
+      const profissionalIdResolvido =
+        evento.profissionalId && evento.profissionalId > 0
+          ? evento.profissionalId
+          : mapaProfissionais.get(normalizarTextoAgenda(evento.profissional)) ?? idProfissionalImportado(evento.profissional);
 
+      if (!mapaProfissionais.has(normalizarTextoAgenda(evento.profissional)) && evento.profissional.trim()) {
+        importadosMap.set(
+          profissionalIdResolvido,
+          construirProfissionalImportado(evento.profissional, importadosMap.size + profissionaisUsuariosBase.length)
+        );
+      }
+
+      return { ...evento, profissionalId: profissionalIdResolvido, marcadores: [] };
+    });
+
+    const idsImportados = Array.from(importadosMap.keys());
+    setProfissionaisImportados(Array.from(importadosMap.values()));
+    setProfissionaisSelecionados((atual) => [...new Set([...atual, ...idsImportados])]);
     setEventos(ajustados);
   }
 
@@ -1967,15 +2003,28 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
             </div>
             <div className="agenda-profissionais-list">
               {profissionaisDisponiveis.map((profissional) => (
-                <button
+                <div
                   key={profissional.id}
-                  type="button"
                   className={`agenda-prof-option${profissionaisSelecionados.includes(profissional.id) ? " active" : ""}`}
-                  onClick={() => toggleProfissional(profissional.id)}
                 >
-                  <span className="agenda-prof-option-dot" style={{ background: profissional.cor }} />
-                  {nomeAgendaProfissional(profissional.id)}
-                </button>
+                  <button
+                    type="button"
+                    className="agenda-prof-option-dot-button"
+                    onClick={() => selecionarSomenteProfissional(profissional.id)}
+                    title="Mostrar somente este profissional"
+                    aria-label={`Mostrar somente ${nomeAgendaProfissional(profissional.id)}`}
+                  >
+                    <span className="agenda-prof-option-dot" style={{ background: profissional.cor }} />
+                  </button>
+                  <button
+                    type="button"
+                    className="agenda-prof-option-label"
+                    onClick={() => toggleProfissional(profissional.id)}
+                    title="Adicionar ou remover da seleção"
+                  >
+                    {nomeAgendaProfissional(profissional.id)}
+                  </button>
+                </div>
               ))}
             </div>
           </div>

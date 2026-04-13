@@ -54,6 +54,7 @@ except ImportError:  # pragma: no cover
     Side = None
 
 from database import (
+    DB_PATH,
     SENHA_PADRAO_USUARIOS,
     conectar,
     corrigir_texto_importado,
@@ -64,9 +65,10 @@ from database import (
 )
 
 
-DOCS_DIR = "documentos"
-EXAMES_DIR = os.path.join("dados_pacientes", "exames")
-FOTOS_DIR = os.path.join("dados_pacientes", "fotos")
+ARQUIVOS_BASE_DIR = os.path.dirname(os.path.abspath(DB_PATH)) or "."
+DOCS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "documentos")
+EXAMES_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "exames")
+FOTOS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "fotos")
 TEMPLATE_PATH = "modelo_documento.docx"
 TEMPLATE_ORDEM_SERVICO_PATH = "ORDEM DE SERVIÇO PROTÉTICO.docx"
 CONTAS_CAIXA_MODELO = ["CAIXA", "SICOOB", "INFINITEPAY", "PAGBANK", "C6"]
@@ -3584,8 +3586,14 @@ def gerar_html_recibo_manual(recibo: sqlite3.Row) -> str:
 
 def buscar_foto_paciente(paciente_row: sqlite3.Row) -> str:
     caminho = str(paciente_row["foto_path"] or "").strip()
-    if not caminho or not os.path.isfile(caminho):
-        raise HTTPException(status_code=404, detail="Foto nao encontrada.")
+    if caminho and os.path.isfile(caminho):
+        return caminho
+    pasta = pasta_fotos_paciente(paciente_row)
+    for extensao in (".png", ".jpg", ".jpeg", ".webp"):
+        candidato = os.path.join(pasta, f"foto{extensao}")
+        if os.path.isfile(candidato):
+            return candidato
+    raise HTTPException(status_code=404, detail="Foto nao encontrada.")
     return caminho
 
 

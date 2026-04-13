@@ -107,6 +107,7 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
   backdrop-filter: blur(12px);
 }
 
@@ -194,6 +195,10 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .sidebar-user-footer {
@@ -4734,7 +4739,6 @@ textarea::placeholder {
 }
 
 .agenda-prof-option {
-  appearance: none;
   width: 100%;
   border: 1px solid rgba(199, 170, 120, 0.16);
   background: rgba(255, 255, 255, 0.92);
@@ -4746,6 +4750,31 @@ textarea::placeholder {
   text-align: left;
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.agenda-prof-option-dot-button,
+.agenda-prof-option-label {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.agenda-prof-option-dot-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.agenda-prof-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
 }
 
 .agenda-prof-option:hover,
@@ -5571,6 +5600,17 @@ textarea::placeholder {
 
 .patient-record-topbar .icon-action {
   white-space: nowrap;
+}
+
+.patient-record-tabs {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.patient-finalizar-action {
+  flex: 0 0 auto;
+  min-width: 210px;
+  justify-content: center;
 }
 
 @media (max-width: 980px) {
