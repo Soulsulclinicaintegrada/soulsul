@@ -102,6 +102,8 @@ const ABAS_FICHA: AbaFicha[] = [
   { label: "Orçamentos", principal: "Comercial" as AbaPrincipal },
   { label: "Financeiro", principal: "Financeiro" as AbaPrincipal },
   { label: "Documentos", principal: "Documentos" as AbaPrincipal, documentos: "Documentos" as AbaDocumentos },
+  { label: "Documentos", principal: "Documentos" as AbaPrincipal, documentos: "Exames" as AbaDocumentos },
+  { label: "Documentos", principal: "Documentos" as AbaPrincipal, documentos: "Recibos" as AbaDocumentos },
   { label: "Ordem de serviço", principal: "Ordem de serviço" as AbaPrincipal },
   { label: "Plano e Ficha Clínica", principal: "Clínico" as AbaPrincipal, clinica: "Plano e ficha clínica" as AbaClinica },
   { label: "Odontograma", principal: "Clínico" as AbaPrincipal, clinica: "Odontograma" as AbaClinica },
