@@ -38,6 +38,12 @@ function nivelPermissao(valor?: string) {
   return 0;
 }
 
+function textoPermissao(nivel: number) {
+  if (nivel >= 2) return "Edicao";
+  if (nivel >= 1) return "Visualizacao";
+  return "Sem acesso";
+}
+
 function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   const cargo = String(usuario?.cargo || "").trim().toLowerCase();
   const perfil = String(usuario?.perfil || "").trim().toLowerCase();
@@ -95,8 +101,16 @@ function mesclarPermissoes(
   padrao: { modulos: Record<string, string>; pacientesAbas: Record<string, string> },
   sessao?: UsuarioSessao | null
 ) {
-  const modulos = { ...padrao.modulos, ...(sessao?.modulos || {}) };
-  const pacientesAbas = { ...padrao.pacientesAbas, ...(sessao?.pacientesAbas || {}) };
+  const modulos = { ...padrao.modulos };
+  Object.entries(sessao?.modulos || {}).forEach(([chave, valor]) => {
+    modulos[chave] = textoPermissao(Math.max(nivelPermissao(modulos[chave]), nivelPermissao(valor)));
+  });
+
+  const pacientesAbas = { ...padrao.pacientesAbas };
+  Object.entries(sessao?.pacientesAbas || {}).forEach(([chave, valor]) => {
+    pacientesAbas[chave] = textoPermissao(Math.max(nivelPermissao(pacientesAbas[chave]), nivelPermissao(valor)));
+  });
+
   return { modulos, pacientesAbas };
 }
 
