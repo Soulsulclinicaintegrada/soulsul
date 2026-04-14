@@ -3524,6 +3524,7 @@ def gerar_html_recibo_especie(recebivel: sqlite3.Row) -> str:
   <style>
     body {{ font-family: Arial, sans-serif; padding: 32px; color: #222; }}
     .sheet {{ max-width: 760px; margin: 0 auto; border: 1px solid #d7d7d7; padding: 36px; }}
+    .logo-recibo {{ display: block; max-width: 220px; width: 100%; height: auto; object-fit: contain; }}
     h1 {{ margin: 0 0 24px; font-size: 24px; }}
     .meta {{ display: grid; gap: 8px; margin-bottom: 24px; }}
     .valor {{ font-size: 28px; font-weight: 700; margin: 20px 0; }}
@@ -3587,8 +3588,10 @@ def gerar_html_recibo_manual(recibo: sqlite3.Row) -> str:
   <style>
     body {{ font-family: Arial, sans-serif; color: #222; padding: 28px; }}
     .sheet {{ max-width: 820px; margin: 0 auto; border: 1px solid #d7d7d7; padding: 40px; }}
+    .logo-recibo {{ display: block; max-width: 220px; width: 100%; height: auto; object-fit: contain; flex: 0 0 auto; }}
     h1 {{ margin: 0 0 24px; font-size: 30px; }}
-    .topline {{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 28px; font-size: 14px; }}
+    .topline {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 28px; font-size: 14px; }}
+    .numero {{ margin-top: 4px; }}
     .body-text {{ font-size: 18px; line-height: 1.8; }}
     .valor {{ font-size: 34px; font-weight: 700; margin: 24px 0; }}
     .obs {{ margin-top: 20px; }}
