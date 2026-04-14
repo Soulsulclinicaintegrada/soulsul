@@ -899,6 +899,16 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       }),
     [pacientesAbas]
   );
+  const abasFichaTopo = useMemo(
+    () =>
+      abasFichaDisponiveis.filter(
+        (aba, indice, lista) =>
+          lista.findIndex((item) => item.principal === aba.principal && !item.clinica && !item.documentos) === indice
+          || aba.principal === "Clínico"
+          || aba.principal === "Documentos"
+      ).filter((aba, indice, lista) => lista.findIndex((item) => item.principal === aba.principal) === indice),
+    [abasFichaDisponiveis]
+  );
   const acessoAbaAtual = useMemo(() => {
     const abaAtual = ABAS_FICHA.find((aba) => {
       if (aba.principal !== abaPrincipal) return false;
@@ -2419,11 +2429,11 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
         <div className="patient-record-topbar">
           <div className="patient-record-tabs">
             <div className="patient-record-tabs-scroll">
-              {abasFichaDisponiveis.map((aba) => {
+              {abasFichaTopo.map((aba) => {
                 const ativo =
                   abaPrincipal === aba.principal &&
-                  (aba.clinica ? abaClinica === aba.clinica : true) &&
-                  (aba.documentos ? abaDocumentos === aba.documentos : true);
+                  (aba.principal === "Clínico" ? true : (aba.clinica ? abaClinica === aba.clinica : true)) &&
+                  (aba.principal === "Documentos" ? true : (aba.documentos ? abaDocumentos === aba.documentos : true));
                 return (
                   <button
                     key={aba.label}
