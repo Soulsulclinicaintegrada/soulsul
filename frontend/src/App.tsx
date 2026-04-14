@@ -91,6 +91,15 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   return { modulos, pacientesAbas };
 }
 
+function mesclarPermissoes(
+  padrao: { modulos: Record<string, string>; pacientesAbas: Record<string, string> },
+  sessao?: UsuarioSessao | null
+) {
+  const modulos = { ...padrao.modulos, ...(sessao?.modulos || {}) };
+  const pacientesAbas = { ...padrao.pacientesAbas, ...(sessao?.pacientesAbas || {}) };
+  return { modulos, pacientesAbas };
+}
+
 function App() {
   const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Dashboard");
   const [buscaGlobal, setBuscaGlobal] = useState("");
@@ -108,11 +117,9 @@ function App() {
   const agendaEmFoco = menuAtivo === "Agenda";
   const inicialUsuario = usuarioLogado?.nome?.trim()?.slice(0, 1)?.toUpperCase() || "U";
   const permissoesSessao = useMemo(() => permissoesPadraoSessao(usuarioLogado), [usuarioLogado]);
-  const modulosUsuario = usuarioLogado?.modulos && Object.keys(usuarioLogado.modulos).length ? usuarioLogado.modulos : permissoesSessao.modulos;
-  const pacientesAbasUsuario =
-    usuarioLogado?.pacientesAbas && Object.keys(usuarioLogado.pacientesAbas).length
-      ? usuarioLogado.pacientesAbas
-      : permissoesSessao.pacientesAbas;
+  const permissoesUsuario = useMemo(() => mesclarPermissoes(permissoesSessao, usuarioLogado), [permissoesSessao, usuarioLogado]);
+  const modulosUsuario = permissoesUsuario.modulos;
+  const pacientesAbasUsuario = permissoesUsuario.pacientesAbas;
   const menuDisponivel = useMemo(
     () => menuItems.filter((item) => nivelPermissao(modulosUsuario[MENU_TO_MODULO[item.key]]) > 0),
     [modulosUsuario]

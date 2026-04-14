@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, Megaphone, Save, Search, UserRoundPlus } from "lucide-react";
+import { CalendarDays, CheckCircle2, Download, Megaphone, Save, Search, UserRoundPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   adicionarPacienteAvaliacaoCrmApi,
@@ -23,6 +23,27 @@ type RelatorioCrmItem = {
   telefone: string;
   detalhe: string;
 };
+
+function escaparCsv(valor: unknown) {
+  const texto = String(valor ?? "");
+  if (!texto.includes("\"") && !texto.includes(";") && !texto.includes("\n")) return texto;
+  return `"${texto.replace(/"/g, "\"\"")}"`;
+}
+
+function baixarCsv(nomeArquivo: string, cabecalho: string[], linhas: Array<Array<unknown>>) {
+  const conteudo = [cabecalho, ...linhas]
+    .map((linha) => linha.map(escaparCsv).join(";"))
+    .join("\n");
+  const blob = new Blob(["\uFEFF" + conteudo], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nomeArquivo;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 const ETAPAS_CRM = [
   "Novo lead",
@@ -288,6 +309,48 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     }
   }
 
+  function exportarRelatorio(nomeBase: string, linhas: RelatorioCrmItem[]) {
+    baixarCsv(
+      `${nomeBase}.csv`,
+      ["Paciente", "Prontuario", "Telefone", "Detalhe"],
+      linhas.map((item) => [item.nome, item.prontuario, item.telefone, item.detalhe])
+    );
+  }
+
+  function exportarCrmPacientes(nomeBase: string, linhas: CrmPacienteItemApi[]) {
+    baixarCsv(
+      `${nomeBase}.csv`,
+      ["Paciente", "Prontuario", "Telefone", "Etapa", "Canal", "Campanha", "Responsavel", "Proximo contato", "Observacao"],
+      linhas.map((item) => [
+        item.nome,
+        item.prontuario,
+        item.telefone,
+        item.etapaFunil,
+        item.canal,
+        item.campanha,
+        item.responsavel,
+        item.proximoContato,
+        item.observacao,
+      ])
+    );
+  }
+
+  function exportarAvaliacoes() {
+    baixarCsv(
+      "crm-avaliacoes.csv",
+      ["Paciente", "Prontuario", "Telefone", "Data", "Profissional", "Procedimento", "Status"],
+      avaliacoesFiltradas.map((item) => [
+        item.nome,
+        item.prontuario,
+        item.telefone,
+        item.dataAvaliacao,
+        item.profissional,
+        item.procedimento,
+        item.status,
+      ])
+    );
+  }
+
   return (
     <section className="module-shell crm-shell">
       <section className="module-kpis">
@@ -318,7 +381,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <span className="panel-kicker">Entrada manual</span>
               <h2>Pacientes finalizados</h2>
             </div>
-            <CheckCircle2 size={18} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => exportarCrmPacientes("crm-finalizados", finalizadosFiltrados)}>
+                <Download size={15} />
+                Baixar
+              </button>
+              <CheckCircle2 size={18} />
+            </div>
           </div>
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
@@ -344,7 +413,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <span className="panel-kicker">Entrada automática</span>
               <h2>Pacientes que fizeram avaliação</h2>
             </div>
-            <CalendarDays size={18} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={exportarAvaliacoes}>
+                <Download size={15} />
+                Baixar
+              </button>
+              <CalendarDays size={18} />
+            </div>
           </div>
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
@@ -383,7 +458,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <span className="panel-kicker">Relatório</span>
               <h2>Não finalizados sem agendamento</h2>
             </div>
-            <Search size={18} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio("crm-nao-finalizados-sem-agendamento", semAgendamentoFiltrados)}>
+                <Download size={15} />
+                Baixar
+              </button>
+              <Search size={18} />
+            </div>
           </div>
           <div className="crm-list">
             {!carregando && semAgendamentoFiltrados.map((item) => (
@@ -408,7 +489,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <span className="panel-kicker">Relatório</span>
               <h2>Aniversariantes do mês</h2>
             </div>
-            <CalendarDays size={18} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio("crm-aniversariantes", aniversariantesFiltrados)}>
+                <Download size={15} />
+                Baixar
+              </button>
+              <CalendarDays size={18} />
+            </div>
           </div>
           <div className="crm-list">
             {!carregando && aniversariantesFiltrados.map((item) => (
@@ -435,7 +522,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <span className="panel-kicker">Relatório</span>
               <h2>Pacientes que faltaram</h2>
             </div>
-            <CalendarDays size={18} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio("crm-faltaram", faltaramFiltrados)}>
+                <Download size={15} />
+                Baixar
+              </button>
+              <CalendarDays size={18} />
+            </div>
           </div>
           <div className="crm-list">
             {!carregando && faltaramFiltrados.map((item) => (
@@ -460,7 +553,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <span className="panel-kicker">Relatório</span>
               <h2>Pacientes que desmarcaram</h2>
             </div>
-            <CalendarDays size={18} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio("crm-desmarcaram", desmarcaramFiltrados)}>
+                <Download size={15} />
+                Baixar
+              </button>
+              <CalendarDays size={18} />
+            </div>
           </div>
           <div className="crm-list">
             {!carregando && desmarcaramFiltrados.map((item) => (
@@ -486,7 +585,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <span className="panel-kicker">Campanhas</span>
             <h2>Fluxo do Facebook</h2>
           </div>
-          <Megaphone size={18} />
+          <div className="crm-inline-actions">
+            <button type="button" className="ghost-action compact" onClick={() => exportarCrmPacientes("crm-funil-facebook", pipelineFiltrado)}>
+              <Download size={15} />
+              Baixar
+            </button>
+            <Megaphone size={18} />
+          </div>
         </div>
 
         <div className="crm-pipeline-list">
