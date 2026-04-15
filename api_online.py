@@ -57,11 +57,21 @@ anexar_rotas(agenda_app)
 
 @app.get("/health")
 def healthcheck() -> dict[str, object]:
+    template_open_ok = False
+    template_open_error = ""
+    if DOCX_DOCUMENT is not None and os.path.isfile(TEMPLATE_PATH):
+        try:
+            DOCX_DOCUMENT(TEMPLATE_PATH)
+            template_open_ok = True
+        except Exception as exc:
+            template_open_error = str(exc)
     return {
         "status": "ok",
         "template_path": TEMPLATE_PATH,
         "template_exists": os.path.isfile(TEMPLATE_PATH),
         "docx_available": DOCX_DOCUMENT is not None,
+        "template_open_ok": template_open_ok,
+        "template_open_error": template_open_error,
     }
 
 
