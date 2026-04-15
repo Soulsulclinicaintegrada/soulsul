@@ -3,6 +3,7 @@
 import os
 import re
 import sqlite3
+import traceback
 import unicodedata
 from io import BytesIO
 from urllib import error as urllib_error
@@ -4325,6 +4326,14 @@ def compactar_bloco_final(doc) -> None:
             break
 
 
+def executar_ajuste_contrato(nome: str, func) -> None:
+    try:
+        func()
+    except Exception as exc:
+        print(f"[contrato] ajuste ignorado {nome}: {exc}", flush=True)
+        print(traceback.format_exc(), flush=True)
+
+
 def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) -> str:
     valor_total = float(contrato["valor_total"] or 0)
     entrada_valor = float(contrato["entrada"] or 0)
@@ -4519,10 +4528,10 @@ def gerar_documento_contrato(
 
     try:
         doc = Document(TEMPLATE_PATH)
-        garantir_logo_no_cabecalho(doc)
+        executar_ajuste_contrato("garantir_logo_no_cabecalho", lambda: garantir_logo_no_cabecalho(doc))
         termo_cirurgia = montar_termo_cirurgia_contrato(procedimentos)
         if not termo_cirurgia:
-            remover_secao_termo_cirurgico(doc)
+            executar_ajuste_contrato("remover_secao_termo_cirurgico", lambda: remover_secao_termo_cirurgico(doc))
         nome_paciente = formatar_titulo(valor_row(paciente_row, "nome"))
         cpf_paciente = valor_row(paciente_row, "cpf")
         assinatura = dados_assinatura_contrato(paciente_row)
@@ -4559,35 +4568,50 @@ def gerar_documento_contrato(
             "{TERMO_CIRURGIA}": termo_cirurgia,
             "{termo_cirurgia}": termo_cirurgia,
         }
-        substituir_runs_doc(doc, dados)
+        executar_ajuste_contrato("substituir_runs_doc", lambda: substituir_runs_doc(doc, dados))
 
         checklist_preenchido = False
         tabela_contrato_preenchida = False
         for tabela in doc.tables:
-            if not checklist_preenchido and preencher_tabela_checklist_contrato(tabela, procedimentos):
+            preenchido_checklist = False
+            if not checklist_preenchido:
+                try:
+                    preenchido_checklist = preencher_tabela_checklist_contrato(tabela, procedimentos)
+                except Exception as exc:
+                    print(f"[contrato] ajuste ignorado preencher_tabela_checklist_contrato: {exc}", flush=True)
+                    print(traceback.format_exc(), flush=True)
+            if not checklist_preenchido and preenchido_checklist:
                 checklist_preenchido = True
                 continue
-            if not tabela_contrato_preenchida and preencher_tabela_contrato_docx(tabela, procedimentos):
+            preenchido_tabela = False
+            if not tabela_contrato_preenchida:
+                try:
+                    preenchido_tabela = preencher_tabela_contrato_docx(tabela, procedimentos)
+                except Exception as exc:
+                    print(f"[contrato] ajuste ignorado preencher_tabela_contrato_docx: {exc}", flush=True)
+                    print(traceback.format_exc(), flush=True)
+            if not tabela_contrato_preenchida and preenchido_tabela:
                 tabela_contrato_preenchida = True
 
         if bool(assinatura["assinatura_menor"]):
-            ajustar_assinaturas_menor(doc, nome_paciente, cpf_paciente, assinatura)
-            ajustar_assinaturas_por_texto(doc, nome_paciente, cpf_paciente, assinatura)
-            ajustar_assinatura_termo_cirurgico_final(doc, nome_paciente, cpf_paciente, assinatura)
-            ajustar_ultima_assinatura_menor(doc, nome_paciente, cpf_paciente, assinatura)
-            ajustar_bloco_final_assinatura(doc, assinatura)
+            executar_ajuste_contrato("ajustar_assinaturas_menor", lambda: ajustar_assinaturas_menor(doc, nome_paciente, cpf_paciente, assinatura))
+            executar_ajuste_contrato("ajustar_assinaturas_por_texto", lambda: ajustar_assinaturas_por_texto(doc, nome_paciente, cpf_paciente, assinatura))
+            executar_ajuste_contrato("ajustar_assinatura_termo_cirurgico_final", lambda: ajustar_assinatura_termo_cirurgico_final(doc, nome_paciente, cpf_paciente, assinatura))
+            executar_ajuste_contrato("ajustar_ultima_assinatura_menor", lambda: ajustar_ultima_assinatura_menor(doc, nome_paciente, cpf_paciente, assinatura))
+            executar_ajuste_contrato("ajustar_bloco_final_assinatura", lambda: ajustar_bloco_final_assinatura(doc, assinatura))
         else:
-            ajustar_assinatura_capa(doc, nome_paciente, cpf_paciente, assinatura)
-            ajustar_assinatura_contrato(doc, assinatura)
-        reescrever_bloco_final_termo(doc, assinatura)
-        normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO")
-        normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO")
-        compactar_bloco_final(doc)
-        aplicar_fonte_times_new_roman(doc)
+            executar_ajuste_contrato("ajustar_assinatura_capa", lambda: ajustar_assinatura_capa(doc, nome_paciente, cpf_paciente, assinatura))
+            executar_ajuste_contrato("ajustar_assinatura_contrato", lambda: ajustar_assinatura_contrato(doc, assinatura))
+        executar_ajuste_contrato("reescrever_bloco_final_termo", lambda: reescrever_bloco_final_termo(doc, assinatura))
+        executar_ajuste_contrato("normalizar_quebra_antes_titulo_contrato", lambda: normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO"))
+        executar_ajuste_contrato("normalizar_quebra_antes_titulo_termo", lambda: normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO"))
+        executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))
+        executar_ajuste_contrato("aplicar_fonte_times_new_roman", lambda: aplicar_fonte_times_new_roman(doc))
         doc.save(caminho)
         return caminho
     except Exception as exc:
         print(f"[contrato] fallback docx acionado contrato={contrato_id} erro={exc}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
 
