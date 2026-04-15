@@ -2751,6 +2751,27 @@ def mapear_recibo_manual(row: sqlite3.Row) -> ReciboManualResumo:
     )
 
 
+def proximo_numero_recibo_manual(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(MAX(CAST(numero AS INTEGER)), 0) AS ultimo FROM recibos_manuais"
+    ).fetchone()
+    ultimo = int(row["ultimo"] or 0) if row else 0
+    return ultimo + 1
+
+
+def garantir_numero_recibo_manual(conn: sqlite3.Connection, recibo_id: int) -> sqlite3.Row | None:
+    row = conn.execute("SELECT * FROM recibos_manuais WHERE id=?", (recibo_id,)).fetchone()
+    if row is None:
+        return None
+    numero_atual = int(row["numero"] or 0)
+    if numero_atual > 0:
+        return row
+    novo_numero = proximo_numero_recibo_manual(conn)
+    conn.execute("UPDATE recibos_manuais SET numero=? WHERE id=?", (novo_numero, recibo_id))
+    conn.commit()
+    return conn.execute("SELECT * FROM recibos_manuais WHERE id=?", (recibo_id,)).fetchone()
+
+
 def mapear_saldo_conta(row: sqlite3.Row) -> SaldoContaResumo:
     return SaldoContaResumo(
         id=int(row["id"]),
@@ -5528,13 +5549,15 @@ def listar_recibos_manuais():
 def criar_recibo_manual(payload: ReciboManualPayload):
     conn = conectar()
     try:
+        numero = proximo_numero_recibo_manual(conn)
         cursor = conn.execute(
             """
             INSERT INTO recibos_manuais (
-                valor, pagador, recebedor, data_pagamento, referente, observacao, cidade, criado_em
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                numero, valor, pagador, recebedor, data_pagamento, referente, observacao, cidade, criado_em
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                numero,
                 float(payload.valor or 0),
                 payload.pagador.strip(),
                 payload.recebedor.strip(),
@@ -5558,7 +5581,7 @@ def criar_recibo_manual(payload: ReciboManualPayload):
 def abrir_recibo_manual(recibo_id: int):
     conn = conectar()
     try:
-        row = conn.execute("SELECT * FROM recibos_manuais WHERE id=?", (recibo_id,)).fetchone()
+        row = garantir_numero_recibo_manual(conn, recibo_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Recibo nao encontrado.")
         html = gerar_html_recibo_manual(row)
