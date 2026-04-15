@@ -4526,6 +4526,7 @@ def gerar_documento_contrato(
     if Document is None or not os.path.isfile(TEMPLATE_PATH):
         return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
+    doc = None
     try:
         doc = Document(TEMPLATE_PATH)
         executar_ajuste_contrato("garantir_logo_no_cabecalho", lambda: garantir_logo_no_cabecalho(doc))
@@ -4612,6 +4613,13 @@ def gerar_documento_contrato(
     except Exception as exc:
         print(f"[contrato] fallback docx acionado contrato={contrato_id} erro={exc}", flush=True)
         print(traceback.format_exc(), flush=True)
+        if doc is not None:
+            try:
+                doc.save(caminho)
+                return caminho
+            except Exception as save_exc:
+                print(f"[contrato] falha ao salvar template parcial contrato={contrato_id} erro={save_exc}", flush=True)
+                print(traceback.format_exc(), flush=True)
         return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
 
