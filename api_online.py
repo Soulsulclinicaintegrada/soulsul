@@ -10,6 +10,8 @@ from api_agenda import garantir_colunas_agenda_api
 from api_pacientes import app as pacientes_app
 from api_pacientes import auditoria_middleware
 from api_pacientes import garantir_colunas_pacientes_api
+from api_pacientes import TEMPLATE_PATH
+from api_pacientes import Document as DOCX_DOCUMENT
 from database import DB_PATH
 from database import inicializar_banco
 
@@ -54,8 +56,13 @@ anexar_rotas(agenda_app)
 
 
 @app.get("/health")
-def healthcheck() -> dict[str, str]:
-    return {"status": "ok"}
+def healthcheck() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "template_path": TEMPLATE_PATH,
+        "template_exists": os.path.isfile(TEMPLATE_PATH),
+        "docx_available": DOCX_DOCUMENT is not None,
+    }
 
 
 @app.get("/")
