@@ -3496,15 +3496,24 @@ def resolver_documento_contrato_atual(
     paciente_row: sqlite3.Row,
     nome_arquivo: str,
 ) -> str | None:
-    contrato_id = extrair_contrato_id_documento(nome_arquivo)
-    if contrato_id is None:
+    nome_limpo = os.path.basename(str(nome_arquivo or "").strip())
+    if not nome_limpo.upper().startswith("CONTRATO_"):
         return None
-    contrato = conn.execute(
-        "SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1",
-        (contrato_id, int(paciente_row["id"])),
-    ).fetchone()
+    contrato_id = extrair_contrato_id_documento(nome_arquivo)
+    contrato = None
+    if contrato_id is not None:
+        contrato = conn.execute(
+            "SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1",
+            (contrato_id, int(paciente_row["id"])),
+        ).fetchone()
+    if contrato is None:
+        contrato = conn.execute(
+            "SELECT * FROM contratos WHERE paciente_id=? ORDER BY COALESCE(data_criacao, '') DESC, id DESC LIMIT 1",
+            (int(paciente_row["id"]),),
+        ).fetchone()
     if contrato is None:
         return None
+    contrato_id = int(contrato["id"])
     limpar_documentos_contrato_variantes(paciente_row, contrato_id)
     return gerar_documento_contrato(conn, paciente_row, contrato, contrato_id)
 

@@ -2304,13 +2304,13 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                       <article
                         key={arquivo.caminho}
                         className="doc-card"
-                        onClick={() => pacienteAtivoId ? abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome)) : undefined}
+                        onClick={() => pacienteAtivoId ? abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome, arquivo.extensao === ".docx")) : undefined}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(event) => {
                           if ((event.key === "Enter" || event.key === " ") && pacienteAtivoId) {
                             event.preventDefault();
-                            abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome));
+                            abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome, arquivo.extensao === ".docx"));
                           }
                         }}
                       >
