@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { DollarSign, Target, TrendingUp } from "lucide-react";
-import { painelDashboardApi, type DashboardPainelApi } from "./pacientesApi";
+import {
+  atualizarMetaFinanceiraApi,
+  listarCrmApi,
+  painelDashboardApi,
+  type CrmPainelApi,
+  type DashboardPainelApi
+} from "./pacientesApi";
 
 function iconeIndicador(chave: string) {
   const chaveNormalizada = (chave || "").toLowerCase();
@@ -34,24 +40,176 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
   atividades: []
 };
 
+const CRM_VAZIO: CrmPainelApi = {
+  pipeline: [],
+  finalizados: [],
+  avaliacoes: []
+};
+
+const TICKET_MEDIO = 4000;
+
+const FUNIL_CORES = [
+  { chave: "leads", rotulo: "Leads", cor: "#5b64b5", percentual: 1 },
+  { chave: "agendou", rotulo: "Agendou", cor: "#42c0c7", percentual: 0.75 },
+  { chave: "compareceu", rotulo: "Compareceu", cor: "#f2898c", percentual: 0.5 },
+  { chave: "fechou", rotulo: "Fechou", cor: "#efc449", percentual: 0.25 }
+] as const;
+
 function moedaParaNumero(valor: string) {
-  return Number(valor.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+  return Number(String(valor || "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+function numeroParaMoedaBr(valor: number) {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function normalizarTexto(valor: string) {
+  return (valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function etapaEhAgendada(etapa?: string) {
+  const valor = normalizarTexto(etapa || "");
+  return ["agendou avaliacao", "em negociacao", "convertido", "perdido"].includes(valor);
+}
+
+function montarFunilMeta(metaNumero: number) {
+  const fechou = Math.max(1, Math.ceil((metaNumero || 0) / TICKET_MEDIO));
+  return {
+    leads: fechou * 4,
+    agendou: fechou * 3,
+    compareceu: fechou * 2,
+    fechou
+  };
+}
+
+function montarFunilEvolucao(crm: CrmPainelApi) {
+  const idsLeads = new Set<number>();
+  const idsAgendados = new Set<number>();
+
+  crm.pipeline.forEach((item) => {
+    if (item.pacienteId) idsLeads.add(item.pacienteId);
+    if (item.pacienteId && etapaEhAgendada(item.etapaFunil)) idsAgendados.add(item.pacienteId);
+  });
+  crm.finalizados.forEach((item) => {
+    if (item.pacienteId) {
+      idsLeads.add(item.pacienteId);
+      idsAgendados.add(item.pacienteId);
+    }
+  });
+
+  const idsCompareceu = new Set<number>();
+  crm.avaliacoes.forEach((item) => {
+    if (item.pacienteId) {
+      idsLeads.add(item.pacienteId);
+      idsAgendados.add(item.pacienteId);
+      idsCompareceu.add(item.pacienteId);
+    }
+  });
+
+  const idsFechou = new Set<number>();
+  crm.finalizados.forEach((item) => {
+    if (item.pacienteId) idsFechou.add(item.pacienteId);
+  });
+
+  return {
+    leads: idsLeads.size,
+    agendou: Math.max(idsAgendados.size, idsCompareceu.size),
+    compareceu: idsCompareceu.size,
+    fechou: idsFechou.size
+  };
+}
+
+function formatoPercentual(valor: number, base: number) {
+  if (!base) return "0,0%";
+  return `${((valor / base) * 100).toFixed(1).replace(".", ",")}%`;
+}
+
+type FunilProps = {
+  titulo: string;
+  subtitulo: string;
+  valores: Record<string, number>;
+  metaNumero?: number;
+  mostrarPercentual?: boolean;
+};
+
+function FunilCard({ titulo, subtitulo, valores, metaNumero = 0, mostrarPercentual = true }: FunilProps) {
+  const base = valores.leads || 0;
+  return (
+    <article className="panel dashboard-funnel-panel">
+      <div className="section-title-row">
+        <div>
+          <span className="panel-kicker">Funil</span>
+          <h2>{titulo}</h2>
+        </div>
+        <span className="panel-meta">{subtitulo}</span>
+      </div>
+      <div className="dashboard-funnel-shell">
+        <div className="dashboard-funnel-graphic">
+          {FUNIL_CORES.map((etapa, indice) => {
+            const larguraTopo = 100 - indice * 18;
+            const larguraBase = 100 - (indice + 1) * 18;
+            return (
+              <div
+                key={etapa.chave}
+                className="dashboard-funnel-segment"
+                style={{
+                  background: etapa.cor,
+                  clipPath: `polygon(${(100 - larguraTopo) / 2}% 0%, ${(100 + larguraTopo) / 2}% 0%, ${(100 + larguraBase) / 2}% 100%, ${(100 - larguraBase) / 2}% 100%)`
+                }}
+              />
+            );
+          })}
+        </div>
+        <div className="dashboard-funnel-legend">
+          {FUNIL_CORES.map((etapa) => (
+            <div key={etapa.chave} className="dashboard-funnel-legend-row">
+              <div className="dashboard-funnel-legend-title">
+                <span className="dashboard-funnel-dot" style={{ background: etapa.cor }} />
+                <strong>{etapa.rotulo}</strong>
+              </div>
+              <div className="dashboard-funnel-legend-values">
+                <span>{valores[etapa.chave] || 0}</span>
+                {mostrarPercentual ? <small>{formatoPercentual(valores[etapa.chave] || 0, base)}</small> : null}
+              </div>
+            </div>
+          ))}
+          {metaNumero > 0 ? (
+            <div className="dashboard-funnel-ticket">
+              <span>Ticket médio</span>
+              <strong>{numeroParaMoedaBr(TICKET_MEDIO)}</strong>
+              <span>Meta mensal</span>
+              <strong>{numeroParaMoedaBr(metaNumero)}</strong>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export function DashboardPage() {
   const [painel, setPainel] = useState<DashboardPainelApi>(DASHBOARD_VAZIO);
+  const [crmPainel, setCrmPainel] = useState<CrmPainelApi>(CRM_VAZIO);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
+  const [metaEditavel, setMetaEditavel] = useState("");
+  const [salvandoMeta, setSalvandoMeta] = useState(false);
 
-  useEffect(() => {
-    let ativo = true;
+  async function carregar() {
+    setCarregando(true);
+    setErro("");
+    try {
+      const [dashboardResult, crmResult] = await Promise.allSettled([
+        painelDashboardApi(),
+        listarCrmApi()
+      ]);
 
-    async function carregar() {
-      setCarregando(true);
-      setErro("");
-      try {
-        const resposta = await painelDashboardApi();
-        if (!ativo) return;
+      if (dashboardResult.status === "fulfilled") {
+        const resposta = dashboardResult.value;
         setPainel({
           ...DASHBOARD_VAZIO,
           ...resposta,
@@ -59,19 +217,36 @@ export function DashboardPage() {
           serieVendas: resposta.serieVendas?.length ? resposta.serieVendas : DASHBOARD_VAZIO.serieVendas,
           metas: resposta.metas || DASHBOARD_VAZIO.metas
         });
-      } catch (error) {
-        if (!ativo) return;
-        setErro(error instanceof Error ? error.message : "Falha ao carregar dashboard.");
+        setMetaEditavel(resposta.metas?.metaMes || DASHBOARD_VAZIO.metas.metaMes);
+      } else {
         setPainel(DASHBOARD_VAZIO);
-      } finally {
-        if (ativo) setCarregando(false);
+        setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
       }
-    }
 
+      if (crmResult.status === "fulfilled") {
+        setCrmPainel(crmResult.value || CRM_VAZIO);
+      } else {
+        setCrmPainel(CRM_VAZIO);
+      }
+
+      const falhas: string[] = [];
+      if (dashboardResult.status === "rejected") falhas.push("dashboard");
+      if (crmResult.status === "rejected") falhas.push("CRM");
+      if (falhas.length) {
+        setErro(`Alguns dados não carregaram: ${falhas.join(", ")}.`);
+      }
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao carregar dashboard.");
+      setPainel(DASHBOARD_VAZIO);
+      setCrmPainel(CRM_VAZIO);
+      setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  useEffect(() => {
     void carregar();
-    return () => {
-      ativo = false;
-    };
   }, []);
 
   const maxValor = useMemo(() => {
@@ -82,6 +257,26 @@ export function DashboardPage() {
 
   const metaMesNumero = useMemo(() => moedaParaNumero(painel.metas.metaMes), [painel.metas.metaMes]);
   const supermetaMesNumero = useMemo(() => moedaParaNumero(painel.metas.supermetaMes), [painel.metas.supermetaMes]);
+  const metaEditavelNumero = useMemo(() => moedaParaNumero(metaEditavel), [metaEditavel]);
+  const funilMeta = useMemo(() => montarFunilMeta(metaEditavelNumero || metaMesNumero), [metaEditavelNumero, metaMesNumero]);
+  const funilEvolucao = useMemo(() => montarFunilEvolucao(crmPainel), [crmPainel]);
+
+  async function salvarMetaRapida() {
+    try {
+      setSalvandoMeta(true);
+      const agora = new Date();
+      await atualizarMetaFinanceiraApi(agora.getFullYear(), agora.getMonth() + 1, {
+        meta: metaEditavelNumero || metaMesNumero,
+        supermeta: moedaParaNumero(painel.metas.supermetaMes),
+        hipermeta: moedaParaNumero(painel.metas.hipermetaMes)
+      });
+      await carregar();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar meta.");
+    } finally {
+      setSalvandoMeta(false);
+    }
+  }
 
   return (
     <>
@@ -100,6 +295,20 @@ export function DashboardPage() {
             <strong>Sem dados no dashboard.</strong>
           </article>
         ) : null}
+      </section>
+
+      <section className="dashboard-funnels-grid">
+        <FunilCard
+          titulo="Meta ideal"
+          subtitulo="Modelo 100 / 75 / 50 / 25"
+          valores={funilMeta}
+          metaNumero={metaEditavelNumero || metaMesNumero}
+        />
+        <FunilCard
+          titulo="Evolução atual"
+          subtitulo="Baseado no CRM"
+          valores={funilEvolucao}
+        />
       </section>
 
       <section className="content-grid">
@@ -149,30 +358,37 @@ export function DashboardPage() {
             <div className="section-title-row">
               <div>
                 <span className="panel-kicker">Metas</span>
-                <h2>Resumo financeiro</h2>
+                <h2>Meta e conversão</h2>
               </div>
               <Target size={20} />
             </div>
             <div className="summary-stats">
-              <div className="summary-row">
+              <label className="dashboard-meta-editor">
                 <span>Meta do mês</span>
-                <strong>{painel.metas.metaMes}</strong>
+                <input type="text" value={metaEditavel} onChange={(event) => setMetaEditavel(event.target.value)} />
+              </label>
+              <button type="button" className="primary-action" onClick={() => void salvarMetaRapida()} disabled={salvandoMeta}>
+                {salvandoMeta ? "Salvando..." : "Salvar meta"}
+              </button>
+              <div className="summary-row">
+                <span>Ticket médio</span>
+                <strong>{numeroParaMoedaBr(TICKET_MEDIO)}</strong>
               </div>
               <div className="summary-row">
-                <span>Supermeta do mês</span>
-                <strong>{painel.metas.supermetaMes}</strong>
+                <span>Leads necessários</span>
+                <strong>{funilMeta.leads}</strong>
               </div>
               <div className="summary-row">
-                <span>Hipermeta do mês</span>
-                <strong>{painel.metas.hipermetaMes}</strong>
+                <span>Agendamentos necessários</span>
+                <strong>{funilMeta.agendou}</strong>
               </div>
               <div className="summary-row">
-                <span>Falta para meta do mês</span>
-                <strong>{painel.metas.faltaMetaMes}</strong>
+                <span>Comparecimentos necessários</span>
+                <strong>{funilMeta.compareceu}</strong>
               </div>
               <div className="summary-row highlight">
-                <span>Falta para meta do ano</span>
-                <strong>{painel.metas.faltaMetaAno}</strong>
+                <span>Fechamentos necessários</span>
+                <strong>{funilMeta.fechou}</strong>
               </div>
             </div>
           </article>
