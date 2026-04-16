@@ -887,6 +887,12 @@ export async function atualizarOrcamentoPacienteApi(pacienteId: number, contrato
   });
 }
 
+export async function excluirOrcamentoPacienteApi(pacienteId: number, contratoId: number) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function atualizarRecebivelPacienteApi(pacienteId: number, recebivelId: number, payload: RecebivelAtualizacaoPayload) {
   return fetchJson<RecebivelResumoApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/recebiveis/${recebivelId}`, {
     method: "PUT",

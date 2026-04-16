@@ -7,6 +7,7 @@ import {
   baixarRecebivelPacienteApi,
   detalharOrcamentoPacienteApi,
   criarOrcamentoPacienteApi,
+  excluirOrcamentoPacienteApi,
   criarPacienteApi,
   enviarFotoPacienteApi,
   fichaPacienteApi,
@@ -814,6 +815,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   const [modalOrcamentoAberto, setModalOrcamentoAberto] = useState(false);
   const [orcamentoEditandoId, setOrcamentoEditandoId] = useState<number | null>(null);
   const [orcamentoStatusAtual, setOrcamentoStatusAtual] = useState<"EM_ABERTO" | "APROVADO">("EM_ABERTO");
+  const [excluindoOrcamentoId, setExcluindoOrcamentoId] = useState<number | null>(null);
   const [orcamentoDraft, setOrcamentoDraft] = useState<OrcamentoDraft>(() => ORCAMENTO_INICIAL(dataHojeIso()));
   const [planoPagamento, setPlanoPagamento] = useState<PlanoPagamento>(() => normalizarPlanoPagamento(null, 0, dataHojeIso()));
   const [planoPagamentoEditor, setPlanoPagamentoEditor] = useState<PlanoPagamento>(() => normalizarPlanoPagamento(null, 0, dataHojeIso()));
@@ -2021,6 +2023,31 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     }
   }
 
+  async function excluirOrcamento(contratoId: number, status: string) {
+    if (!pacienteAtivoId) return;
+    if ((status || "").toUpperCase() === "APROVADO") {
+      window.alert("Desaprove o orçamento antes de excluir.");
+      return;
+    }
+    const confirmou = window.confirm("Tem certeza que deseja excluir este orçamento? Essa ação não pode ser desfeita.");
+    if (!confirmou) return;
+    try {
+      setExcluindoOrcamentoId(contratoId);
+      await excluirOrcamentoPacienteApi(pacienteAtivoId, contratoId);
+      if (orcamentoEditandoId === contratoId) {
+        setModalOrcamentoAberto(false);
+        setOrcamentoEditandoId(null);
+        setOrcamentoStatusAtual("EM_ABERTO");
+      }
+      setFeedback("Orçamento excluído.");
+      await carregarFicha(pacienteAtivoId);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao excluir orçamento.");
+    } finally {
+      setExcluindoOrcamentoId(null);
+    }
+  }
+
   const renderListaPacientes = (
     <section className={`patient-directory${busca.trim() ? " patient-directory-floating" : " panel"}`}>
       {!busca.trim() ? (
@@ -2873,7 +2900,17 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                           <strong>{`Orçamento #${contrato.id}`}</strong>
                           <span>{contrato.procedimentos.join(", ") || "Sem procedimentos"}</span>
                         </button>
-                        <strong className="budget-list-row-value">{contrato.valorTotal}</strong>
+                        <div className="budget-list-row-actions">
+                          <strong className="budget-list-row-value">{contrato.valorTotal}</strong>
+                          <button
+                            type="button"
+                            className="ghost-action danger compact"
+                            onClick={() => void excluirOrcamento(contrato.id, contrato.status || "")}
+                            disabled={excluindoOrcamentoId === contrato.id}
+                          >
+                            {excluindoOrcamentoId === contrato.id ? "Excluindo..." : "Excluir"}
+                          </button>
+                        </div>
                       </article>
                     )) : <span className="empty-inline">Sem contratos vinculados.</span>}
                   </div>

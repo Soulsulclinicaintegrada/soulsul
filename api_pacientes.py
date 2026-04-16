@@ -6034,3 +6034,31 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
         return {"ok": True}
     finally:
         conn.close()
+
+
+@app.delete("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}")
+def excluir_orcamento_paciente(paciente_id: int, contrato_id: int):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
+        if contrato is None:
+            raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
+        if normalizar_texto(contrato["status"]).upper() == "APROVADO":
+            raise HTTPException(status_code=400, detail="Desaprove o orcamento antes de excluir.")
+
+        conn.execute("DELETE FROM recebiveis WHERE contrato_id=?", (contrato_id,))
+        conn.execute("DELETE FROM financeiro WHERE contrato_id=?", (contrato_id,))
+        conn.execute("DELETE FROM agendamento_procedimentos WHERE contrato_id=?", (contrato_id,))
+        conn.execute("UPDATE agendamentos SET contrato_id=NULL, origem_contrato=0 WHERE contrato_id=?", (contrato_id,))
+        conn.execute("DELETE FROM procedimentos_dente WHERE contrato_id=? AND paciente_id=?", (contrato_id, paciente_id))
+        conn.execute("DELETE FROM procedimentos_contrato WHERE contrato_id=?", (contrato_id,))
+        conn.execute("DELETE FROM contratos WHERE id=? AND paciente_id=?", (contrato_id, paciente_id))
+        try:
+            limpar_documento_contrato(paciente, contrato_id)
+        except Exception as exc:
+            print(f"[orcamento] falha ao limpar documento do contrato {contrato_id}: {exc}", flush=True)
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()

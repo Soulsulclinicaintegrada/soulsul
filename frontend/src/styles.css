@@ -2128,6 +2128,12 @@ textarea::placeholder {
   font-size: 1.1rem;
 }
 
+.budget-list-row-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
 .budget-value {
   margin: 18px 0 12px;
   font-size: 2rem;
