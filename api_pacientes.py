@@ -4859,13 +4859,32 @@ CRM_ETAPAS_PADRAO = [
 ]
 
 
+def crm_int(valor: object, padrao: int = 0) -> int:
+    try:
+        texto = str(valor if valor is not None else "").strip()
+        if not texto:
+            return padrao
+        return int(float(texto))
+    except Exception:
+        return padrao
+
+
+def crm_bool(valor: object) -> bool:
+    texto = normalizar_texto(str(valor or ""))
+    if texto in {"1", "true", "sim", "yes"}:
+        return True
+    if texto in {"0", "false", "nao", "não", "no", ""}:
+        return False
+    return bool(crm_int(valor, 0))
+
+
 def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResposta | None:
     if row is None:
         return None
     return CrmPacienteResumoResposta(
-        crmId=int(row["id"]) if row["id"] is not None else None,
-        finalizado=bool(int(row["origem_finalizado"] or 0)),
-        avaliacao=bool(int(row["origem_avaliacao"] or 0)),
+        crmId=crm_int(row["id"], 0) if row["id"] is not None else None,
+        finalizado=crm_bool(row["origem_finalizado"]),
+        avaliacao=crm_bool(row["origem_avaliacao"]),
         etapaFunil=str(row["etapa_funil"] or "Novo lead"),
         campanha=str(row["campanha"] or ""),
         canal=str(row["canal"] or "Facebook"),
@@ -4876,13 +4895,13 @@ def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResp
 
 def mapear_crm_paciente_item(row: sqlite3.Row) -> CrmPacienteItemResposta:
     return CrmPacienteItemResposta(
-        id=int(row["id"]),
-        pacienteId=int(row["paciente_id"]),
+        id=crm_int(row["id"]),
+        pacienteId=crm_int(row["paciente_id"]),
         nome=str(row["nome"] or ""),
         prontuario=formatar_prontuario_valor(row["prontuario"]),
         telefone=str(row["telefone"] or ""),
-        origemFinalizado=bool(int(row["origem_finalizado"] or 0)),
-        origemAvaliacao=bool(int(row["origem_avaliacao"] or 0)),
+        origemFinalizado=crm_bool(row["origem_finalizado"]),
+        origemAvaliacao=crm_bool(row["origem_avaliacao"]),
         etapaFunil=str(row["etapa_funil"] or "Novo lead"),
         canal=str(row["canal"] or "Facebook"),
         campanha=str(row["campanha"] or ""),
@@ -4941,7 +4960,7 @@ def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResp
     por_paciente: dict[int, CrmAvaliacaoItemResposta] = {}
     hoje = date.today()
     for row in rows:
-        paciente_id = int(row["paciente_id"] or 0)
+        paciente_id = crm_int(row["paciente_id"], 0)
         if paciente_id <= 0 or paciente_id in por_paciente:
             continue
         if not agendamento_eh_avaliacao(row):
@@ -4964,7 +4983,7 @@ def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResp
             profissional=str(row["profissional"] or ""),
             status=str(row["status"] or ""),
             procedimento=str(row["procedimento"] or row["tipo_atendimento"] or ""),
-            jaNoCrm=bool(int(row["crm_id"] or 0)),
+            jaNoCrm=crm_bool(row["crm_id"]),
         )
     return list(por_paciente.values())
 
@@ -5151,7 +5170,15 @@ def listar_crm():
                 crm.id DESC
             """
         ).fetchall()
-        pipeline = [mapear_crm_paciente_item(row) for row in pipeline_rows]
+        pipeline: list[CrmPacienteItemResposta] = []
+        for row in pipeline_rows:
+            try:
+                item = mapear_crm_paciente_item(row)
+            except Exception:
+                continue
+            if item.id <= 0 or item.pacienteId <= 0:
+                continue
+            pipeline.append(item)
         finalizados = [item for item in pipeline if item.origemFinalizado]
         avaliacoes = listar_avaliacoes_crm(conn)
         return CrmPainelResposta(
