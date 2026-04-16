@@ -28,6 +28,7 @@ export type AgendaApiAgendamento = {
   data: string;
   inicio: string;
   fim: string;
+  consultorio?: string | null;
   observacoes?: string;
   financeiro?: string;
   agendadoPor?: string;
@@ -113,6 +114,7 @@ export type AgendaDiaConfiguracaoApi = {
   fim: string;
   almocoInicio: string;
   almocoFim: string;
+  consultorio?: string;
 };
 
 export type AgendaProfissionalConfiguracaoApi = {

@@ -132,6 +132,7 @@ class AgendamentoResposta(BaseModel):
     data: str
     inicio: str
     fim: str
+    consultorio: str | None = None
     observacoes: str | None = None
     financeiro: str | None = None
     agendadoPor: str | None = None
@@ -182,6 +183,7 @@ class AgendaDiaConfigPayload(BaseModel):
     fim: str = "19:00"
     almocoInicio: str = "12:00"
     almocoFim: str = "13:00"
+    consultorio: str = ""
 
 
 class AgendaProfissionalConfigPayload(BaseModel):
@@ -196,6 +198,7 @@ class AgendaProfissionalConfigPayload(BaseModel):
 
 
 class AgendaConfiguracaoPayload(BaseModel):
+    totalConsultorios: int = 3
     ordemProfissionais: list[int] = Field(default_factory=list)
     configClinicaDias: dict[str, AgendaDiaConfigPayload] = Field(default_factory=dict)
     configProfissionais: list[AgendaProfissionalConfigPayload] = Field(default_factory=list)
@@ -226,9 +229,54 @@ def criar_config_dias_padrao() -> dict[str, dict[str, object]]:
             "fim": "18:00" if indice == 4 else "19:00",
             "almocoInicio": "12:00",
             "almocoFim": "13:00",
+            "consultorio": "",
         }
         for indice in range(7)
     }
+
+
+def normalizar_consultorio(valor: object) -> str:
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    digitos = "".join(ch for ch in texto if ch.isdigit())
+    if digitos:
+        return digitos
+    return texto.upper()
+
+
+def dia_semana_data_br(data_br: str) -> str:
+    try:
+        return str(datetime.strptime(data_br, "%d/%m/%Y").weekday() + 1)
+    except Exception:
+        return "1"
+
+
+def obter_consultorio_profissional_configurado(
+    conn: sqlite3.Connection,
+    profissional_id: int,
+    data_br: str,
+) -> str:
+    dia_semana = dia_semana_data_br(data_br)
+    row = conn.execute("SELECT config_profissionais_json FROM agenda_configuracao WHERE id=1").fetchone()
+    if not row:
+        return ""
+    try:
+        bruto = json.loads(str(row["config_profissionais_json"] or "{}"))
+    except Exception:
+        return ""
+    if not isinstance(bruto, dict):
+        return ""
+    profissional = bruto.get(str(int(profissional_id)))
+    if not isinstance(profissional, dict):
+        return ""
+    configuracao_dias = profissional.get("configuracaoDias") or {}
+    if not isinstance(configuracao_dias, dict):
+        return ""
+    configuracao_dia = configuracao_dias.get(str(dia_semana)) or {}
+    if not isinstance(configuracao_dia, dict):
+        return ""
+    return normalizar_consultorio(configuracao_dia.get("consultorio"))
 
 
 def obter_configuracao_agenda():
@@ -415,6 +463,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         data=row[data_coluna_agenda],
         inicio=row_val(row, "hora_inicio", ""),
         fim=row_val(row, "hora_fim", ""),
+        consultorio=normalizar_consultorio(row_val(row, "consultorio", "")) or None,
         observacoes=row_val(row, "observacoes", "") or row_val(row, "observacao", ""),
         financeiro=financeiro,
         agendadoPor=row_val(row, "criado_por", "") or "",
@@ -754,10 +803,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
         primeiro_procedimento = payload.procedimentos[0].nome if payload.procedimentos else ""
         contrato_id = next((item.contratoId for item in payload.procedimentos if item.contratoId), None)
         origem_contrato = 1 if contrato_id else 0
-        usuario = usuario_request(request)
-        momento = agora_br()
-        procedimentos_atuais = carregar_procedimentos_agendamento(conn, agendamento_id)
-        descricao_alteracoes = descrever_alteracoes_agendamento(existente, payload, procedimentos_atuais)
+        consultorio = obter_consultorio_profissional_configurado(conn, payload.profissionalId, payload.data)
         usuario = usuario_request(request)
         momento = agora_br()
 
@@ -777,6 +823,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             "hora_inicio",
             "hora_fim",
             "duracao_minutos",
+            "consultorio",
             "observacao",
             "observacoes",
             "status",
@@ -802,6 +849,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             payload.horaInicio,
             payload.horaFim,
             payload.duracaoMinutos,
+            consultorio,
             payload.observacoes or "",
             payload.observacoes or "",
             payload.status or "Agendado",
@@ -864,16 +912,6 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
                 ),
             )
 
-        if descricao_alteracoes:
-            registrar_historico_agendamento(
-                conn,
-                agendamento_id,
-                "MODIFICADO",
-                descricao_alteracoes,
-                usuario,
-                momento,
-            )
-
         conn.commit()
         row = conn.execute("SELECT * FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
         if not row:
@@ -911,6 +949,14 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
         primeiro_procedimento = payload.procedimentos[0].nome if payload.procedimentos else ""
         contrato_id = next((item.contratoId for item in payload.procedimentos if item.contratoId), None)
         origem_contrato = 1 if contrato_id else 0
+        consultorio = obter_consultorio_profissional_configurado(conn, payload.profissionalId, payload.data)
+        procedimentos_atuais = carregar_procedimentos_agendamento(conn, agendamento_id)
+        descricao_alteracoes = descrever_alteracoes_agendamento(existente, payload, procedimentos_atuais)
+        if normalizar_consultorio(row_val(existente, "consultorio", "")) != consultorio:
+            alteracao_sala = f"sala: {normalizar_consultorio(row_val(existente, 'consultorio', '')) or '-'} -> {consultorio or '-'}"
+            descricao_alteracoes = f"{descricao_alteracoes}; {alteracao_sala}" if descricao_alteracoes else alteracao_sala
+        usuario = usuario_request(request)
+        momento = agora_br()
 
         conn.execute(
             f"""
@@ -931,6 +977,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 hora_inicio=?,
                 hora_fim=?,
                 duracao_minutos=?,
+                consultorio=?,
                 observacao=?,
                 observacoes=?,
                 status=?,
@@ -955,6 +1002,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 payload.horaInicio,
                 payload.horaFim,
                 payload.duracaoMinutos,
+                consultorio,
                 payload.observacoes or "",
                 payload.observacoes or "",
                 payload.status or "Agendado",
@@ -962,7 +1010,17 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 momento,
                 agendamento_id,
             ),
-        )
+            )
+
+        if descricao_alteracoes:
+            registrar_historico_agendamento(
+                conn,
+                agendamento_id,
+                "MODIFICADO",
+                descricao_alteracoes,
+                usuario,
+                momento,
+            )
 
         conn.execute("DELETE FROM agendamento_procedimentos WHERE agendamento_id=?", (agendamento_id,))
         for procedimento in payload.procedimentos:

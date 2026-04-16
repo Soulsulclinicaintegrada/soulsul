@@ -1309,10 +1309,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     );
   }
 
-  function atualizarConfigProfissionalDia(
+function atualizarConfigProfissionalDia(
     profissionalId: number,
     diaSemana: number,
-    campo: "inicio" | "fim" | "almocoInicio" | "almocoFim",
+    campo: "inicio" | "fim" | "almocoInicio" | "almocoFim" | "consultorio",
     valor: string
   ) {
     setConfigProfissionais((atual) =>
@@ -2110,6 +2110,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
             <div><strong>Agendado por:</strong> {detalheAtivo.agendadoPor || "Sistema"}</div>
             <div><strong>Agendado em:</strong> {detalheAtivo.agendadoEm ?? "Agora"}</div>
             <div><strong>Profissional:</strong> {detalheAtivo.profissional}</div>
+            <div><strong>Sala:</strong> {detalheAtivo.consultorio || "Não definida"}</div>
             <div><strong>Prontuário:</strong> {detalheAtivo.paciente} ({detalheAtivo.prontuario})</div>
             <div><strong>Telefone:</strong> {detalheAtivo.telefone}</div>
             <div><strong>Horário:</strong> {detalheAtivo.inicio} - {detalheAtivo.fim}</div>
@@ -2519,6 +2520,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
                             type="time"
                             value={config.configuracaoDias[diaConfiguracaoSelecionado].almocoFim}
                             onChange={(event) => atualizarConfigProfissionalDia(profissional.id, diaConfiguracaoSelecionado, "almocoFim", event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Sala / consultório</span>
+                          <input
+                            value={config.configuracaoDias[diaConfiguracaoSelecionado].consultorio || ""}
+                            onChange={(event) => atualizarConfigProfissionalDia(profissional.id, diaConfiguracaoSelecionado, "consultorio", event.target.value)}
+                            placeholder="Ex.: 2"
                           />
                         </label>
                         <label>
