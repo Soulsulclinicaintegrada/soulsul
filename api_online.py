@@ -9,7 +9,9 @@ from api_agenda import app as agenda_app
 from api_agenda import garantir_colunas_agenda_api
 from api_pacientes import app as pacientes_app
 from api_pacientes import auditoria_middleware
+from api_pacientes import carregar_template_contrato_docx
 from api_pacientes import garantir_colunas_pacientes_api
+from api_pacientes import TEMPLATE_B64_PATH
 from api_pacientes import TEMPLATE_PATH
 from api_pacientes import Document as DOCX_DOCUMENT
 from database import DB_PATH
@@ -59,9 +61,9 @@ anexar_rotas(agenda_app)
 def healthcheck() -> dict[str, object]:
     template_open_ok = False
     template_open_error = ""
-    if DOCX_DOCUMENT is not None and os.path.isfile(TEMPLATE_PATH):
+    if DOCX_DOCUMENT is not None and (os.path.isfile(TEMPLATE_PATH) or os.path.isfile(TEMPLATE_B64_PATH)):
         try:
-            DOCX_DOCUMENT(TEMPLATE_PATH)
+            carregar_template_contrato_docx()
             template_open_ok = True
         except Exception as exc:
             template_open_error = str(exc)
@@ -69,6 +71,8 @@ def healthcheck() -> dict[str, object]:
         "status": "ok",
         "template_path": TEMPLATE_PATH,
         "template_exists": os.path.isfile(TEMPLATE_PATH),
+        "template_b64_path": TEMPLATE_B64_PATH,
+        "template_b64_exists": os.path.isfile(TEMPLATE_B64_PATH),
         "docx_available": DOCX_DOCUMENT is not None,
         "template_open_ok": template_open_ok,
         "template_open_error": template_open_error,

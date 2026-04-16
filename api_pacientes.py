@@ -72,9 +72,33 @@ DOCS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "documentos")
 EXAMES_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "exames")
 FOTOS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "fotos")
 TEMPLATE_PATH = os.path.join(API_BASE_DIR, "modelo_documento_online.docx")
+TEMPLATE_B64_PATH = os.path.join(API_BASE_DIR, "modelo_documento_online.b64")
 TEMPLATE_ORDEM_SERVICO_PATH = os.path.join(API_BASE_DIR, "ORDEM DE SERVIÇO PROTÉTICO.docx")
 CONTAS_CAIXA_MODELO = ["CAIXA", "SICOOB", "INFINITEPAY", "PAGBANK", "C6"]
 TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo") if ZoneInfo is not None else None
+
+
+def carregar_template_contrato_docx():
+    if Document is None:
+        raise RuntimeError("python-docx nao disponivel")
+
+    erros: list[str] = []
+
+    if os.path.isfile(TEMPLATE_PATH):
+        try:
+            return Document(TEMPLATE_PATH)
+        except Exception as exc:
+            erros.append(f"arquivo: {exc}")
+
+    if os.path.isfile(TEMPLATE_B64_PATH):
+        try:
+            with open(TEMPLATE_B64_PATH, "r", encoding="ascii") as arquivo:
+                conteudo = base64.b64decode(arquivo.read())
+            return Document(BytesIO(conteudo))
+        except Exception as exc:
+            erros.append(f"base64: {exc}")
+
+    raise RuntimeError(" | ".join(erros) if erros else "template do contrato indisponivel")
 
 
 def agora_str() -> str:
@@ -4523,12 +4547,12 @@ def gerar_documento_contrato(
     nome_arquivo = nome_arquivo_contrato(paciente_row, contrato_id)
     caminho = os.path.join(DOCS_DIR, nome_arquivo)
 
-    if Document is None or not os.path.isfile(TEMPLATE_PATH):
+    if Document is None or (not os.path.isfile(TEMPLATE_PATH) and not os.path.isfile(TEMPLATE_B64_PATH)):
         return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
     doc = None
     try:
-        doc = Document(TEMPLATE_PATH)
+        doc = carregar_template_contrato_docx()
         executar_ajuste_contrato("garantir_logo_no_cabecalho", lambda: garantir_logo_no_cabecalho(doc))
         termo_cirurgia = montar_termo_cirurgia_contrato(procedimentos)
         if not termo_cirurgia:
