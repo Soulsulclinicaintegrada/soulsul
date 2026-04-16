@@ -886,6 +886,11 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       )),
     [dentesContratados, denticaoClinica]
   );
+
+  useEffect(() => {
+    if (abaClinica !== "Odontograma") return;
+    setElementoClinicoAtivo(dentesContratadosClinicos);
+  }, [abaClinica, denticaoClinica, dentesContratadosClinicos]);
   const elementosOdontogramaListados = useMemo(
     () => {
       if (!elementoClinicoAtivo.length) return elementosOdontogramaVisiveis;

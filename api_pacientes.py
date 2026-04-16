@@ -5,6 +5,7 @@ import re
 import sqlite3
 import traceback
 import unicodedata
+from copy import deepcopy
 from io import BytesIO
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -115,6 +116,25 @@ def formatar_data_br(data_obj: date | None) -> str:
     if not data_obj:
         return ""
     return data_obj.strftime("%d/%m/%Y")
+
+
+def formatar_data_extenso_local(data_obj: date | None = None) -> str:
+    referencia = data_obj or agora_local().date()
+    meses = [
+        "janeiro",
+        "fevereiro",
+        "março",
+        "abril",
+        "maio",
+        "junho",
+        "julho",
+        "agosto",
+        "setembro",
+        "outubro",
+        "novembro",
+        "dezembro",
+    ]
+    return f"{referencia.day} de {meses[referencia.month - 1]} de {referencia.year}"
 
 
 def parse_data_contrato(valor) -> date | None:
@@ -4308,6 +4328,9 @@ def normalizar_quebra_antes_titulo(doc, marcador: str) -> None:
         return
 
     paragrafo_anterior = paragrafos[indice_titulo - 1]
+    p_pr = paragrafo_anterior._p.pPr
+    if p_pr is not None and p_pr.find(qn("w:sectPr")) is not None:
+        return
     tem_quebra = any(
         child.tag.endswith("br") and child.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}type") == "page"
         for run in paragrafo_anterior.runs
@@ -4315,6 +4338,79 @@ def normalizar_quebra_antes_titulo(doc, marcador: str) -> None:
     )
     if not tem_quebra:
         paragrafo_anterior.add_run().add_break(WD_BREAK.PAGE)
+
+
+def remover_quebras_de_pagina_paragrafo(paragrafo) -> None:
+    for run in paragrafo.runs:
+        for child in list(run._element):
+            if child.tag.endswith("br") and child.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}type") == "page":
+                run._element.remove(child)
+
+
+def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> None:
+    if OxmlElement is None or qn is None:
+        return
+    marcador_norm = normalizar_texto_maiusculo(marcador)
+    paragrafos = doc.paragraphs
+    indice_titulo = None
+    for indice, paragrafo in enumerate(paragrafos):
+        if marcador_norm in normalizar_texto_maiusculo(paragrafo.text):
+            indice_titulo = indice
+            break
+    if indice_titulo is None or indice_titulo == 0:
+        return
+
+    paragrafo_anterior = paragrafos[indice_titulo - 1]
+    remover_quebras_de_pagina_paragrafo(paragrafo_anterior)
+
+    p_pr = paragrafo_anterior._p.get_or_add_pPr()
+    sect_existente = p_pr.find(qn("w:sectPr"))
+    if sect_existente is not None:
+        sect_pr = sect_existente
+    else:
+        sect_pr_body = doc._element.body.sectPr
+        if sect_pr_body is None:
+            return
+        sect_pr = deepcopy(sect_pr_body)
+        p_pr.append(sect_pr)
+
+    type_el = sect_pr.find(qn("w:type"))
+    if type_el is None:
+        type_el = OxmlElement("w:type")
+        sect_pr.insert(0, type_el)
+    type_el.set(qn("w:val"), "nextPage")
+
+    pg_num_type = sect_pr.find(qn("w:pgNumType"))
+    if pg_num_type is None:
+        pg_num_type = OxmlElement("w:pgNumType")
+        sect_pr.append(pg_num_type)
+    pg_num_type.set(qn("w:start"), str(reiniciar_em))
+
+
+def atualizar_datas_cidade_contrato(doc, data_referencia: date | None = None) -> None:
+    texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
+    for paragrafo in doc.paragraphs:
+        if "CAMPOS DOS GOYTACAZES" in normalizar_texto_maiusculo(paragrafo.text):
+            alinhamento = paragrafo.alignment
+            paragrafo.text = texto_data
+            paragrafo.alignment = alinhamento
+
+
+def compactar_linhas_declaracao(doc) -> None:
+    if Pt is None:
+        return
+    for paragrafo in doc.paragraphs:
+        texto = paragrafo.text.strip()
+        if not texto:
+            continue
+        if set(texto) == {"_"}:
+            paragrafo.text = "____________________"
+            texto = paragrafo.text
+        if "DECLARO" in normalizar_texto_maiusculo(texto):
+            formato = paragrafo.paragraph_format
+            formato.space_before = Pt(0)
+            formato.space_after = Pt(2)
+            formato.line_spacing = 1.0
 
 
 def compactar_bloco_final(doc) -> None:
@@ -4553,6 +4649,7 @@ def gerar_documento_contrato(
     doc = None
     try:
         doc = carregar_template_contrato_docx()
+        data_documento = agora_local().date()
         executar_ajuste_contrato("garantir_logo_no_cabecalho", lambda: garantir_logo_no_cabecalho(doc))
         termo_cirurgia = montar_termo_cirurgia_contrato(procedimentos)
         if not termo_cirurgia:
@@ -4628,8 +4725,12 @@ def gerar_documento_contrato(
             executar_ajuste_contrato("ajustar_assinatura_capa", lambda: ajustar_assinatura_capa(doc, nome_paciente, cpf_paciente, assinatura))
             executar_ajuste_contrato("ajustar_assinatura_contrato", lambda: ajustar_assinatura_contrato(doc, assinatura))
         executar_ajuste_contrato("reescrever_bloco_final_termo", lambda: reescrever_bloco_final_termo(doc, assinatura))
+        executar_ajuste_contrato("atualizar_datas_cidade_contrato", lambda: atualizar_datas_cidade_contrato(doc, data_documento))
+        executar_ajuste_contrato("inserir_secao_antes_titulo_contrato", lambda: inserir_secao_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO", 1))
+        executar_ajuste_contrato("inserir_secao_antes_titulo_termo", lambda: inserir_secao_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO", 1))
         executar_ajuste_contrato("normalizar_quebra_antes_titulo_contrato", lambda: normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO"))
         executar_ajuste_contrato("normalizar_quebra_antes_titulo_termo", lambda: normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO"))
+        executar_ajuste_contrato("compactar_linhas_declaracao", lambda: compactar_linhas_declaracao(doc))
         executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))
         executar_ajuste_contrato("aplicar_fonte_times_new_roman", lambda: aplicar_fonte_times_new_roman(doc))
         doc.save(caminho)
