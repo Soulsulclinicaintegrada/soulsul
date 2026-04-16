@@ -691,9 +691,11 @@ export function apiPacientesDisponivel() {
   return Boolean(API_BASE_URL);
 }
 
-export async function listarPacientesApi(busca: string) {
-  const query = busca.trim() ? `?q=${encodeURIComponent(busca.trim())}` : "";
-  return fetchJson<PacienteResumoApi[]>(`${API_BASE_URL}/api/pacientes${query}`);
+export async function listarPacientesApi(busca: string, limit = 50) {
+  const params = new URLSearchParams();
+  if (busca.trim()) params.set("q", busca.trim());
+  params.set("limit", String(limit));
+  return fetchJson<PacienteResumoApi[]>(`${API_BASE_URL}/api/pacientes?${params.toString()}`);
 }
 
 export async function listarProcedimentosApi(busca = "", ativosApenas = true) {

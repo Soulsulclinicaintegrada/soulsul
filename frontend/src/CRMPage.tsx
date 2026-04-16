@@ -134,11 +134,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const hoje = hojeIso();
       const inicioHistorico = adicionarDias(hoje, -90);
       const fimFuturo = adicionarDias(hoje, 180);
-      const [resposta, pacientes, agendamentos] = await Promise.all([
+      const resultados = await Promise.allSettled([
         listarCrmApi(),
-        listarPacientesApi(""),
+        listarPacientesApi("", 500),
         listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/")),
       ]);
+
+      const [crmResult, pacientesResult, agendamentosResult] = resultados;
+      const resposta = crmResult.status === "fulfilled"
+        ? crmResult.value
+        : { pipeline: [], finalizados: [], avaliacoes: [] };
+      const pacientes = pacientesResult.status === "fulfilled" ? pacientesResult.value : [];
+      const agendamentos = agendamentosResult.status === "fulfilled" ? agendamentosResult.value : [];
+
       setPipeline((resposta.pipeline || []).map(normalizarItemCrm));
       setFinalizados((resposta.finalizados || []).map(normalizarItemCrm));
       setAvaliacoes(resposta.avaliacoes || []);
@@ -204,6 +212,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
           .map((item) => mapearAgendamentoRelatorio("desmarcou", item))
       );
+
+      const fontesComFalha: string[] = [];
+      if (crmResult.status === "rejected") fontesComFalha.push("painel CRM");
+      if (pacientesResult.status === "rejected") fontesComFalha.push("lista de pacientes");
+      if (agendamentosResult.status === "rejected") fontesComFalha.push("agendamentos");
+      if (fontesComFalha.length > 0) {
+        setErro(`Alguns dados do CRM não carregaram: ${fontesComFalha.join(", ")}.`);
+      }
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar o CRM.");
     } finally {
