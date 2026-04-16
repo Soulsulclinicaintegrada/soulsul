@@ -136,10 +136,40 @@ type ConfigProfissionalAgenda = {
 
 type AgendaConfiguracaoPersistida = {
   totalConsultorios?: number;
+  salas: string[];
   ordemProfissionais: number[];
   configClinicaDias: Record<number, { ativo: boolean; inicio: string; fim: string; almocoInicio: string; almocoFim: string }>;
   configProfissionais: ConfigProfissionalAgenda[];
 };
+
+const SALAS_PADRAO_AGENDA = [
+  "CONSULTÓRIO 1",
+  "CONSULTÓRIO 2",
+  "CONSULTÓRIO 3",
+  "AVALIAÇÃO",
+  "FINANCEIRO",
+  "T.O. FISIOTERAPIA",
+  "FONO"
+];
+
+function normalizarNomeSala(valor: string) {
+  return valor
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function normalizarListaSalas(salas?: string[]) {
+  const vistos = new Set<string>();
+  const resultado = (salas || [])
+    .map((item) => normalizarNomeSala(item))
+    .filter((item) => {
+      if (!item || vistos.has(item)) return false;
+      vistos.add(item);
+      return true;
+    });
+  return resultado.length ? resultado : [...SALAS_PADRAO_AGENDA];
+}
 
 function isoParaBr(dataIso: string) {
   const [ano, mes, dia] = dataIso.split("-");
@@ -369,6 +399,7 @@ function carregarConfiguracaoAgenda(
     };
   });
   return {
+    salas: normalizarListaSalas(salvo?.salas),
     ordemProfissionais,
     configClinicaDias,
     configProfissionais
@@ -609,6 +640,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     () => criarConfiguracaoDiasPadrao()
   );
   const [configProfissionais, setConfigProfissionais] = useState<ConfigProfissionalAgenda[]>([]);
+  const [salasAgenda, setSalasAgenda] = useState<string[]>([...SALAS_PADRAO_AGENDA]);
   const [profissionalArrastandoId, setProfissionalArrastandoId] = useState<number | null>(null);
   const cliqueDetalheTimer = useRef<number | null>(null);
   const configuracaoAgendaCarregada = useRef(false);
@@ -694,6 +726,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         const carregada = carregarConfiguracaoAgenda(base, configuracao);
         setConfigClinicaDias(carregada.configClinicaDias);
         setConfigProfissionais(carregada.configProfissionais);
+        setSalasAgenda(carregada.salas);
         setOrdemProfissionais(carregada.ordemProfissionais);
         setProfissionaisSelecionados(base.map((item) => item.id));
       } catch {
@@ -701,6 +734,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         setUsuariosAgenda([]);
         setConfigClinicaDias(criarConfiguracaoDiasPadrao());
         setConfigProfissionais([]);
+        setSalasAgenda([...SALAS_PADRAO_AGENDA]);
         setOrdemProfissionais([]);
         setProfissionaisSelecionados([]);
       } finally {
@@ -762,13 +796,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     if (!configuracaoAgendaCarregada.current || !profissionaisBase.length) return;
     const timer = window.setTimeout(() => {
       void salvarConfiguracaoAgendaApi({
+        salas: salasAgenda,
         ordemProfissionais,
         configClinicaDias,
         configProfissionais
       });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [configClinicaDias, configProfissionais, ordemProfissionais]);
+  }, [configClinicaDias, configProfissionais, ordemProfissionais, salasAgenda]);
   const eventosVisiveis = useMemo(
     () => eventos.filter((evento) => !statusOcultoNaAgenda(evento.status)),
     [eventos]
@@ -2524,11 +2559,15 @@ function atualizarConfigProfissionalDia(
                         </label>
                         <label>
                           <span>Sala / consultório</span>
-                          <input
+                          <select
                             value={config.configuracaoDias[diaConfiguracaoSelecionado].consultorio || ""}
                             onChange={(event) => atualizarConfigProfissionalDia(profissional.id, diaConfiguracaoSelecionado, "consultorio", event.target.value)}
-                            placeholder="Ex.: 2"
-                          />
+                          >
+                            <option value="">Automático / primeira livre</option>
+                            {salasAgenda.map((sala) => (
+                              <option key={sala} value={sala}>{sala}</option>
+                            ))}
+                          </select>
                         </label>
                         <label>
                           <span>Máx. por horário</span>
@@ -2572,6 +2611,17 @@ function atualizarConfigProfissionalDia(
                     </div>
                   );
                 })}
+              </div>
+              <div className="agenda-modal-grid agenda-consulta-top-grid">
+                <label className="agenda-span-2">
+                  <span>Salas disponíveis</span>
+                  <textarea
+                    value={salasAgenda.join("\n")}
+                    onChange={(event) => setSalasAgenda(normalizarListaSalas(event.target.value.split(/\r?\n/)))}
+                    rows={7}
+                    placeholder="Uma sala por linha"
+                  />
+                </label>
               </div>
               </fieldset>
               {!usuarioEhAdministrador ? <div className="agenda-config-readonly-note">Somente administradores podem alterar horários disponíveis e definir quem está ativo no dia.</div> : null}

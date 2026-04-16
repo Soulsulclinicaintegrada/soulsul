@@ -516,6 +516,7 @@ def inicializar_banco():
             data_agendamento TEXT,
             duracao_minutos INTEGER,
             observacoes TEXT,
+            consultorio TEXT,
             criado_por TEXT,
             criado_em TEXT,
             atualizado_em TEXT
@@ -914,6 +915,7 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "data_agendamento TEXT")
     garantir_coluna(conn, "agendamentos", "duracao_minutos INTEGER")
     garantir_coluna(conn, "agendamentos", "observacoes TEXT")
+    garantir_coluna(conn, "agendamentos", "consultorio TEXT")
     garantir_coluna(conn, "agendamentos", "criado_por TEXT")
     garantir_coluna(conn, "agendamentos", "criado_em TEXT")
     garantir_coluna(conn, "agendamentos", "atualizado_em TEXT")
@@ -1041,6 +1043,7 @@ def inicializar_banco():
     garantir_coluna(conn, "agenda_configuracao", "ordem_profissionais_json TEXT DEFAULT '[]'")
     garantir_coluna(conn, "agenda_configuracao", "config_clinica_dias_json TEXT DEFAULT '{}'")
     garantir_coluna(conn, "agenda_configuracao", "config_profissionais_json TEXT DEFAULT '{}'")
+    garantir_coluna(conn, "agenda_configuracao", "salas_json TEXT DEFAULT '[]'")
     garantir_coluna(conn, "agenda_configuracao", "atualizado_em TEXT")
     garantir_coluna(conn, "logs_acesso", "usuario_id INTEGER")
     garantir_coluna(conn, "logs_acesso", "usuario TEXT")

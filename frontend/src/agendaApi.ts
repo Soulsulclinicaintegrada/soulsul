@@ -129,6 +129,7 @@ export type AgendaProfissionalConfiguracaoApi = {
 };
 
 export type AgendaConfiguracaoApi = {
+  salas: string[];
   ordemProfissionais: number[];
   configClinicaDias: Record<string, AgendaDiaConfiguracaoApi>;
   configProfissionais: AgendaProfissionalConfiguracaoApi[];

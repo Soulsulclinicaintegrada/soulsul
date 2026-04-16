@@ -453,6 +453,7 @@ export function UsuariosPage() {
         pacientes_abas: usuarioSelecionado.pacientesAbas
       });
       const configuracaoAtual = await buscarConfiguracaoAgendaApi().catch(() => ({
+        salas: [],
         ordemProfissionais: [],
         configClinicaDias: {},
         configProfissionais: []
@@ -460,6 +461,7 @@ export function UsuariosPage() {
       const configUsuario = agendaConfig[usuarioSelecionado.id] || agendaConfigPadraoUsuario();
       const outros = (configuracaoAtual.configProfissionais || []).filter((item) => item.id !== usuarioSelecionado.id);
       await salvarConfiguracaoAgendaApi({
+        salas: configuracaoAtual.salas || [],
         ordemProfissionais: configuracaoAtual.ordemProfissionais || [],
         configClinicaDias: configuracaoAtual.configClinicaDias || {},
         configProfissionais: [

@@ -199,6 +199,7 @@ class AgendaProfissionalConfigPayload(BaseModel):
 
 class AgendaConfiguracaoPayload(BaseModel):
     totalConsultorios: int = 3
+    salas: list[str] = Field(default_factory=list)
     ordemProfissionais: list[int] = Field(default_factory=list)
     configClinicaDias: dict[str, AgendaDiaConfigPayload] = Field(default_factory=dict)
     configProfissionais: list[AgendaProfissionalConfigPayload] = Field(default_factory=list)
@@ -236,13 +237,33 @@ def criar_config_dias_padrao() -> dict[str, dict[str, object]]:
 
 
 def normalizar_consultorio(valor: object) -> str:
-    texto = str(valor or "").strip()
+    texto = " ".join(str(valor or "").strip().split())
     if not texto:
         return ""
-    digitos = "".join(ch for ch in texto if ch.isdigit())
-    if digitos:
-        return digitos
     return texto.upper()
+
+
+SALAS_PADRAO = [
+    "CONSULTÓRIO 1",
+    "CONSULTÓRIO 2",
+    "CONSULTÓRIO 3",
+    "AVALIAÇÃO",
+    "FINANCEIRO",
+    "T.O. FISIOTERAPIA",
+    "FONO",
+]
+
+
+def normalizar_lista_salas(valores: list[object] | tuple[object, ...] | None) -> list[str]:
+    resultado: list[str] = []
+    vistos: set[str] = set()
+    for valor in valores or []:
+        sala = normalizar_consultorio(valor)
+        if not sala or sala in vistos:
+            continue
+        vistos.add(sala)
+        resultado.append(sala)
+    return resultado or SALAS_PADRAO.copy()
 
 
 def dia_semana_data_br(data_br: str) -> str:
@@ -277,6 +298,87 @@ def obter_consultorio_profissional_configurado(
     if not isinstance(configuracao_dia, dict):
         return ""
     return normalizar_consultorio(configuracao_dia.get("consultorio"))
+
+
+def listar_salas_configuradas(row: sqlite3.Row | None) -> list[str]:
+    if not row:
+        return SALAS_PADRAO.copy()
+    try:
+        bruto = json.loads(str(row["salas_json"] or "[]"))
+    except Exception:
+        bruto = []
+    return normalizar_lista_salas(bruto if isinstance(bruto, list) else [])
+
+
+def intervalos_se_sobrepoem(inicio_a: str, fim_a: str, inicio_b: str, fim_b: str) -> bool:
+    return not (fim_a <= inicio_b or inicio_a >= fim_b)
+
+
+def listar_salas_ocupadas(
+    conn: sqlite3.Connection,
+    data: str,
+    inicio: str,
+    fim: str,
+    *,
+    ignorar_agendamento_id: int | None = None,
+) -> set[str]:
+    data_coluna_agenda = obter_data_coluna_agenda()
+    sql = f"""
+        SELECT id, consultorio, hora_inicio, hora_fim
+        FROM agendamentos
+        WHERE {data_coluna_agenda}=?
+          AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+          AND TRIM(COALESCE(consultorio, '')) <> ''
+    """
+    params: list[object] = [data]
+    if ignorar_agendamento_id is not None:
+        sql += " AND id <> ?"
+        params.append(int(ignorar_agendamento_id))
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    ocupadas: set[str] = set()
+    for row in rows:
+        if intervalos_se_sobrepoem(
+            str(row_val(row, "hora_inicio", "") or ""),
+            str(row_val(row, "hora_fim", "") or ""),
+            inicio,
+            fim,
+        ):
+            sala = normalizar_consultorio(row_val(row, "consultorio", ""))
+            if sala:
+                ocupadas.add(sala)
+    return ocupadas
+
+
+def definir_consultorio_agendamento(
+    conn: sqlite3.Connection,
+    profissional_id: int,
+    data: str,
+    inicio: str,
+    fim: str,
+    *,
+    ignorar_agendamento_id: int | None = None,
+) -> str:
+    row = conn.execute("SELECT salas_json FROM agenda_configuracao WHERE id=1").fetchone()
+    salas = listar_salas_configuradas(row)
+    salas_normalizadas = normalizar_lista_salas(salas)
+    ocupadas = listar_salas_ocupadas(conn, data, inicio, fim, ignorar_agendamento_id=ignorar_agendamento_id)
+    consultorio_configurado = obter_consultorio_profissional_configurado(conn, profissional_id, data)
+    if consultorio_configurado:
+        if consultorio_configurado not in salas_normalizadas:
+            salas_normalizadas.append(consultorio_configurado)
+        if consultorio_configurado in ocupadas:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{consultorio_configurado} já está ocupado neste horário.",
+            )
+        return consultorio_configurado
+    for sala in salas_normalizadas:
+        if sala not in ocupadas:
+            return sala
+    raise HTTPException(
+        status_code=409,
+        detail="Todas as salas/consultórios estão ocupados neste horário.",
+    )
 
 
 def obter_configuracao_agenda():
@@ -338,6 +440,7 @@ def obter_configuracao_agenda():
             }
         )
     return {
+        "salas": listar_salas_configuradas(row),
         "ordemProfissionais": ordem_profissionais,
         "configClinicaDias": config_clinica,
         "configProfissionais": profissionais,
@@ -647,6 +750,7 @@ def salvar_configuracao_agenda(payload: AgendaConfiguracaoPayload):
             **valor.model_dump(),
         }
 
+    salas = normalizar_lista_salas(payload.salas)
     profissionais: dict[str, dict[str, object]] = {}
     for item in payload.configProfissionais:
         if int(item.id) not in ids_validos:
@@ -665,18 +769,20 @@ def salvar_configuracao_agenda(payload: AgendaConfiguracaoPayload):
     try:
         conn.execute(
             """
-            INSERT INTO agenda_configuracao (id, ordem_profissionais_json, config_clinica_dias_json, config_profissionais_json, atualizado_em)
-            VALUES (1, ?, ?, ?, ?)
+            INSERT INTO agenda_configuracao (id, ordem_profissionais_json, config_clinica_dias_json, config_profissionais_json, salas_json, atualizado_em)
+            VALUES (1, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               ordem_profissionais_json=excluded.ordem_profissionais_json,
               config_clinica_dias_json=excluded.config_clinica_dias_json,
               config_profissionais_json=excluded.config_profissionais_json,
+              salas_json=excluded.salas_json,
               atualizado_em=excluded.atualizado_em
             """,
             (
                 json.dumps(ordem, ensure_ascii=False),
                 json.dumps(clinica, ensure_ascii=False),
                 json.dumps(profissionais, ensure_ascii=False),
+                json.dumps(salas, ensure_ascii=False),
                 agora_br(),
             ),
         )
@@ -803,7 +909,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
         primeiro_procedimento = payload.procedimentos[0].nome if payload.procedimentos else ""
         contrato_id = next((item.contratoId for item in payload.procedimentos if item.contratoId), None)
         origem_contrato = 1 if contrato_id else 0
-        consultorio = obter_consultorio_profissional_configurado(conn, payload.profissionalId, payload.data)
+        consultorio = definir_consultorio_agendamento(conn, payload.profissionalId, payload.data, payload.horaInicio, payload.horaFim)
         usuario = usuario_request(request)
         momento = agora_br()
 
@@ -949,7 +1055,14 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
         primeiro_procedimento = payload.procedimentos[0].nome if payload.procedimentos else ""
         contrato_id = next((item.contratoId for item in payload.procedimentos if item.contratoId), None)
         origem_contrato = 1 if contrato_id else 0
-        consultorio = obter_consultorio_profissional_configurado(conn, payload.profissionalId, payload.data)
+        consultorio = definir_consultorio_agendamento(
+            conn,
+            payload.profissionalId,
+            payload.data,
+            payload.horaInicio,
+            payload.horaFim,
+            ignorar_agendamento_id=agendamento_id,
+        )
         procedimentos_atuais = carregar_procedimentos_agendamento(conn, agendamento_id)
         descricao_alteracoes = descrever_alteracoes_agendamento(existente, payload, procedimentos_atuais)
         if normalizar_consultorio(row_val(existente, "consultorio", "")) != consultorio:
