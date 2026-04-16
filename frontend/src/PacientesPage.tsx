@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   marcarPacienteFinalizadoCrmApi,
+  reativarPacienteCrmApi,
   alterarStatusOrcamentoPacienteApi,
   buscarCepApi,
   baixarRecebivelPacienteApi,
@@ -1203,11 +1204,16 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     setSalvandoCrmFinalizado(true);
     setErro(null);
     try {
-      await marcarPacienteFinalizadoCrmApi(pacienteAtivoId);
-      setFeedback("Paciente enviado para a lista de finalizados do CRM.");
+      if (ficha?.crm?.finalizado) {
+        await reativarPacienteCrmApi(pacienteAtivoId);
+        setFeedback("Paciente reativado e removido da lista de finalizados do CRM.");
+      } else {
+        await marcarPacienteFinalizadoCrmApi(pacienteAtivoId);
+        setFeedback("Paciente enviado para a lista de finalizados do CRM.");
+      }
       await carregarFicha(pacienteAtivoId);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao enviar paciente para o CRM.");
+      setErro(error instanceof Error ? error.message : "Falha ao atualizar paciente no CRM.");
     } finally {
       setSalvandoCrmFinalizado(false);
     }
@@ -2491,9 +2497,11 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
           >
             <Plus size={18} />
             {salvandoCrmFinalizado
-              ? "Enviando ao CRM..."
+              ? ficha?.crm?.finalizado
+                ? "Reativando..."
+                : "Enviando ao CRM..."
               : ficha?.crm?.finalizado
-                ? "Finalizado no CRM"
+                ? "Reativar paciente"
                 : "Marcar como finalizado"}
           </button>
         </div>

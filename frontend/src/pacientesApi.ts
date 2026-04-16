@@ -758,6 +758,12 @@ export async function marcarPacienteFinalizadoCrmApi(pacienteId: number) {
   });
 }
 
+export async function reativarPacienteCrmApi(pacienteId: number) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/reativar`, {
+    method: "POST"
+  });
+}
+
 export async function adicionarPacienteAvaliacaoCrmApi(pacienteId: number) {
   return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/avaliacao`, {
     method: "POST"

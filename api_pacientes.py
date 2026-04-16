@@ -4878,6 +4878,13 @@ def crm_bool(valor: object) -> bool:
     return bool(crm_int(valor, 0))
 
 
+def crm_row_val(row: sqlite3.Row, chave: str, padrao: object = "") -> object:
+    try:
+        return row[chave]
+    except Exception:
+        return padrao
+
+
 def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResposta | None:
     if row is None:
         return None
@@ -4923,10 +4930,10 @@ def crm_entry_por_paciente(conn: sqlite3.Connection, paciente_id: int) -> sqlite
 
 def agendamento_eh_avaliacao(row: sqlite3.Row) -> bool:
     blocos = [
-        str(row["tipo_atendimento_nome_snapshot"] or ""),
-        str(row["procedimento_nome_snapshot"] or ""),
-        str(row["procedimento"] or ""),
-        str(row["observacoes"] or row["observacao"] or ""),
+        str(crm_row_val(row, "tipo_atendimento_nome_snapshot", "") or ""),
+        str(crm_row_val(row, "procedimento_nome_snapshot", "") or ""),
+        str(crm_row_val(row, "procedimento", "") or ""),
+        str(crm_row_val(row, "observacoes", "") or crm_row_val(row, "observacao", "") or ""),
     ]
     texto = " ".join(blocos)
     normalizado = normalizar_texto(texto)
@@ -5221,6 +5228,53 @@ def marcar_paciente_finalizado_crm(paciente_id: int, request: Request):
         info=str(paciente["nome"] or f"Paciente {paciente_id}"),
         metodo_http="POST",
         rota=f"/api/crm/pacientes/{paciente_id}/finalizado",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.post("/api/crm/pacientes/{paciente_id}/reativar", response_model=CrmPacienteItemResposta)
+def reativar_paciente_crm(paciente_id: int, request: Request):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        atual = crm_entry_por_paciente(conn, int(paciente_id))
+        if atual is None:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado no CRM.")
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET origem_finalizado=0,
+                finalizado_em='',
+                atualizado_por=?,
+                atualizado_em=?
+            WHERE paciente_id=?
+            """,
+            (
+                usuario_request(request),
+                agora_str(),
+                int(paciente_id),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.paciente_id=?
+            LIMIT 1
+            """,
+            (int(paciente_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Paciente reativado",
+        info=str(paciente["nome"] or f"Paciente {paciente_id}"),
+        metodo_http="POST",
+        rota=f"/api/crm/pacientes/{paciente_id}/reativar",
     )
     return mapear_crm_paciente_item(row)
 
