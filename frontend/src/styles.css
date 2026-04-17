@@ -5357,6 +5357,15 @@ textarea::placeholder {
   min-height: 38px;
 }
 
+.agenda-work-row {
+  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 220px) minmax(180px, 220px);
+  align-items: start;
+}
+
+.agenda-work-row .agenda-span-2 {
+  grid-column: auto;
+}
+
 .agenda-add-procedimento {
   min-height: 38px;
   align-self: stretch;

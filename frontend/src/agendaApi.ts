@@ -1,5 +1,6 @@
 import { eventosAgendaDia, pacientesMock, type EventoAgenda } from "./mockData";
 import { nomeUsuarioCabecalho } from "./auth";
+import { listarOrdensServicoPacienteApi } from "./pacientesApi";
 
 function apiBasePadrao() {
   if (typeof window === "undefined") {
@@ -415,13 +416,32 @@ export async function buscarContextoPacienteAgenda(
     }, [])
   );
 
+  let guiasEmitidas: AgendaPacienteContexto["guiasEmitidas"] = [];
+  try {
+    const ordens = await listarOrdensServicoPacienteApi(pacienteId);
+    guiasEmitidas = ordens.map((item) => ({
+      id: item.id,
+      procedimentoNome: item.procedimentoNome,
+      retornoSolicitado: item.retornoSolicitado,
+      documentoNome: item.documentoNome || `Guia ${item.id}`,
+      elementoArcada: item.elementoArcada || "",
+      dataEmissao: item.criadoEm || "",
+      etapasResumo: (item.etapas || [])
+        .map((etapa) => etapa.etapa === "Outro" ? etapa.descricao_outro || "Outro" : etapa.etapa)
+        .filter(Boolean)
+        .join(" | ")
+    }));
+  } catch {
+    guiasEmitidas = [];
+  }
+
   return {
     id: paciente.id,
     nome: paciente.nome,
     prontuario: paciente.prontuario,
     celular: paciente.telefone,
     procedimentosContratados,
-    guiasEmitidas: []
+    guiasEmitidas
   };
 }
 
