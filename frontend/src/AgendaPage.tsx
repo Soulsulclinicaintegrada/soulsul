@@ -67,6 +67,7 @@ type ModalFormState = {
   trabalhoTipo: string;
   ordemServicoId: number | null;
   ordemServicoDocumentoNome: string;
+  elementoArcada: string;
 };
 
 type ProcedimentoSelecionado = {
@@ -542,7 +543,8 @@ function criarFormulario(slot: SlotRascunho, usuarioAtual: string): ModalFormSta
     duracaoMinutos: 15,
     trabalhoTipo: "",
     ordemServicoId: null,
-    ordemServicoDocumentoNome: ""
+    ordemServicoDocumentoNome: "",
+    elementoArcada: ""
   };
 }
 
@@ -734,12 +736,13 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     if (abaModal !== "Nova Consulta") return;
     if (!guiasDisponiveisPaciente.length) {
       setForm((atual) => (
-        atual.ordemServicoId || atual.ordemServicoDocumentoNome || atual.trabalhoTipo
+        atual.ordemServicoId || atual.ordemServicoDocumentoNome || atual.trabalhoTipo || atual.elementoArcada
           ? {
               ...atual,
               ordemServicoId: null,
               ordemServicoDocumentoNome: "",
-              trabalhoTipo: ""
+              trabalhoTipo: "",
+              elementoArcada: ""
             }
           : atual
       ));
@@ -1182,7 +1185,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       duracaoMinutos: Math.max(15, paraMinutos(detalhe.fim) - paraMinutos(detalhe.inicio)),
       trabalhoTipo: detalhe.trabalhoTipo ?? "",
       ordemServicoId: detalhe.ordemServicoId ?? null,
-      ordemServicoDocumentoNome: detalhe.ordemServicoDocumentoNome ?? ""
+      ordemServicoDocumentoNome: detalhe.ordemServicoDocumentoNome ?? "",
+      elementoArcada: detalhe.elementoArcada ?? ""
     });
     setSlotsSelecionados(slotsDoIntervalo(detalhe.inicio, detalhe.fim));
     setModoSelecaoSlots("intervalo");
@@ -1210,7 +1214,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         prontuario: contexto.prontuario,
         celular: contexto.celular,
         ordemServicoId: atual.ordemServicoId ?? detalhe.ordemServicoId ?? null,
-        ordemServicoDocumentoNome: atual.ordemServicoDocumentoNome || detalhe.ordemServicoDocumentoNome || ""
+        ordemServicoDocumentoNome: atual.ordemServicoDocumentoNome || detalhe.ordemServicoDocumentoNome || "",
+        elementoArcada: atual.elementoArcada || detalhe.elementoArcada || ""
       }));
     } else {
       setContextoPaciente([]);
@@ -1253,7 +1258,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       celular: contexto.celular,
       ordemServicoId: null,
       ordemServicoDocumentoNome: "",
-      trabalhoTipo: ""
+      trabalhoTipo: "",
+      elementoArcada: ""
     }));
   }
 
@@ -1265,7 +1271,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       nomePaciente: atual.pacienteBusca,
       trabalhoTipo: "",
       ordemServicoId: null,
-      ordemServicoDocumentoNome: ""
+      ordemServicoDocumentoNome: "",
+      elementoArcada: ""
     }));
     setSugestoesPaciente([]);
     setContextoPaciente([]);
@@ -1452,6 +1459,10 @@ function atualizarConfigProfissionalDia(
       setErroAgendaModal("Selecione ao menos um procedimento antes de agendar.");
       return;
     }
+    if (ehConsulta && (form.ordemServicoId || form.trabalhoTipo) && !form.elementoArcada.trim()) {
+      setErroAgendaModal("Informe o dente ou arcada antes de salvar o agendamento.");
+      return;
+    }
     setErroAgendaModal(null);
     setSalvando(true);
     try {
@@ -1494,7 +1505,8 @@ function atualizarConfigProfissionalDia(
         observacoes: form.observacoes,
         trabalhoTipo: form.trabalhoTipo,
         ordemServicoId: form.ordemServicoId,
-        ordemServicoDocumentoNome: form.ordemServicoDocumentoNome
+        ordemServicoDocumentoNome: form.ordemServicoDocumentoNome,
+        elementoArcada: form.elementoArcada
       };
 
       const itensProcedimento = ehConsulta
@@ -1553,6 +1565,7 @@ function atualizarConfigProfissionalDia(
           trabalhoTipo: form.trabalhoTipo,
           ordemServicoId: form.ordemServicoId,
           ordemServicoDocumentoNome: form.ordemServicoDocumentoNome,
+          elementoArcada: form.elementoArcada,
           marcadores: []
         };
       });
@@ -1606,6 +1619,7 @@ function atualizarConfigProfissionalDia(
       trabalhoTipo: evento.trabalhoTipo || "",
       ordemServicoId: evento.ordemServicoId ?? null,
       ordemServicoDocumentoNome: evento.ordemServicoDocumentoNome || "",
+      elementoArcada: evento.elementoArcada || "",
       procedimentos: payloadProcedimentosDoEvento(evento),
       ...overrides
     };
@@ -1797,6 +1811,7 @@ function atualizarConfigProfissionalDia(
       const partes = [`<div class="agenda-print-main">${procedimento}</div>`];
       if (dataGuia) partes.push(`<div class="agenda-print-meta">Data da guia: ${dataGuia}</div>`);
       partes.push(`<div class="agenda-print-meta">Trabalho: ${trabalho}</div>`);
+      if (evento.elementoArcada) partes.push(`<div class="agenda-print-meta">Dente / arcada: ${evento.elementoArcada}</div>`);
       return partes.join("");
     };
     const linhas =
@@ -2245,6 +2260,7 @@ function atualizarConfigProfissionalDia(
             <div><strong>Procedimentos:</strong> {detalheAtivo.procedimentos.join(", ")}</div>
             <div><strong>Trabalho:</strong> {detalheAtivo.trabalhoTipo || "Não informado"}</div>
             <div><strong>Guia emitida:</strong> {detalheAtivo.ordemServicoDocumentoNome || "Sem guia vinculada"}</div>
+            <div><strong>Dente / arcada:</strong> {detalheAtivo.elementoArcada || "Não informado"}</div>
             <div><strong>Marcadores:</strong> {(detalheAtivo.marcadores ?? []).join(", ") || "Sem marcadores"}</div>
             <div><strong>Observações:</strong> {detalheAtivo.observacoes || "Sem observações"}</div>
             <div className="agenda-history-block">
@@ -2303,7 +2319,8 @@ function atualizarConfigProfissionalDia(
                             nomePaciente: valor,
                             trabalhoTipo: "",
                             ordemServicoId: null,
-                            ordemServicoDocumentoNome: ""
+                            ordemServicoDocumentoNome: "",
+                            elementoArcada: ""
                           }));
                         }} placeholder="Digite o nome do paciente" />
                         {carregandoSugestoes ? <div className="agenda-dropdown">Buscando...</div> : null}
@@ -2477,7 +2494,8 @@ function atualizarConfigProfissionalDia(
                                       setForm((atual) => ({
                                         ...atual,
                                         ordemServicoId: guia?.id ?? null,
-                                        ordemServicoDocumentoNome: guia?.documentoNome || ""
+                                        ordemServicoDocumentoNome: guia?.documentoNome || "",
+                                        elementoArcada: atual.elementoArcada || guia?.elementoArcada || ""
                                       }));
                                     }}
                                   >
@@ -2499,6 +2517,14 @@ function atualizarConfigProfissionalDia(
                                     <option value="Trabalho na Clínica">Trabalho na Clínica</option>
                                     <option value="Trabalho no Laboratório">Trabalho no Laboratório</option>
                                   </select>
+                                </label>
+                                <label>
+                                  <span>Dente ou arcada</span>
+                                  <input
+                                    value={form.elementoArcada}
+                                    onChange={(event) => setForm((atual) => ({ ...atual, elementoArcada: event.target.value }))}
+                                    placeholder="Ex.: 11, 21 ou arcada superior"
+                                  />
                                 </label>
                               </div>
                             ) : null}

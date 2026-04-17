@@ -924,6 +924,7 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "trabalho_tipo TEXT")
     garantir_coluna(conn, "agendamentos", "ordem_servico_id INTEGER")
     garantir_coluna(conn, "agendamentos", "ordem_servico_documento_nome TEXT")
+    garantir_coluna(conn, "agendamentos", "elemento_arcada TEXT")
     garantir_coluna(conn, "agendamentos", "criado_por TEXT")
     garantir_coluna(conn, "agendamentos", "criado_em TEXT")
     garantir_coluna(conn, "agendamentos", "atualizado_em TEXT")

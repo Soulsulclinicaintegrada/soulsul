@@ -110,6 +110,7 @@ class AgendamentoPayload(BaseModel):
     trabalhoTipo: str | None = None
     ordemServicoId: int | None = None
     ordemServicoDocumentoNome: str | None = None
+    elementoArcada: str | None = None
     procedimentos: list[ProcedimentoPayload] = Field(default_factory=list)
 
 
@@ -146,6 +147,7 @@ class AgendamentoResposta(BaseModel):
     trabalhoTipo: str | None = None
     ordemServicoId: int | None = None
     ordemServicoDocumentoNome: str | None = None
+    elementoArcada: str | None = None
     historico: list[AgendamentoHistoricoItem] = Field(default_factory=list)
 
 
@@ -594,6 +596,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         trabalhoTipo=row_val(row, "trabalho_tipo", "") or "",
         ordemServicoId=row_val(row, "ordem_servico_id"),
         ordemServicoDocumentoNome=row_val(row, "ordem_servico_documento_nome", "") or "",
+        elementoArcada=row_val(row, "elemento_arcada", "") or "",
         historico=carregar_historico_agendamento(conn, row["id"]),
     )
 
@@ -999,6 +1002,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             "trabalho_tipo",
             "ordem_servico_id",
             "ordem_servico_documento_nome",
+            "elemento_arcada",
             "status",
             "criado_por",
             "criado_em",
@@ -1028,6 +1032,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             str(payload.trabalhoTipo or "").strip(),
             payload.ordemServicoId,
             str(payload.ordemServicoDocumentoNome or "").strip(),
+            str(payload.elementoArcada or "").strip(),
             payload.status or "Agendado",
             usuario,
             momento,
@@ -1166,6 +1171,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 trabalho_tipo=?,
                 ordem_servico_id=?,
                 ordem_servico_documento_nome=?,
+                elemento_arcada=?,
                 status=?,
                 atualizado_por=?,
                 atualizado_em=?
@@ -1194,6 +1200,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 str(payload.trabalhoTipo or "").strip(),
                 payload.ordemServicoId,
                 str(payload.ordemServicoDocumentoNome or "").strip(),
+                str(payload.elementoArcada or "").strip(),
                 payload.status or "Agendado",
                 usuario,
                 momento,

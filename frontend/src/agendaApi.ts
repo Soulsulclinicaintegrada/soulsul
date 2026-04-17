@@ -39,6 +39,7 @@ export type AgendaApiAgendamento = {
   trabalhoTipo?: string;
   ordemServicoId?: number | null;
   ordemServicoDocumentoNome?: string;
+  elementoArcada?: string;
   historico?: Array<{
     acao: string;
     descricao: string;
@@ -118,6 +119,7 @@ export type AgendaSalvarPayload = {
   trabalhoTipo?: string;
   ordemServicoId?: number | null;
   ordemServicoDocumentoNome?: string;
+  elementoArcada?: string;
   procedimentos: AgendaProcedimentoPayload[];
 };
 
