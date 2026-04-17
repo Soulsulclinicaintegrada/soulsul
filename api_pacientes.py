@@ -747,6 +747,7 @@ class DashboardCalendarioPagamentoItemResposta(BaseModel):
     data: str = ""
     total: str = ""
     quantidade: int = 0
+    pagamentos: list[ContaPagarResumo] = Field(default_factory=list)
 
 
 class DashboardAlertaItemResposta(BaseModel):
@@ -759,6 +760,13 @@ class DashboardAtividadeItemResposta(BaseModel):
     evento: str
     valor: str
     status: str
+
+
+class DashboardFunilResposta(BaseModel):
+    leads: int = 0
+    agendou: int = 0
+    compareceu: int = 0
+    fechou: int = 0
 
 
 class DashboardMetasResposta(BaseModel):
@@ -779,6 +787,7 @@ class DashboardPainelResposta(BaseModel):
     serieVendas: list[float]
     resumoHoje: DashboardResumoHojeResposta
     metas: DashboardMetasResposta
+    funilReal: DashboardFunilResposta = Field(default_factory=DashboardFunilResposta)
     agendaHoje: list[DashboardAgendaHojeItemResposta]
     calendarioPagamentos: list[DashboardCalendarioPagamentoItemResposta] = []
     alertas: list[DashboardAlertaItemResposta]
@@ -3015,12 +3024,22 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     atualizar_status_contas_pagar_automaticamente(conn)
 
     recebiveis_rows = carregar_recebiveis_financeiro(conn)
+    contas_pagar_rows = carregar_contas_pagar_financeiro(conn)
     caixa_rows = carregar_caixa_financeiro(conn)
     contratos_rows = conn.execute(
         """
-        SELECT id, valor_total, data_criacao, data_aprovacao, status
+        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status
         FROM contratos
         """
+    ).fetchall()
+    agendamentos_mes_rows = conn.execute(
+        """
+        SELECT paciente_id, status, data
+        FROM agendamentos
+        WHERE substr(COALESCE(data, ''), 1, 7)=?
+        """
+        ,
+        (f"{ano_atual}-{str(mes_atual).zfill(2)}",)
     ).fetchall()
 
     total_em_aberto = sum(
@@ -3065,6 +3084,31 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     ]
     inadimplencia_qtd = len(inadimplencia_rows)
     inadimplencia_valor = sum(float(row["valor"] or 0) for row in inadimplencia_rows)
+
+    ids_leads = {
+        int(row["paciente_id"])
+        for row in agendamentos_mes_rows
+        if row["paciente_id"] is not None
+    }
+    ids_agendou = {
+        int(row["paciente_id"])
+        for row in agendamentos_mes_rows
+        if row["paciente_id"] is not None and normalizar_texto(row["status"]) not in {"cancelado", "faltou"}
+    }
+    ids_compareceu = {
+        int(row["paciente_id"])
+        for row in agendamentos_mes_rows
+        if row["paciente_id"] is not None and normalizar_texto(row["status"]) in {"atendido", "em atendimento"}
+    }
+    ids_fechou = set()
+    for row in contratos_rows:
+        if normalizar_texto(row["status"]).upper() != "APROVADO":
+            continue
+        data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
+        if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_atual:
+            continue
+        if row["paciente_id"] is not None:
+            ids_fechou.add(int(row["paciente_id"]))
 
     meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
     meta_mes = float(meta_atual.meta or 0)
@@ -3118,9 +3162,9 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         ),
     ]
 
-    calendario_pagamentos_map: dict[str, dict[str, float | int]] = {}
-    for row in recebiveis_rows:
-        vencimento = str(row["vencimento"] or "").strip()
+    calendario_pagamentos_map: dict[str, dict[str, object]] = {}
+    for row in contas_pagar_rows:
+        vencimento = str(row["data_vencimento"] or "").strip()
         if not vencimento:
             continue
         data_ref = parse_data_contrato(vencimento)
@@ -3128,9 +3172,13 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             continue
         if normalizar_texto(row["status"]) in {"pago", "cancelado", "suspenso"}:
             continue
-        atual = calendario_pagamentos_map.setdefault(vencimento, {"total": 0.0, "quantidade": 0})
+        chave_data = data_ref.isoformat()
+        atual = calendario_pagamentos_map.setdefault(chave_data, {"total": 0.0, "quantidade": 0, "pagamentos": []})
         atual["total"] = float(atual["total"]) + float(row["valor"] or 0)
         atual["quantidade"] = int(atual["quantidade"]) + 1
+        pagamentos = atual["pagamentos"]
+        if isinstance(pagamentos, list):
+            pagamentos.append(mapear_conta_pagar(row))
 
     return DashboardPainelResposta(
         indicadores=indicadores,
@@ -3152,12 +3200,19 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             percentualMetaMes=percentual_meta_mes,
             percentualMetaAno=percentual_meta_ano,
         ),
+        funilReal=DashboardFunilResposta(
+            leads=len(ids_leads),
+            agendou=len(ids_agendou),
+            compareceu=len(ids_compareceu),
+            fechou=len(ids_fechou),
+        ),
         agendaHoje=[],
         calendarioPagamentos=[
             DashboardCalendarioPagamentoItemResposta(
                 data=data_ref,
                 total=formatar_moeda_br(float(valores["total"] or 0)),
                 quantidade=int(valores["quantidade"] or 0),
+                pagamentos=list(valores["pagamentos"]) if isinstance(valores.get("pagamentos"), list) else [],
             )
             for data_ref, valores in sorted(calendario_pagamentos_map.items())
         ],
@@ -3522,8 +3577,6 @@ def listar_documentos_paciente(paciente_row: sqlite3.Row, conn: sqlite3.Connecti
             caminho = os.path.join(DOCS_DIR, nome_arquivo)
             if not os.path.isfile(caminho):
                 continue
-            if str(nome_arquivo or "").upper().startswith("CONTRATO_"):
-                continue
             nome_norm = normalizar_texto(nome_arquivo)
             if (prontuario and prontuario in nome_norm) or (nome and nome in nome_norm):
                 itens.append(
@@ -3541,13 +3594,18 @@ def listar_documentos_paciente(paciente_row: sqlite3.Row, conn: sqlite3.Connecti
         conexao_local = True
     try:
         contratos_rows = conn.execute(
-            "SELECT id, data_criacao FROM contratos WHERE paciente_id=? ORDER BY COALESCE(data_criacao, '') DESC, id DESC",
+            """
+            SELECT id, data_aprovacao, data_criacao
+            FROM contratos
+            WHERE paciente_id=?
+            ORDER BY COALESCE(data_aprovacao, data_criacao, '') DESC, id DESC
+            """,
             (int(paciente_row["id"]),),
         ).fetchall()
         for row in contratos_rows:
             contrato_id = int(row["id"])
             nome_virtual = f"{nome_base_contrato(paciente_row, contrato_id)}.docx"
-            data_ref = parse_data_contrato(row["data_criacao"]) or date.today()
+            data_ref = parse_data_contrato(row["data_aprovacao"]) or parse_data_contrato(row["data_criacao"]) or date.today()
             itens.append(
                 ArquivoPacienteItem(
                     nome=nome_virtual,

@@ -464,6 +464,14 @@ export type DashboardCalendarioPagamentoItemApi = {
   data?: string;
   total?: string;
   quantidade?: number;
+  pagamentos?: ContaPagarResumoApi[];
+};
+
+export type DashboardFunilApi = {
+  leads: number;
+  agendou: number;
+  compareceu: number;
+  fechou: number;
 };
 
 export type DashboardAlertaApi = {
@@ -494,6 +502,7 @@ export type DashboardPainelApi = {
     percentualMetaMes: number;
     percentualMetaAno: number;
   };
+  funilReal?: DashboardFunilApi;
   agendaHoje: DashboardAgendaHojeItemApi[];
   calendarioPagamentos?: DashboardCalendarioPagamentoItemApi[];
   alertas: DashboardAlertaApi[];

@@ -2255,7 +2255,7 @@ function atualizarConfigProfissionalDia(
             <button type="button" className="agenda-detail-action" onClick={() => abrirPacientePorDestino("orcamentos")} title="Abrir orçamentos">
               <FileText size={16} />
             </button>
-            {detalheAtivo?.ordemServicoDocumentoNome || detalheAtivo?.trabalhoTipo ? (
+            {detalheAtivo?.ordemServicoId || detalheAtivo?.ordemServicoDocumentoNome || detalheAtivo?.trabalhoTipo ? (
               <button type="button" className="agenda-detail-action" onClick={() => abrirPacientePorDestino("ordem_servico")} title="Abrir ordem de serviço">
                 <ClipboardList size={16} />
               </button>

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { DollarSign, Target, TrendingUp } from "lucide-react";
+import { DollarSign, Target, TrendingUp, X } from "lucide-react";
 import {
   atualizarMetaFinanceiraApi,
-  listarCrmApi,
   painelDashboardApi,
-  type CrmPainelApi,
+  type ContaPagarResumoApi,
   type DashboardCalendarioPagamentoItemApi,
   type DashboardPainelApi
 } from "./pacientesApi";
@@ -42,19 +41,13 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
   atividades: []
 };
 
-const CRM_VAZIO: CrmPainelApi = {
-  pipeline: [],
-  finalizados: [],
-  avaliacoes: []
-};
-
 const TICKET_MEDIO = 4000;
 
 const FUNIL_CORES = [
-  { chave: "leads", rotulo: "Leads", cor: "#5b64b5", percentual: 1 },
-  { chave: "agendou", rotulo: "Agendou", cor: "#42c0c7", percentual: 0.75 },
-  { chave: "compareceu", rotulo: "Compareceu", cor: "#f2898c", percentual: 0.5 },
-  { chave: "fechou", rotulo: "Fechou", cor: "#efc449", percentual: 0.25 }
+  { chave: "leads", rotulo: "Leads", cor: "#5b64b5" },
+  { chave: "agendou", rotulo: "Agendou", cor: "#42c0c7" },
+  { chave: "compareceu", rotulo: "Compareceu", cor: "#f2898c" },
+  { chave: "fechou", rotulo: "Fechou", cor: "#efc449" }
 ] as const;
 
 const FUNIL_COR_NEUTRA = "#b9b4ab";
@@ -65,41 +58,6 @@ function moedaParaNumero(valor: string) {
 
 function numeroParaMoedaBr(valor: number) {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function normalizarTexto(valor: string) {
-  return (valor || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function etapaEhAgendada(etapa?: string) {
-  const valor = normalizarTexto(etapa || "");
-  return ["agendou avaliacao", "em negociacao", "convertido", "perdido"].includes(valor);
-}
-
-function dataAtualMesReferencia() {
-  const agora = new Date();
-  return { ano: agora.getFullYear(), mes: agora.getMonth() + 1 };
-}
-
-function extrairAnoMes(valor?: string) {
-  const texto = String(valor || "").trim();
-  if (!texto) return null;
-  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return { ano: Number(iso[1]), mes: Number(iso[2]) };
-  const br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-  if (br) return { ano: Number(br[3]), mes: Number(br[2]) };
-  return null;
-}
-
-function dataEstaNoMesAtual(valor?: string) {
-  const referencia = extrairAnoMes(valor);
-  if (!referencia) return false;
-  const atual = dataAtualMesReferencia();
-  return referencia.ano === atual.ano && referencia.mes === atual.mes;
 }
 
 function hexParaRgb(hex: string) {
@@ -130,43 +88,6 @@ function montarFunilMeta(metaNumero: number) {
   };
 }
 
-function montarFunilEvolucao(crm: CrmPainelApi) {
-  const idsLeads = new Set<number>();
-  const idsAgendados = new Set<number>();
-
-  crm.pipeline.forEach((item) => {
-    if (item.pacienteId && dataEstaNoMesAtual(item.atualizadoEm)) idsLeads.add(item.pacienteId);
-    if (item.pacienteId && dataEstaNoMesAtual(item.atualizadoEm) && etapaEhAgendada(item.etapaFunil)) idsAgendados.add(item.pacienteId);
-  });
-  crm.finalizados.forEach((item) => {
-    if (item.pacienteId && dataEstaNoMesAtual(item.finalizadoEm || item.atualizadoEm)) {
-      idsLeads.add(item.pacienteId);
-      idsAgendados.add(item.pacienteId);
-    }
-  });
-
-  const idsCompareceu = new Set<number>();
-  crm.avaliacoes.forEach((item) => {
-    if (item.pacienteId && dataEstaNoMesAtual(item.dataAvaliacao)) {
-      idsLeads.add(item.pacienteId);
-      idsAgendados.add(item.pacienteId);
-      idsCompareceu.add(item.pacienteId);
-    }
-  });
-
-  const idsFechou = new Set<number>();
-  crm.finalizados.forEach((item) => {
-    if (item.pacienteId && dataEstaNoMesAtual(item.finalizadoEm || item.atualizadoEm)) idsFechou.add(item.pacienteId);
-  });
-
-  return {
-    leads: idsLeads.size,
-    agendou: Math.max(idsAgendados.size, idsCompareceu.size),
-    compareceu: idsCompareceu.size,
-    fechou: idsFechou.size
-  };
-}
-
 function formatoPercentual(valor: number, base: number) {
   if (!base) return "0,0%";
   return `${((valor / base) * 100).toFixed(1).replace(".", ",")}%`;
@@ -192,6 +113,13 @@ function diaIsoLocal(data: Date) {
 function nomeMesAnoAtual() {
   const agora = new Date();
   return agora.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+}
+
+function formatarDataDetalhada(dataIso?: string) {
+  if (!dataIso) return "";
+  const [ano, mes, dia] = dataIso.split("-").map(Number);
+  const data = new Date(ano, (mes || 1) - 1, dia || 1);
+  return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 }
 
 type FunilProps = {
@@ -267,54 +195,86 @@ function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0
   );
 }
 
+function PagamentoDiaModal({
+  item,
+  onFechar
+}: {
+  item: DashboardCalendarioPagamentoItemApi;
+  onFechar: () => void;
+}) {
+  const pagamentos = item.pagamentos || [];
+  return (
+    <div className="overlay" role="presentation" onClick={onFechar}>
+      <div className="modal-shell dashboard-payment-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <span className="panel-kicker">Financeiro</span>
+            <h2>Pagamentos do dia</h2>
+            <span className="panel-meta">{formatarDataDetalhada(item.data)}</span>
+          </div>
+          <button type="button" className="icon-action" onClick={onFechar} aria-label="Fechar pagamentos do dia">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="modal-body dashboard-payment-modal-body">
+          <div className="dashboard-payment-modal-summary">
+            <div className="summary-row">
+              <span>Total previsto</span>
+              <strong>{item.total || "R$ 0,00"}</strong>
+            </div>
+            <div className="summary-row">
+              <span>Pagamentos</span>
+              <strong>{item.quantidade || 0}</strong>
+            </div>
+          </div>
+          <div className="dashboard-payment-list">
+            {pagamentos.length ? (
+              pagamentos.map((pagamento: ContaPagarResumoApi) => (
+                <article className="dashboard-payment-entry" key={pagamento.id}>
+                  <div className="dashboard-payment-entry-main">
+                    <strong>{pagamento.descricao || "Pagamento sem descrição"}</strong>
+                    <span>{pagamento.fornecedor || pagamento.categoria || "Sem fornecedor informado"}</span>
+                  </div>
+                  <div className="dashboard-payment-entry-meta">
+                    <strong>{pagamento.valor}</strong>
+                    <small>{pagamento.status || "A vencer"}</small>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="dashboard-feedback">Nenhum pagamento pendente nesse dia.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const [painel, setPainel] = useState<DashboardPainelApi>(DASHBOARD_VAZIO);
-  const [crmPainel, setCrmPainel] = useState<CrmPainelApi>(CRM_VAZIO);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [metaEditavel, setMetaEditavel] = useState("");
   const [salvandoMeta, setSalvandoMeta] = useState(false);
+  const [pagamentoDiaAtivo, setPagamentoDiaAtivo] = useState<DashboardCalendarioPagamentoItemApi | null>(null);
 
   async function carregar() {
     setCarregando(true);
     setErro("");
     try {
-      const [dashboardResult, crmResult] = await Promise.allSettled([
-        painelDashboardApi(),
-        listarCrmApi()
-      ]);
-
-      if (dashboardResult.status === "fulfilled") {
-        const resposta = dashboardResult.value;
-        setPainel({
-          ...DASHBOARD_VAZIO,
-          ...resposta,
-          meses: resposta.meses?.length ? resposta.meses : DASHBOARD_VAZIO.meses,
-          serieVendas: resposta.serieVendas?.length ? resposta.serieVendas : DASHBOARD_VAZIO.serieVendas,
-          metas: resposta.metas || DASHBOARD_VAZIO.metas
-        });
-        setMetaEditavel(resposta.metas?.metaMes || DASHBOARD_VAZIO.metas.metaMes);
-      } else {
-        setPainel(DASHBOARD_VAZIO);
-        setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
-      }
-
-      if (crmResult.status === "fulfilled") {
-        setCrmPainel(crmResult.value || CRM_VAZIO);
-      } else {
-        setCrmPainel(CRM_VAZIO);
-      }
-
-      const falhas: string[] = [];
-      if (dashboardResult.status === "rejected") falhas.push("dashboard");
-      if (crmResult.status === "rejected") falhas.push("CRM");
-      if (falhas.length) {
-        setErro(`Alguns dados não carregaram: ${falhas.join(", ")}.`);
-      }
+      const resposta = await painelDashboardApi();
+      setPainel({
+        ...DASHBOARD_VAZIO,
+        ...resposta,
+        meses: resposta.meses?.length ? resposta.meses : DASHBOARD_VAZIO.meses,
+        serieVendas: resposta.serieVendas?.length ? resposta.serieVendas : DASHBOARD_VAZIO.serieVendas,
+        metas: resposta.metas || DASHBOARD_VAZIO.metas
+      });
+      setMetaEditavel(resposta.metas?.metaMes || DASHBOARD_VAZIO.metas.metaMes);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar dashboard.");
       setPainel(DASHBOARD_VAZIO);
-      setCrmPainel(CRM_VAZIO);
       setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
     } finally {
       setCarregando(false);
@@ -325,17 +285,18 @@ export function DashboardPage() {
     void carregar();
   }, []);
 
-  const maxValor = useMemo(() => {
-    const meta = moedaParaNumero(painel.metas.metaMes);
-    const supermeta = moedaParaNumero(painel.metas.supermetaMes);
-    return Math.max(...painel.serieVendas, meta, supermeta, 1000);
-  }, [painel.serieVendas, painel.metas.metaMes, painel.metas.supermetaMes]);
-
   const metaMesNumero = useMemo(() => moedaParaNumero(painel.metas.metaMes), [painel.metas.metaMes]);
-  const supermetaMesNumero = useMemo(() => moedaParaNumero(painel.metas.supermetaMes), [painel.metas.supermetaMes]);
   const metaEditavelNumero = useMemo(() => moedaParaNumero(metaEditavel), [metaEditavel]);
   const funilMeta = useMemo(() => montarFunilMeta(metaEditavelNumero || metaMesNumero), [metaEditavelNumero, metaMesNumero]);
-  const funilEvolucao = useMemo(() => montarFunilEvolucao(crmPainel), [crmPainel]);
+  const funilEvolucao = useMemo(
+    () => ({
+      leads: painel.funilReal?.leads || 0,
+      agendou: painel.funilReal?.agendou || 0,
+      compareceu: painel.funilReal?.compareceu || 0,
+      fechou: painel.funilReal?.fechou || 0
+    }),
+    [painel.funilReal]
+  );
   const calendarioPagamentos = useMemo(() => {
     const mapa = new Map<string, DashboardCalendarioPagamentoItemApi>();
     (painel.calendarioPagamentos || []).forEach((item) => {
@@ -344,6 +305,7 @@ export function DashboardPage() {
     return mapa;
   }, [painel.calendarioPagamentos]);
   const diasCalendario = useMemo(() => montarDiasDoMesAtual(), []);
+  const hoje = useMemo(() => diaIsoLocal(new Date()), []);
 
   async function salvarMetaRapida() {
     try {
@@ -390,51 +352,46 @@ export function DashboardPage() {
         />
         <FunilCard
           titulo="Evolução atual"
-          subtitulo="Baseado no CRM do mês"
+          subtitulo="Baseado em agenda e contratos reais do mês"
           valores={funilEvolucao}
           metasReferencia={funilMeta}
         />
       </section>
 
       <section className="content-grid">
-        <article className="panel panel-chart">
+        <article className="panel dashboard-calendar-panel">
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">Performance</span>
-              <h2>Evolução mensal</h2>
+              <span className="panel-kicker">Financeiro</span>
+              <h2>Calendário de pagamentos</h2>
             </div>
-            <span className="panel-meta">Ano atual</span>
+            <span className="panel-meta">{nomeMesAnoAtual()}</span>
           </div>
           {erro ? <div className="dashboard-feedback">{erro}</div> : null}
-          <div className="chart-area">
-            <div className="chart-guides">
-              {[0, maxValor * 0.25, maxValor * 0.5, maxValor * 0.75, maxValor].reverse().map((valor) => (
-                <div key={valor} className="chart-guide-row">
-                  <span>{Math.round(valor).toLocaleString("pt-BR")}</span>
-                  <div className="chart-guide-line" />
-                </div>
-              ))}
-            </div>
-            <div className="chart-series">
-              {metaMesNumero > 0 ? (
-                <div className="line meta" style={{ bottom: `${(metaMesNumero / maxValor) * 100}%` }}>
-                  <span>Meta: {painel.metas.metaMes}</span>
-                </div>
-              ) : null}
-              {supermetaMesNumero > 0 ? (
-                <div className="line super" style={{ bottom: `${(supermetaMesNumero / maxValor) * 100}%` }}>
-                  <span>Supermeta: {painel.metas.supermetaMes}</span>
-                </div>
-              ) : null}
-              <div className="bars">
-                {painel.serieVendas.map((valor, index) => (
-                  <div key={`${painel.meses[index] || index}`} className="bar-group">
-                    <div className="bar" style={{ height: `${maxValor ? (valor / maxValor) * 100 : 0}%` }} />
-                    <span>{painel.meses[index] || "-"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="mini-calendar-weekdays dashboard-calendar-weekdays">
+            {["S", "T", "Q", "Q", "S", "S", "D"].map((dia, indice) => <span key={`${dia}-${indice}`}>{dia}</span>)}
+          </div>
+          <div className="mini-calendar-grid dashboard-payment-calendar dashboard-payment-calendar-large">
+            {diasCalendario.map((dia) => {
+              const chave = diaIsoLocal(dia);
+              const item = calendarioPagamentos.get(chave);
+              const mesAtual = dia.getMonth() === new Date().getMonth();
+              const isHoje = chave === hoje;
+              const classe = `dashboard-payment-day${mesAtual ? "" : " muted"}${item ? " has-value" : ""}${isHoje ? " today" : ""}`;
+              return (
+                <button
+                  key={chave}
+                  type="button"
+                  className={classe}
+                  disabled={!item}
+                  onClick={() => item && setPagamentoDiaAtivo(item)}
+                >
+                  <strong>{dia.getDate()}</strong>
+                  <span>{item?.quantidade ? `${item.quantidade} pagamento(s)` : "Sem pagamentos"}</span>
+                  <small>{item?.total || ""}</small>
+                </button>
+              );
+            })}
           </div>
         </article>
 
@@ -477,35 +434,10 @@ export function DashboardPage() {
               </div>
             </div>
           </article>
-
-          <article className="panel summary-panel">
-            <div className="section-title-row">
-              <div>
-                <span className="panel-kicker">Financeiro</span>
-                <h2>Calendário de pagamentos</h2>
-              </div>
-              <span className="panel-meta">{nomeMesAnoAtual()}</span>
-            </div>
-            <div className="mini-calendar-weekdays">
-              {["S", "T", "Q", "Q", "S", "S", "D"].map((dia, indice) => <span key={`${dia}-${indice}`}>{dia}</span>)}
-            </div>
-            <div className="mini-calendar-grid dashboard-payment-calendar">
-              {diasCalendario.map((dia) => {
-                const chave = diaIsoLocal(dia);
-                const item = calendarioPagamentos.get(chave);
-                const mesAtual = dia.getMonth() === new Date().getMonth();
-                return (
-                  <div key={chave} className={`dashboard-payment-day${mesAtual ? "" : " muted"}${item ? " has-value" : ""}`}>
-                    <strong>{dia.getDate()}</strong>
-                    <span>{item?.quantidade ? `${item.quantidade} pagamento(s)` : ""}</span>
-                    <small>{item?.total || ""}</small>
-                  </div>
-                );
-              })}
-            </div>
-          </article>
         </div>
       </section>
+
+      {pagamentoDiaAtivo ? <PagamentoDiaModal item={pagamentoDiaAtivo} onFechar={() => setPagamentoDiaAtivo(null)} /> : null}
     </>
   );
 }

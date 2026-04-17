@@ -962,6 +962,8 @@ textarea::placeholder {
 }
 
 .dashboard-payment-day {
+  appearance: none;
+  width: 100%;
   min-height: 88px;
   padding: 10px 8px;
   border-radius: 14px;
@@ -970,6 +972,9 @@ textarea::placeholder {
   display: grid;
   align-content: start;
   gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
 .dashboard-payment-day strong {
@@ -988,8 +993,87 @@ textarea::placeholder {
   border-color: rgba(188, 145, 85, 0.28);
 }
 
+.dashboard-payment-day.has-value:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px rgba(63, 42, 14, 0.08);
+}
+
 .dashboard-payment-day.muted {
   opacity: 0.45;
+}
+
+.dashboard-payment-day.today {
+  border-color: rgba(47, 106, 82, 0.36);
+}
+
+.dashboard-payment-day:disabled {
+  cursor: default;
+}
+
+.dashboard-calendar-panel {
+  min-height: 640px;
+}
+
+.dashboard-calendar-weekdays {
+  margin-bottom: 10px;
+}
+
+.dashboard-payment-calendar-large {
+  gap: 12px;
+}
+
+.dashboard-payment-calendar-large .dashboard-payment-day {
+  min-height: 120px;
+  padding: 14px 12px;
+}
+
+.dashboard-payment-calendar-large .dashboard-payment-day strong {
+  font-size: 1.05rem;
+}
+
+.dashboard-payment-modal {
+  width: min(820px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+}
+
+.dashboard-payment-modal-body {
+  padding-bottom: 28px;
+}
+
+.dashboard-payment-modal-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-payment-list {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-payment-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(199, 170, 120, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.dashboard-payment-entry-main,
+.dashboard-payment-entry-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-payment-entry-main span,
+.dashboard-payment-entry-meta small {
+  color: var(--muted);
+}
+
+.dashboard-payment-entry-meta {
+  justify-items: end;
 }
 
 .activity-table th {
