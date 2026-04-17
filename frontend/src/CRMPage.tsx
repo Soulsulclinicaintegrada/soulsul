@@ -124,9 +124,11 @@ function adicionarDias(dataIso: string, dias: number) {
 
 function dataNascimentoDiaMes(valor?: string) {
   const texto = String(valor || "").trim();
-  const match = texto.match(/^(\d{2})\/(\d{2})\/\d{4}$/);
-  if (!match) return null;
-  return { dia: Number(match[1]), mes: Number(match[2]) };
+  let match = texto.match(/^(\d{2})\/(\d{2})\/\d{4}$/);
+  if (match) return { dia: Number(match[1]), mes: Number(match[2]) };
+  match = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return { dia: Number(match[3]), mes: Number(match[2]) };
+  return null;
 }
 
 function extrairDataIso(valor?: string) {
@@ -167,7 +169,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const fimFuturo = adicionarDias(hoje, 180);
       const resultados = await Promise.allSettled([
         listarCrmApi(),
-        listarPacientesApi("", 500),
+        listarPacientesApi("", 5000),
         listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/")),
       ]);
 
@@ -460,6 +462,43 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setRelatorioAberto(chave);
   }
 
+  const relatorioAtual = useMemo(() => {
+    switch (relatorioAberto) {
+      case "aniversariantes":
+        return {
+          titulo: "Aniversariantes do mês",
+          nomeExportacao: "crm-aniversariantes",
+          itens: aniversariantesFiltrados,
+          vazio: "Nenhum aniversariante encontrado.",
+          icone: <CalendarDays size={18} />,
+        };
+      case "faltaram":
+        return {
+          titulo: "Pacientes que faltaram",
+          nomeExportacao: "crm-faltaram",
+          itens: faltaramFiltrados,
+          vazio: "Nenhuma falta registrada.",
+          icone: <CalendarDays size={18} />,
+        };
+      case "desmarcaram":
+        return {
+          titulo: "Pacientes que desmarcaram",
+          nomeExportacao: "crm-desmarcaram",
+          itens: desmarcaramFiltrados,
+          vazio: "Nenhuma desmarcação registrada.",
+          icone: <CalendarDays size={18} />,
+        };
+      default:
+        return {
+          titulo: "Não finalizados sem agendamento",
+          nomeExportacao: "crm-nao-finalizados-sem-agendamento",
+          itens: semAgendamentoFiltrados,
+          vazio: "Nenhum paciente nesta condição.",
+          icone: <Search size={18} />,
+        };
+    }
+  }, [aniversariantesFiltrados, desmarcaramFiltrados, faltaramFiltrados, relatorioAberto, semAgendamentoFiltrados]);
+
   return (
     <section className="module-shell crm-shell">
       <section className="module-kpis">
@@ -600,6 +639,39 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <div className="section-title-row">
             <div>
               <span className="panel-kicker">Relatório</span>
+              <h2>{relatorioAtual.titulo}</h2>
+            </div>
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio(relatorioAtual.nomeExportacao, relatorioAtual.itens)}>
+                <Download size={15} />
+                Baixar
+              </button>
+              {relatorioAtual.icone}
+            </div>
+          </div>
+          <div className="crm-list">
+            {!carregando && relatorioAtual.itens.map((item) => (
+              <article key={item.chave} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.detalhe}</span>
+                  {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
+                </div>
+              </article>
+            ))}
+            {!carregando && !relatorioAtual.itens.length ? <div className="module-subitem"><strong>{relatorioAtual.vazio}</strong></div> : null}
+          </div>
+        </article>
+      </section>
+
+      <section className="crm-grid crm-section-hidden">
+        <article className="panel crm-panel">
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Relatório</span>
               <h2>Não finalizados sem agendamento</h2>
             </div>
             <div className="crm-inline-actions">
@@ -659,7 +731,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         </article>
       </section>
 
-      <section className={abaAtiva === "relatorios" ? "crm-grid" : "crm-grid crm-section-hidden"}>
+      <section className="crm-grid crm-section-hidden">
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
