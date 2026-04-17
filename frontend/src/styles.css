@@ -2956,6 +2956,19 @@ textarea::placeholder {
   gap: 18px;
 }
 
+.odontograma-section {
+  display: grid;
+  gap: 10px;
+}
+
+.odontograma-section-header {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .odontograma-legend {
   display: flex;
   flex-wrap: wrap;
@@ -3004,14 +3017,16 @@ textarea::placeholder {
 }
 
 .odontograma-box {
-  min-height: 56px;
-  border: 1px solid rgba(176, 184, 193, 0.9);
+  min-height: 62px;
+  border: 1px solid rgba(127, 138, 153, 0.95);
+  border-radius: 14px;
   background: #ffffff;
   color: var(--text-primary);
   display: grid;
   place-items: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  padding: 0;
 }
 
 .odontograma-box:hover {
@@ -3035,27 +3050,9 @@ textarea::placeholder {
 }
 
 .odontograma-box-label {
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.03em;
-}
-
-.odontograma-svg.tooth--selected .odontograma-tooth-body {
-  fill: #70b8ee;
-  stroke: #4c9fdd;
-}
-
-.odontograma-svg.tooth--selected .odontograma-tooth-shade {
-  fill: rgba(82, 150, 212, 0.28);
-}
-
-.odontograma-svg.tooth--contracted .odontograma-tooth-body {
-  fill: #ed6e66;
-  stroke: #d3524a;
-}
-
-.odontograma-svg.tooth--contracted .odontograma-tooth-shade {
-  fill: rgba(193, 73, 65, 0.22);
 }
 
 .modal-footer {

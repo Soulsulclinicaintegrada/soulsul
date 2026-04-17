@@ -21,33 +21,38 @@ function classeCaixaDente(contratado: boolean, selecionado: boolean) {
 }
 
 function LinhaOdontograma({
+  titulo,
   dentes,
   dentesContratados,
   dentesSelecionados,
   onSelectTooth
 }: {
+  titulo: string;
   dentes: number[];
   dentesContratados: number[];
   dentesSelecionados: number[];
   onSelectTooth: (toothId: number) => void;
 }) {
   return (
-    <div className="odontograma-row">
-      {dentes.map((dente) => {
-        const contratado = dentesContratados.includes(dente);
-        const selecionado = dentesSelecionados.includes(dente);
-        return (
-          <button
-            key={dente}
-            type="button"
-            className={classeCaixaDente(contratado, selecionado)}
-            onClick={() => onSelectTooth(dente)}
-          >
-            <span className="odontograma-box-label">{dente}</span>
-          </button>
-        );
-      })}
-    </div>
+    <section className="odontograma-section">
+      <header className="odontograma-section-header">{titulo}</header>
+      <div className="odontograma-row">
+        {dentes.map((dente) => {
+          const contratado = dentesContratados.includes(dente);
+          const selecionado = dentesSelecionados.includes(dente);
+          return (
+            <button
+              key={dente}
+              type="button"
+              className={classeCaixaDente(contratado, selecionado)}
+              onClick={() => onSelectTooth(dente)}
+            >
+              <span className="odontograma-box-label">{dente}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -62,6 +67,7 @@ export function Odontograma({ denticao, dentesContratados, dentesSelecionados, o
         <span className="odontograma-legend-item"><i className="odontograma-legend-swatch selected" />Selecionado</span>
       </div>
       <LinhaOdontograma
+        titulo="Arcada superior"
         dentes={superior}
         dentesContratados={dentesContratados}
         dentesSelecionados={dentesSelecionados}
@@ -69,6 +75,7 @@ export function Odontograma({ denticao, dentesContratados, dentesSelecionados, o
       />
       <div className="odontograma-divider" />
       <LinhaOdontograma
+        titulo="Arcada inferior"
         dentes={inferior}
         dentesContratados={dentesContratados}
         dentesSelecionados={dentesSelecionados}

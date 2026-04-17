@@ -4347,6 +4347,27 @@ def remover_quebras_de_pagina_paragrafo(paragrafo) -> None:
                 run._element.remove(child)
 
 
+def iterar_paragrafos_doc(container):
+    for paragrafo in getattr(container, "paragraphs", []):
+        yield paragrafo
+    for tabela in getattr(container, "tables", []):
+        for linha in tabela.rows:
+            for celula in linha.cells:
+                yield from iterar_paragrafos_doc(celula)
+
+
+def texto_eh_data_extenso_avulsa(texto: str) -> bool:
+    texto_limpo = " ".join((texto or "").strip().split())
+    if not texto_limpo:
+        return False
+    return bool(
+        re.fullmatch(
+            r"\d{1,2}\s+de\s+(janeiro|fevereiro|marco|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+\d{4}\.?",
+            normalizar_texto(texto_limpo),
+        )
+    )
+
+
 def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> None:
     if OxmlElement is None or qn is None:
         return
@@ -4389,11 +4410,34 @@ def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> Non
 
 def atualizar_datas_cidade_contrato(doc, data_referencia: date | None = None) -> None:
     texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
-    for paragrafo in doc.paragraphs:
-        if "CAMPOS DOS GOYTACAZES" in normalizar_texto_maiusculo(paragrafo.text):
+    texto_data_avulsa = formatar_data_extenso_local(data_referencia)
+    for paragrafo in iterar_paragrafos_doc(doc):
+        texto_atual = paragrafo.text or ""
+        if "CAMPOS DOS GOYTACAZES" in normalizar_texto_maiusculo(texto_atual):
             alinhamento = paragrafo.alignment
             paragrafo.text = texto_data
             paragrafo.alignment = alinhamento
+        elif texto_eh_data_extenso_avulsa(texto_atual):
+            alinhamento = paragrafo.alignment
+            paragrafo.text = texto_data_avulsa
+            paragrafo.alignment = alinhamento
+
+
+def remover_datas_duplicadas_consecutivas(doc, data_referencia: date | None = None) -> None:
+    texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
+    ultimo_data_idx = None
+    paragrafos = list(iterar_paragrafos_doc(doc))
+    for indice, paragrafo in enumerate(paragrafos):
+        texto = " ".join((paragrafo.text or "").strip().split())
+        if texto != texto_data:
+            continue
+        if ultimo_data_idx is None:
+            ultimo_data_idx = indice
+            continue
+        if indice - ultimo_data_idx <= 2:
+            paragrafo.text = ""
+        else:
+            ultimo_data_idx = indice
 
 
 def compactar_linhas_declaracao(doc) -> None:
@@ -4726,9 +4770,8 @@ def gerar_documento_contrato(
             executar_ajuste_contrato("ajustar_assinatura_contrato", lambda: ajustar_assinatura_contrato(doc, assinatura))
         executar_ajuste_contrato("reescrever_bloco_final_termo", lambda: reescrever_bloco_final_termo(doc, assinatura))
         executar_ajuste_contrato("atualizar_datas_cidade_contrato", lambda: atualizar_datas_cidade_contrato(doc, data_documento))
-        executar_ajuste_contrato("inserir_secao_antes_titulo_contrato", lambda: inserir_secao_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO", 1))
         executar_ajuste_contrato("inserir_secao_antes_titulo_termo", lambda: inserir_secao_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO", 1))
-        executar_ajuste_contrato("normalizar_quebra_antes_titulo_contrato", lambda: normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICO"))
+        executar_ajuste_contrato("remover_datas_duplicadas_consecutivas", lambda: remover_datas_duplicadas_consecutivas(doc, data_documento))
         executar_ajuste_contrato("normalizar_quebra_antes_titulo_termo", lambda: normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO"))
         executar_ajuste_contrato("compactar_linhas_declaracao", lambda: compactar_linhas_declaracao(doc))
         executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))
