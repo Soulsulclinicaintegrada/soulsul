@@ -181,7 +181,7 @@ function App() {
   const paginaAtual = useMemo(() => {
     if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente, contrato, venda ou vencimento..." };
     if (menuAtivo === "Pacientes") return { titulo: "Pacientes", busca: "Buscar paciente, prontuario, telefone ou CPF..." };
-    if (menuAtivo === "Agenda") return { titulo: "Agenda Clinica", busca: "Buscar paciente, profissional, procedimento ou horario..." };
+    if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente, profissional, procedimento ou horario..." };
     if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar lead, paciente, campanha ou etapa..." };
     if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar recebivel, conta a pagar, categoria ou vencimento..." };
     if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar procedimento, categoria ou valor..." };

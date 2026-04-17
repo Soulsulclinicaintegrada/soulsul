@@ -11,7 +11,7 @@ from api_pacientes import garantir_colunas_pacientes_api
 from database import conectar, inicializar_banco
 
 
-ARQUIVO_PLANILHA = Path(r"C:\Users\jusgo\Downloads\Patient (1).xlsx")
+ARQUIVO_PLANILHA = Path(r"C:\Users\jusgo\Downloads\Patient (2).xlsx")
 
 
 def is_blank(value: Any) -> bool:

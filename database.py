@@ -517,6 +517,9 @@ def inicializar_banco():
             duracao_minutos INTEGER,
             observacoes TEXT,
             consultorio TEXT,
+            trabalho_tipo TEXT,
+            ordem_servico_id INTEGER,
+            ordem_servico_documento_nome TEXT,
             criado_por TEXT,
             criado_em TEXT,
             atualizado_em TEXT
@@ -908,6 +911,7 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "email_snapshot TEXT")
     garantir_coluna(conn, "agendamentos", "profissional_id INTEGER")
     garantir_coluna(conn, "agendamentos", "tipo_atendimento_id INTEGER")
+    garantir_coluna(conn, "agendamentos", "tipo_atendimento_nome_snapshot TEXT")
     garantir_coluna(conn, "agendamentos", "procedimento_id INTEGER")
     garantir_coluna(conn, "agendamentos", "procedimento_nome_snapshot TEXT")
     garantir_coluna(conn, "agendamentos", "contrato_id INTEGER")
@@ -916,6 +920,9 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "duracao_minutos INTEGER")
     garantir_coluna(conn, "agendamentos", "observacoes TEXT")
     garantir_coluna(conn, "agendamentos", "consultorio TEXT")
+    garantir_coluna(conn, "agendamentos", "trabalho_tipo TEXT")
+    garantir_coluna(conn, "agendamentos", "ordem_servico_id INTEGER")
+    garantir_coluna(conn, "agendamentos", "ordem_servico_documento_nome TEXT")
     garantir_coluna(conn, "agendamentos", "criado_por TEXT")
     garantir_coluna(conn, "agendamentos", "criado_em TEXT")
     garantir_coluna(conn, "agendamentos", "atualizado_em TEXT")

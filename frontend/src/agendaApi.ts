@@ -36,6 +36,9 @@ export type AgendaApiAgendamento = {
   atualizadoPor?: string;
   atualizadoEm?: string;
   contratoId?: number | null;
+  trabalhoTipo?: string;
+  ordemServicoId?: number | null;
+  ordemServicoDocumentoNome?: string;
   historico?: Array<{
     acao: string;
     descricao: string;
@@ -76,6 +79,12 @@ export type AgendaPacienteContexto = {
   prontuario: string;
   celular: string;
   procedimentosContratados: AgendaProcedimentoContrato[];
+  guiasEmitidas: Array<{
+    id: number;
+    procedimentoNome: string;
+    retornoSolicitado?: string;
+    documentoNome: string;
+  }>;
 };
 
 export type AgendaProcedimentoPayload = {
@@ -103,6 +112,9 @@ export type AgendaSalvarPayload = {
   agendadoPor: string;
   agendadoEm: string;
   observacoes?: string;
+  trabalhoTipo?: string;
+  ordemServicoId?: number | null;
+  ordemServicoDocumentoNome?: string;
   procedimentos: AgendaProcedimentoPayload[];
 };
 
@@ -389,7 +401,8 @@ export async function buscarContextoPacienteAgenda(
     nome: paciente.nome,
     prontuario: paciente.prontuario,
     celular: paciente.telefone,
-    procedimentosContratados
+    procedimentosContratados,
+    guiasEmitidas: []
   };
 }
 
@@ -421,7 +434,10 @@ export async function salvarAgendamentoAgenda(
     observacoes: payload.observacoes,
     financeiro: "Sem vínculo",
     agendadoEm: payload.agendadoEm,
-    contratoId: payload.procedimentos.find((item) => item.contratoId)?.contratoId ?? null
+    contratoId: payload.procedimentos.find((item) => item.contratoId)?.contratoId ?? null,
+    trabalhoTipo: payload.trabalhoTipo ?? "",
+    ordemServicoId: payload.ordemServicoId ?? null,
+    ordemServicoDocumentoNome: payload.ordemServicoDocumentoNome ?? ""
   };
 }
 
@@ -454,7 +470,10 @@ export async function atualizarAgendamentoAgenda(
     observacoes: payload.observacoes,
     financeiro: payload.procedimentos.some((item) => item.contratoId) ? "Financeiro Ok" : "Sem vínculo",
     agendadoEm: payload.agendadoEm,
-    contratoId: payload.procedimentos.find((item) => item.contratoId)?.contratoId ?? null
+    contratoId: payload.procedimentos.find((item) => item.contratoId)?.contratoId ?? null,
+    trabalhoTipo: payload.trabalhoTipo ?? "",
+    ordemServicoId: payload.ordemServicoId ?? null,
+    ordemServicoDocumentoNome: payload.ordemServicoDocumentoNome ?? ""
   };
 }
 

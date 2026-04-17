@@ -55,6 +55,8 @@ const FUNIL_CORES = [
   { chave: "fechou", rotulo: "Fechou", cor: "#efc449", percentual: 0.25 }
 ] as const;
 
+const FUNIL_COR_NEUTRA = "#b9b4ab";
+
 function moedaParaNumero(valor: string) {
   return Number(String(valor || "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
 }
@@ -76,6 +78,46 @@ function etapaEhAgendada(etapa?: string) {
   return ["agendou avaliacao", "em negociacao", "convertido", "perdido"].includes(valor);
 }
 
+function dataAtualMesReferencia() {
+  const agora = new Date();
+  return { ano: agora.getFullYear(), mes: agora.getMonth() + 1 };
+}
+
+function extrairAnoMes(valor?: string) {
+  const texto = String(valor || "").trim();
+  if (!texto) return null;
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return { ano: Number(iso[1]), mes: Number(iso[2]) };
+  const br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return { ano: Number(br[3]), mes: Number(br[2]) };
+  return null;
+}
+
+function dataEstaNoMesAtual(valor?: string) {
+  const referencia = extrairAnoMes(valor);
+  if (!referencia) return false;
+  const atual = dataAtualMesReferencia();
+  return referencia.ano === atual.ano && referencia.mes === atual.mes;
+}
+
+function hexParaRgb(hex: string) {
+  const limpo = hex.replace("#", "");
+  const expandido = limpo.length === 3 ? limpo.split("").map((parte) => `${parte}${parte}`).join("") : limpo;
+  const numero = Number.parseInt(expandido, 16);
+  return {
+    r: (numero >> 16) & 255,
+    g: (numero >> 8) & 255,
+    b: numero & 255
+  };
+}
+
+function misturarCores(base: string, destino: string, intensidade: number) {
+  const origemRgb = hexParaRgb(base);
+  const destinoRgb = hexParaRgb(destino);
+  const peso = Math.max(0, Math.min(1, intensidade));
+  return `rgb(${Math.round(origemRgb.r + (destinoRgb.r - origemRgb.r) * peso)}, ${Math.round(origemRgb.g + (destinoRgb.g - origemRgb.g) * peso)}, ${Math.round(origemRgb.b + (destinoRgb.b - origemRgb.b) * peso)})`;
+}
+
 function montarFunilMeta(metaNumero: number) {
   const fechou = Math.max(1, Math.ceil((metaNumero || 0) / TICKET_MEDIO));
   return {
@@ -91,11 +133,11 @@ function montarFunilEvolucao(crm: CrmPainelApi) {
   const idsAgendados = new Set<number>();
 
   crm.pipeline.forEach((item) => {
-    if (item.pacienteId) idsLeads.add(item.pacienteId);
-    if (item.pacienteId && etapaEhAgendada(item.etapaFunil)) idsAgendados.add(item.pacienteId);
+    if (item.pacienteId && dataEstaNoMesAtual(item.atualizadoEm)) idsLeads.add(item.pacienteId);
+    if (item.pacienteId && dataEstaNoMesAtual(item.atualizadoEm) && etapaEhAgendada(item.etapaFunil)) idsAgendados.add(item.pacienteId);
   });
   crm.finalizados.forEach((item) => {
-    if (item.pacienteId) {
+    if (item.pacienteId && dataEstaNoMesAtual(item.finalizadoEm || item.atualizadoEm)) {
       idsLeads.add(item.pacienteId);
       idsAgendados.add(item.pacienteId);
     }
@@ -103,7 +145,7 @@ function montarFunilEvolucao(crm: CrmPainelApi) {
 
   const idsCompareceu = new Set<number>();
   crm.avaliacoes.forEach((item) => {
-    if (item.pacienteId) {
+    if (item.pacienteId && dataEstaNoMesAtual(item.dataAvaliacao)) {
       idsLeads.add(item.pacienteId);
       idsAgendados.add(item.pacienteId);
       idsCompareceu.add(item.pacienteId);
@@ -112,7 +154,7 @@ function montarFunilEvolucao(crm: CrmPainelApi) {
 
   const idsFechou = new Set<number>();
   crm.finalizados.forEach((item) => {
-    if (item.pacienteId) idsFechou.add(item.pacienteId);
+    if (item.pacienteId && dataEstaNoMesAtual(item.finalizadoEm || item.atualizadoEm)) idsFechou.add(item.pacienteId);
   });
 
   return {
@@ -132,11 +174,12 @@ type FunilProps = {
   titulo: string;
   subtitulo: string;
   valores: Record<string, number>;
+  metasReferencia?: Record<string, number>;
   metaNumero?: number;
   mostrarPercentual?: boolean;
 };
 
-function FunilCard({ titulo, subtitulo, valores, metaNumero = 0, mostrarPercentual = true }: FunilProps) {
+function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0, mostrarPercentual = true }: FunilProps) {
   const base = valores.leads || 0;
   return (
     <article className="panel dashboard-funnel-panel">
@@ -152,12 +195,15 @@ function FunilCard({ titulo, subtitulo, valores, metaNumero = 0, mostrarPercentu
           {FUNIL_CORES.map((etapa, indice) => {
             const larguraTopo = 100 - indice * 18;
             const larguraBase = 100 - (indice + 1) * 18;
+            const metaEtapa = metasReferencia?.[etapa.chave] || 0;
+            const progresso = metaEtapa > 0 ? Math.max(0, Math.min(1, (valores[etapa.chave] || 0) / metaEtapa)) : 1;
+            const corEtapa = metasReferencia ? misturarCores(FUNIL_COR_NEUTRA, etapa.cor, progresso) : etapa.cor;
             return (
               <div
                 key={etapa.chave}
                 className="dashboard-funnel-segment"
                 style={{
-                  background: etapa.cor,
+                  background: corEtapa,
                   clipPath: `polygon(${(100 - larguraTopo) / 2}% 0%, ${(100 + larguraTopo) / 2}% 0%, ${(100 + larguraBase) / 2}% 100%, ${(100 - larguraBase) / 2}% 100%)`
                 }}
               />
@@ -165,18 +211,24 @@ function FunilCard({ titulo, subtitulo, valores, metaNumero = 0, mostrarPercentu
           })}
         </div>
         <div className="dashboard-funnel-legend">
-          {FUNIL_CORES.map((etapa) => (
-            <div key={etapa.chave} className="dashboard-funnel-legend-row">
-              <div className="dashboard-funnel-legend-title">
-                <span className="dashboard-funnel-dot" style={{ background: etapa.cor }} />
-                <strong>{etapa.rotulo}</strong>
+          {FUNIL_CORES.map((etapa) => {
+            const metaEtapa = metasReferencia?.[etapa.chave] || 0;
+            const progresso = metaEtapa > 0 ? Math.max(0, Math.min(1, (valores[etapa.chave] || 0) / metaEtapa)) : 1;
+            const corEtapa = metasReferencia ? misturarCores(FUNIL_COR_NEUTRA, etapa.cor, progresso) : etapa.cor;
+            return (
+              <div key={etapa.chave} className="dashboard-funnel-legend-row">
+                <div className="dashboard-funnel-legend-title">
+                  <span className="dashboard-funnel-dot" style={{ background: corEtapa }} />
+                  <strong>{etapa.rotulo}</strong>
+                </div>
+                <div className="dashboard-funnel-legend-values">
+                  <span>{valores[etapa.chave] || 0}</span>
+                  {mostrarPercentual ? <small>{formatoPercentual(valores[etapa.chave] || 0, base)}</small> : null}
+                  {metaEtapa > 0 ? <small>{`Meta ${metaEtapa} · ${Math.round(progresso * 100)}%`}</small> : null}
+                </div>
               </div>
-              <div className="dashboard-funnel-legend-values">
-                <span>{valores[etapa.chave] || 0}</span>
-                {mostrarPercentual ? <small>{formatoPercentual(valores[etapa.chave] || 0, base)}</small> : null}
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {metaNumero > 0 ? (
             <div className="dashboard-funnel-ticket">
               <span>Ticket médio</span>
@@ -306,8 +358,9 @@ export function DashboardPage() {
         />
         <FunilCard
           titulo="Evolução atual"
-          subtitulo="Baseado no CRM"
+          subtitulo="Baseado no CRM do mês"
           valores={funilEvolucao}
+          metasReferencia={funilMeta}
         />
       </section>
 

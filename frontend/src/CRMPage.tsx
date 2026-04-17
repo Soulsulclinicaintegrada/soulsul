@@ -1,11 +1,13 @@
 import { CalendarDays, CheckCircle2, Download, Megaphone, Save, Search, UserRoundPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  adicionarPacienteManualCrmApi,
   adicionarPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
   listarPacientesApi,
   listarCrmApi,
   type CrmAvaliacaoItemApi,
+  type CrmNovoLeadPayloadApi,
   type CrmPacienteItemApi,
 } from "./pacientesApi";
 import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
@@ -22,6 +24,18 @@ type RelatorioCrmItem = {
   prontuario: string;
   telefone: string;
   detalhe: string;
+};
+
+const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
+  pacienteId: -1,
+  nome: "",
+  prontuario: "",
+  telefone: "",
+  dataAvaliacao: "",
+  profissional: "",
+  status: "",
+  procedimento: "",
+  jaNoCrm: false,
 };
 
 function escaparCsv(valor: unknown) {
@@ -113,6 +127,13 @@ function dataNascimentoDiaMes(valor?: string) {
   return { dia: Number(match[1]), mes: Number(match[2]) };
 }
 
+function extrairDataIso(valor?: string) {
+  const texto = String(valor || "").trim();
+  const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!match) return "";
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
 export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [pipeline, setPipeline] = useState<CrmPacienteItemApi[]>([]);
   const [finalizados, setFinalizados] = useState<CrmPacienteItemApi[]>([]);
@@ -126,6 +147,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [salvandoId, setSalvandoId] = useState<number | null>(null);
   const [adicionandoAvaliacaoId, setAdicionandoAvaliacaoId] = useState<number | null>(null);
+  const [criandoManual, setCriandoManual] = useState(false);
+  const [periodoAvaliacaoInicio, setPeriodoAvaliacaoInicio] = useState("");
+  const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
+  const [novoLeadManual, setNovoLeadManual] = useState<CrmNovoLeadPayloadApi>({ nome: "", telefone: "" });
 
   async function carregarPainel() {
     setCarregando(true);
@@ -248,9 +273,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [finalizados, termoBusca]
   );
   const avaliacoesFiltradas = useMemo(
-    () =>
-      avaliacoes.filter((item) =>
-        correspondeBusca(
+    () => {
+      if (!periodoAvaliacaoInicio || !periodoAvaliacaoFim) return [AVALIACAO_PLACEHOLDER];
+      return avaliacoes.filter((item) => {
+        const dataIso = extrairDataIso(item.dataAvaliacao);
+        if (!dataIso || dataIso < periodoAvaliacaoInicio || dataIso > periodoAvaliacaoFim) return false;
+        return correspondeBusca(
           {
             nome: item.nome,
             prontuario: item.prontuario,
@@ -259,9 +287,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             etapaFunil: item.status,
           },
           termoBusca
-        )
-      ),
-    [avaliacoes, termoBusca]
+        );
+      });
+    },
+    [avaliacoes, periodoAvaliacaoFim, periodoAvaliacaoInicio, termoBusca]
   );
   const semAgendamentoFiltrados = useMemo(
     () => relatorioSemAgendamento.filter((item) => correspondeBusca(item, termoBusca)),
@@ -325,6 +354,30 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     }
   }
 
+  async function adicionarLeadManual() {
+    const nome = novoLeadManual.nome.trim();
+    const telefone = novoLeadManual.telefone.trim();
+    if (!nome) {
+      setErro("Informe o nome do paciente para criar o lead manual.");
+      return;
+    }
+    setCriandoManual(true);
+    setErro(null);
+    try {
+      const novoItem = normalizarItemCrm(await adicionarPacienteManualCrmApi({ nome, telefone }));
+      setPipeline((atual) => [novoItem, ...atual.filter((item) => item.id !== novoItem.id)]);
+      if (novoItem.origemFinalizado) {
+        setFinalizados((atual) => [novoItem, ...atual.filter((item) => item.id !== novoItem.id)]);
+      }
+      setNovoLeadManual({ nome: "", telefone: "" });
+      setFeedback(`CRM criado para ${novoItem.nome}.`);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao criar lead manual no CRM.");
+    } finally {
+      setCriandoManual(false);
+    }
+  }
+
   function exportarRelatorio(nomeBase: string, linhas: RelatorioCrmItem[]) {
     baixarCsv(
       `${nomeBase}.csv`,
@@ -352,10 +405,11 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   }
 
   function exportarAvaliacoes() {
+    const linhasValidas = avaliacoesFiltradas.filter((item) => item.pacienteId > 0);
     baixarCsv(
       "crm-avaliacoes.csv",
       ["Paciente", "Prontuario", "Telefone", "Data", "Profissional", "Procedimento", "Status"],
-      avaliacoesFiltradas.map((item) => [
+      linhasValidas.map((item) => [
         item.nome,
         item.prontuario,
         item.telefone,
@@ -430,17 +484,35 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <h2>Pacientes que fizeram avaliação</h2>
             </div>
             <div className="crm-inline-actions">
-              <button type="button" className="ghost-action compact" onClick={exportarAvaliacoes}>
+              <button
+                type="button"
+                className="ghost-action compact"
+                onClick={exportarAvaliacoes}
+                disabled={!periodoAvaliacaoInicio || !periodoAvaliacaoFim || !avaliacoesFiltradas.some((item) => item.pacienteId > 0)}
+              >
                 <Download size={15} />
                 Baixar
               </button>
               <CalendarDays size={18} />
             </div>
           </div>
+          <div className="crm-filter-row">
+            <label>
+              <span>Data inicial</span>
+              <input type="date" value={periodoAvaliacaoInicio} onChange={(event) => setPeriodoAvaliacaoInicio(event.target.value)} />
+            </label>
+            <label>
+              <span>Data final</span>
+              <input type="date" value={periodoAvaliacaoFim} onChange={(event) => setPeriodoAvaliacaoFim(event.target.value)} />
+            </label>
+          </div>
+          {!periodoAvaliacaoInicio || !periodoAvaliacaoFim ? (
+            <div className="module-subitem"><strong>Selecione a data inicial e final para carregar o relatório.</strong></div>
+          ) : null}
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
             {!carregando && avaliacoesFiltradas.map((item) => (
-              <article key={`avaliacao-${item.pacienteId}`} className="crm-list-item">
+              item.pacienteId < 0 ? null : <article key={`avaliacao-${item.pacienteId}`} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
                   <span>{item.dataAvaliacao || "-"} · {item.procedimento || "Avaliação"} · {item.profissional || "-"}</span>
@@ -607,6 +679,38 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               Baixar
             </button>
             <Megaphone size={18} />
+          </div>
+        </div>
+
+        <div className="crm-manual-entry">
+          <div className="crm-manual-entry-header">
+            <div>
+              <span className="panel-kicker">Novo lead</span>
+              <strong>Adicionar paciente sem cadastro completo</strong>
+            </div>
+            <span>Digite o nome e o telefone, igual na agenda.</span>
+          </div>
+          <div className="crm-manual-entry-form">
+            <label>
+              <span>Nome do paciente</span>
+              <input
+                value={novoLeadManual.nome}
+                onChange={(event) => setNovoLeadManual((atual) => ({ ...atual, nome: event.target.value }))}
+                placeholder="Ex.: Maria Silva"
+              />
+            </label>
+            <label>
+              <span>Telefone</span>
+              <input
+                value={novoLeadManual.telefone}
+                onChange={(event) => setNovoLeadManual((atual) => ({ ...atual, telefone: event.target.value }))}
+                placeholder="Ex.: 22999999999"
+              />
+            </label>
+            <button type="button" className="primary-action" onClick={() => void adicionarLeadManual()} disabled={criandoManual}>
+              <UserRoundPlus size={15} />
+              {criandoManual ? "Criando..." : "Adicionar ao CRM"}
+            </button>
           </div>
         </div>
 

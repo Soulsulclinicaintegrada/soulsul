@@ -263,6 +263,7 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
         garantir_coluna(conn, "financeiro", "conta_caixa TEXT")
         garantir_coluna(conn, "contas_pagar", "categoria TEXT")
+        garantir_coluna(conn, "agendamentos", "tipo_atendimento_nome_snapshot TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS procedimentos_dente (
@@ -851,6 +852,11 @@ class CrmAtualizacaoPayload(BaseModel):
     proximo_contato: str = ""
     observacao: str = ""
     ultima_interacao: str = ""
+
+
+class CrmNovoLeadPayload(BaseModel):
+    nome: str
+    telefone: str = ""
 
 
 class OdontogramaResposta(BaseModel):
@@ -3967,6 +3973,9 @@ def texto_elemento(elemento) -> str:
     return "".join(elemento.itertext())
 
 
+LINHA_PREENCHIMENTO_CONTRATO = "______________________________________________________________"
+
+
 def remover_elemento(elemento) -> None:
     parent = elemento.getparent()
     if parent is not None:
@@ -4299,13 +4308,13 @@ def reescrever_bloco_final_termo(doc, assinatura: dict[str, str | bool]) -> None
             paragrafos[cursor].text = ""
         paragrafos[indice].text = (
             "Campos dos Goytacazes, {DATA_ATUAL}.\n\n"
-            "___________________________________________________________\n"
+            f"{LINHA_PREENCHIMENTO_CONTRATO}\n"
             f"{assinatura['nome_assinatura']}\n"
             f"{assinatura['cpf_assinatura']}\n\n"
-            "___________________________________________________________\n"
+            f"{LINHA_PREENCHIMENTO_CONTRATO}\n"
             "SOUL SUL CLINICA INTEGRADA\n\n"
             "TESTEMUNHAS:\n\n"
-            "________________________________                    _________________________________\n"
+            f"{LINHA_PREENCHIMENTO_CONTRATO}    {LINHA_PREENCHIMENTO_CONTRATO}\n"
             "NOME:                                                          NOME:\n"
             "CPF:                                                             CPF:"
         )
@@ -4413,7 +4422,12 @@ def atualizar_datas_cidade_contrato(doc, data_referencia: date | None = None) ->
     texto_data_avulsa = formatar_data_extenso_local(data_referencia)
     for paragrafo in iterar_paragrafos_doc(doc):
         texto_atual = paragrafo.text or ""
-        if "CAMPOS DOS GOYTACAZES" in normalizar_texto_maiusculo(texto_atual):
+        texto_norm = " ".join(texto_atual.split())
+        if "{DATA_ATUAL}" in texto_atual:
+            alinhamento = paragrafo.alignment
+            paragrafo.text = texto_atual.replace("{DATA_ATUAL}", formatar_data_extenso_local(data_referencia))
+            paragrafo.alignment = alinhamento
+        elif texto_norm == texto_data:
             alinhamento = paragrafo.alignment
             paragrafo.text = texto_data
             paragrafo.alignment = alinhamento
@@ -4448,7 +4462,7 @@ def compactar_linhas_declaracao(doc) -> None:
         if not texto:
             continue
         if set(texto) == {"_"}:
-            paragrafo.text = "____________________"
+            paragrafo.text = LINHA_PREENCHIMENTO_CONTRATO
             texto = paragrafo.text
         if "DECLARO" in normalizar_texto_maiusculo(texto):
             formato = paragrafo.paragraph_format
@@ -4461,13 +4475,23 @@ def normalizar_bloco_consentimento(doc, data_referencia: date | None = None) -> 
     if Pt is None:
         return
     texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
+    indice_titulo = None
+    indice_corpo = None
+    for indice, paragrafo in enumerate(doc.paragraphs):
+        texto = " ".join((paragrafo.text or "").split())
+        texto_norm = normalizar_texto_maiusculo(texto)
+        if indice_titulo is None and "DECLARACAO DE CONSENTIMENTO" in texto_norm:
+            indice_titulo = indice
+        if indice_titulo is not None and indice_corpo is None and "DECLARAM PARA OS DEVIDOS FINS" in texto_norm:
+            indice_corpo = indice
+            break
     for paragrafo in doc.paragraphs:
         texto = " ".join((paragrafo.text or "").split())
         texto_norm = normalizar_texto_maiusculo(texto)
         if not texto:
             continue
         if "3.1. O PACIENTE DECLARA TER FEITO USO DAS MEDICACOES" in texto_norm:
-            paragrafo.text = re.sub(r"\s*_{10,}\s*", "\n____________________", texto)
+            paragrafo.text = re.sub(r"\s*_{10,}\s*", f"\n{LINHA_PREENCHIMENTO_CONTRATO}", texto)
         elif "DECLARO TER TIDO AS SEGUINTES PATOLOGIAS:" in texto_norm and "DECLARO JA TER REALIZADO AS SEGUINTES CIRURGIAS ANTERIORMENTE:" in texto_norm:
             trecho_32 = ""
             if "3.2." in texto:
@@ -4475,9 +4499,9 @@ def normalizar_bloco_consentimento(doc, data_referencia: date | None = None) -> 
                 trecho_32 = "3.2. " + partes[1].strip()
             paragrafo.text = (
                 "DECLARO ter tido as seguintes patologias:\n"
-                "____________________\n"
+                f"{LINHA_PREENCHIMENTO_CONTRATO}\n"
                 "DECLARO já ter realizado as seguintes cirurgias anteriormente:\n"
-                "____________________\n"
+                f"{LINHA_PREENCHIMENTO_CONTRATO}\n"
                 f"{trecho_32}".strip()
             )
         elif "6.1. DECLARAM TER SIDO INFORMADOS" in texto_norm and "7. DO CONSENTIMENTO ESCLARECIDO" in texto_norm:
@@ -4491,6 +4515,27 @@ def normalizar_bloco_consentimento(doc, data_referencia: date | None = None) -> 
         formato.space_before = Pt(0)
         formato.space_after = Pt(2)
         formato.line_spacing = 1.0
+    if indice_titulo is not None and indice_corpo is not None:
+        for indice in range(indice_titulo + 1, indice_corpo):
+            texto = " ".join((doc.paragraphs[indice].text or "").split())
+            if texto == texto_data:
+                doc.paragraphs[indice].text = ""
+    for tabela in doc.tables:
+        texto_tabela = normalizar_texto_maiusculo(
+            " ".join(
+                " ".join((paragrafo.text or "").split())
+                for linha in tabela.rows
+                for celula in linha.cells
+                for paragrafo in celula.paragraphs
+            )
+        )
+        if "RAZAO SOCIAL" not in texto_tabela and "PACIENTE:" not in texto_tabela:
+            continue
+        for linha in tabela.rows:
+            for celula in linha.cells:
+                for paragrafo in celula.paragraphs:
+                    if " ".join((paragrafo.text or "").split()) == texto_data:
+                        paragrafo.text = ""
 
 
 def compactar_bloco_final(doc) -> None:
@@ -4524,6 +4569,41 @@ def compactar_bloco_final(doc) -> None:
             run.font.size = Pt(10)
         if "TESTEMUNHAS" in normalizar_texto_maiusculo(texto):
             break
+
+
+def garantir_bloco_final_assinaturas(doc, assinatura: dict[str, str | bool], data_referencia: date | None = None) -> None:
+    paragrafos = doc.paragraphs
+    if not paragrafos:
+        return
+    janela = paragrafos[-20:]
+    tem_assinatura = any("SOUL SUL CLINICA INTEGRADA" in normalizar_texto_maiusculo(p.text) for p in janela)
+    tem_testemunhas = any("TESTEMUNHAS" in normalizar_texto_maiusculo(p.text) for p in janela)
+    if tem_assinatura and tem_testemunhas:
+        return
+
+    texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
+    par_data = doc.add_paragraph()
+    par_data.alignment = 1
+    par_data.add_run(texto_data)
+
+    for texto, alinhamento in [
+        ("", 1),
+        (LINHA_PREENCHIMENTO_CONTRATO, 1),
+        (str(assinatura["nome_assinatura"]), 1),
+        (str(assinatura["cpf_assinatura"]), 1),
+        ("", 1),
+        (LINHA_PREENCHIMENTO_CONTRATO, 1),
+        ("SOUL SUL CLINICA INTEGRADA", 1),
+        ("", 1),
+        ("TESTEMUNHAS:", 0),
+        (f"{LINHA_PREENCHIMENTO_CONTRATO}    {LINHA_PREENCHIMENTO_CONTRATO}", 0),
+        ("NOME:                                                          NOME:", 0),
+        ("CPF:                                                             CPF:", 0),
+    ]:
+        par = doc.add_paragraph()
+        par.alignment = alinhamento
+        if texto:
+            par.add_run(texto)
 
 
 def executar_ajuste_contrato(nome: str, func) -> None:
@@ -4806,15 +4886,12 @@ def gerar_documento_contrato(
             executar_ajuste_contrato("ajustar_assinatura_contrato", lambda: ajustar_assinatura_contrato(doc, assinatura))
         executar_ajuste_contrato("reescrever_bloco_final_termo", lambda: reescrever_bloco_final_termo(doc, assinatura))
         executar_ajuste_contrato("atualizar_datas_cidade_contrato", lambda: atualizar_datas_cidade_contrato(doc, data_documento))
-        executar_ajuste_contrato("inserir_secao_antes_titulo_contrato", lambda: inserir_secao_antes_titulo(doc, "CONTRATO DE PRESTACAO DE SERVICOS ODONTOLOGICOS", 1))
-        executar_ajuste_contrato("inserir_secao_antes_titulo_declaracao", lambda: inserir_secao_antes_titulo(doc, "DECLARACAO DE CONSENTIMENTO", 1))
         executar_ajuste_contrato("remover_datas_duplicadas_consecutivas", lambda: remover_datas_duplicadas_consecutivas(doc, data_documento))
-        executar_ajuste_contrato("normalizar_quebra_antes_titulo_contrato", lambda: normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTACAO DE SERVICOS ODONTOLOGICOS"))
-        executar_ajuste_contrato("normalizar_quebra_antes_titulo_declaracao", lambda: normalizar_quebra_antes_titulo(doc, "DECLARACAO DE CONSENTIMENTO"))
         executar_ajuste_contrato("normalizar_quebra_antes_titulo_termo", lambda: normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO"))
         executar_ajuste_contrato("compactar_linhas_declaracao", lambda: compactar_linhas_declaracao(doc))
         executar_ajuste_contrato("normalizar_bloco_consentimento", lambda: normalizar_bloco_consentimento(doc, data_documento))
         executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))
+        executar_ajuste_contrato("garantir_bloco_final_assinaturas", lambda: garantir_bloco_final_assinaturas(doc, assinatura, data_documento))
         executar_ajuste_contrato("aplicar_fonte_times_new_roman", lambda: aplicar_fonte_times_new_roman(doc))
         doc.save(caminho)
         return caminho
@@ -5009,6 +5086,47 @@ def mapear_crm_paciente_item(row: sqlite3.Row) -> CrmPacienteItemResposta:
 
 def crm_entry_por_paciente(conn: sqlite3.Connection, paciente_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM crm_pacientes WHERE paciente_id=? LIMIT 1", (int(paciente_id),)).fetchone()
+
+
+def garantir_paciente_minimo_crm(
+    conn: sqlite3.Connection,
+    nome: str,
+    telefone: str = "",
+) -> int:
+    nome_limpo = str(nome or "").strip()
+    telefone_limpo = str(telefone or "").strip()
+    if not nome_limpo:
+        raise HTTPException(status_code=400, detail="Informe o nome do paciente.")
+
+    existente = conn.execute(
+        """
+        SELECT id
+        FROM pacientes
+        WHERE lower(trim(nome)) = lower(trim(?))
+          AND COALESCE(telefone, '') = COALESCE(?, '')
+        LIMIT 1
+        """,
+        (nome_limpo, telefone_limpo),
+    ).fetchone()
+    if existente:
+        return int(existente["id"])
+
+    cursor = conn.execute(
+        """
+        INSERT INTO pacientes (nome, telefone)
+        VALUES (?, ?)
+        """,
+        (nome_limpo, telefone_limpo),
+    )
+    paciente_id = int(cursor.lastrowid or 0)
+    conn.execute(
+        """
+        INSERT INTO pacientes_rapidos (nome, telefone, email, criado_em)
+        VALUES (?, ?, '', ?)
+        """,
+        (nome_limpo, telefone_limpo, agora_str()),
+    )
+    return paciente_id
 
 
 def agendamento_eh_avaliacao(row: sqlite3.Row) -> bool:
@@ -5399,6 +5517,40 @@ def adicionar_paciente_avaliacao_crm(paciente_id: int, request: Request):
         info=str(paciente["nome"] or f"Paciente {paciente_id}"),
         metodo_http="POST",
         rota=f"/api/crm/pacientes/{paciente_id}/avaliacao",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.post("/api/crm/manual", response_model=CrmPacienteItemResposta)
+def adicionar_paciente_manual_crm(payload: CrmNovoLeadPayload, request: Request):
+    conn = conectar()
+    try:
+        paciente_id = garantir_paciente_minimo_crm(conn, payload.nome, payload.telefone)
+        crm = upsert_crm_origem(
+            conn,
+            paciente_id=paciente_id,
+            usuario=usuario_request(request),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm["id"]),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Novo lead manual",
+        info=str(payload.nome or "Paciente manual"),
+        metodo_http="POST",
+        rota="/api/crm/manual",
     )
     return mapear_crm_paciente_item(row)
 

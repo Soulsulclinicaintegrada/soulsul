@@ -107,6 +107,9 @@ class AgendamentoPayload(BaseModel):
     agendadoPor: str
     agendadoEm: str
     observacoes: str | None = None
+    trabalhoTipo: str | None = None
+    ordemServicoId: int | None = None
+    ordemServicoDocumentoNome: str | None = None
     procedimentos: list[ProcedimentoPayload] = Field(default_factory=list)
 
 
@@ -140,6 +143,9 @@ class AgendamentoResposta(BaseModel):
     atualizadoPor: str | None = None
     atualizadoEm: str | None = None
     contratoId: int | None = None
+    trabalhoTipo: str | None = None
+    ordemServicoId: int | None = None
+    ordemServicoDocumentoNome: str | None = None
     historico: list[AgendamentoHistoricoItem] = Field(default_factory=list)
 
 
@@ -160,12 +166,20 @@ class ProcedimentoContratoItem(BaseModel):
     valor: str | None = None
 
 
+class GuiaEmitidaItem(BaseModel):
+    id: int
+    procedimentoNome: str
+    retornoSolicitado: str = ""
+    documentoNome: str = ""
+
+
 class PacienteContextoResposta(BaseModel):
     id: int
     nome: str
     prontuario: str
     celular: str
     procedimentosContratados: list[ProcedimentoContratoItem]
+    guiasEmitidas: list[GuiaEmitidaItem] = Field(default_factory=list)
 
 
 class DisponibilidadeResposta(BaseModel):
@@ -574,6 +588,9 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         atualizadoPor=row_val(row, "atualizado_por", "") or "",
         atualizadoEm=row_val(row, "atualizado_em", "") or "",
         contratoId=contrato_id,
+        trabalhoTipo=row_val(row, "trabalho_tipo", "") or "",
+        ordemServicoId=row_val(row, "ordem_servico_id"),
+        ordemServicoDocumentoNome=row_val(row, "ordem_servico_documento_nome", "") or "",
         historico=carregar_historico_agendamento(conn, row["id"]),
     )
 
@@ -881,12 +898,32 @@ def buscar_contexto_paciente(paciente_id: int):
                 )
             )
 
+        guias_rows = conn.execute(
+            """
+            SELECT id, procedimento_nome_snapshot, retorno_solicitado, documento_nome
+            FROM ordens_servico_protetico
+            WHERE paciente_id=?
+            ORDER BY COALESCE(atualizado_em, criado_em, '') DESC, id DESC
+            """,
+            (int(paciente_id),),
+        ).fetchall()
+        guias_emitidas = [
+            GuiaEmitidaItem(
+                id=int(row["id"]),
+                procedimentoNome=str(row["procedimento_nome_snapshot"] or ""),
+                retornoSolicitado=str(row["retorno_solicitado"] or ""),
+                documentoNome=str(row["documento_nome"] or f"Guia {int(row['id'])}"),
+            )
+            for row in guias_rows
+        ]
+
         return PacienteContextoResposta(
             id=paciente["id"],
             nome=paciente["nome"],
             prontuario=paciente["prontuario"],
             celular=paciente["telefone"],
             procedimentosContratados=itens,
+            guiasEmitidas=guias_emitidas,
         )
     finally:
         conn.close()
@@ -932,6 +969,9 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             "consultorio",
             "observacao",
             "observacoes",
+            "trabalho_tipo",
+            "ordem_servico_id",
+            "ordem_servico_documento_nome",
             "status",
             "criado_por",
             "criado_em",
@@ -958,6 +998,9 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             consultorio,
             payload.observacoes or "",
             payload.observacoes or "",
+            str(payload.trabalhoTipo or "").strip(),
+            payload.ordemServicoId,
+            str(payload.ordemServicoDocumentoNome or "").strip(),
             payload.status or "Agendado",
             usuario,
             momento,
@@ -1093,6 +1136,9 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 consultorio=?,
                 observacao=?,
                 observacoes=?,
+                trabalho_tipo=?,
+                ordem_servico_id=?,
+                ordem_servico_documento_nome=?,
                 status=?,
                 atualizado_por=?,
                 atualizado_em=?
@@ -1118,6 +1164,9 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 consultorio,
                 payload.observacoes or "",
                 payload.observacoes or "",
+                str(payload.trabalhoTipo or "").strip(),
+                payload.ordemServicoId,
+                str(payload.ordemServicoDocumentoNome or "").strip(),
                 payload.status or "Agendado",
                 usuario,
                 momento,

@@ -5669,6 +5669,60 @@ textarea::placeholder {
   gap: 1rem;
 }
 
+.crm-filter-row,
+.crm-manual-entry-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+
+.crm-filter-row label,
+.crm-manual-entry-form label,
+.crm-manual-entry-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.crm-filter-row label span,
+.crm-manual-entry-form label span,
+.crm-manual-entry-header span {
+  color: #7a685a;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.crm-filter-row input,
+.crm-manual-entry-form input {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 176, 139, 0.38);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.8rem 0.95rem;
+  font: inherit;
+  color: #2d241c;
+}
+
+.crm-manual-entry {
+  border: 1px solid rgba(198, 176, 139, 0.24);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  background: rgba(248, 244, 236, 0.72);
+}
+
+.crm-manual-entry-header {
+  margin-bottom: 0.9rem;
+}
+
+.crm-manual-entry-header strong {
+  color: #2f241d;
+}
+
+.crm-manual-entry-form button {
+  align-self: end;
+}
+
 .crm-pipeline-card-header,
 .crm-pipeline-card-footer {
   display: flex;
@@ -5767,6 +5821,11 @@ textarea::placeholder {
   }
 
   .crm-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .crm-filter-row,
+  .crm-manual-entry-form {
     grid-template-columns: 1fr;
   }
 

@@ -10,7 +10,7 @@ import pandas as pd
 from database import conectar, inicializar_banco
 
 
-ARQUIVO_A_PAGAR = Path(r"C:\Users\jusgo\Documents\a pagar.xlsx")
+ARQUIVO_A_PAGAR = Path(r"C:\Users\jusgo\Desktop\a pagar.xlsx")
 TODAY = datetime.now().date()
 
 

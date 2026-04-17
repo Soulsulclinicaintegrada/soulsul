@@ -629,6 +629,11 @@ export type CrmAtualizacaoPayloadApi = {
   ultima_interacao: string;
 };
 
+export type CrmNovoLeadPayloadApi = {
+  nome: string;
+  telefone: string;
+};
+
 function normalizarErro(detail: unknown, fallback: string) {
   if (Array.isArray(detail)) {
     return detail.join(" ");
@@ -767,6 +772,13 @@ export async function reativarPacienteCrmApi(pacienteId: number) {
 export async function adicionarPacienteAvaliacaoCrmApi(pacienteId: number) {
   return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/avaliacao`, {
     method: "POST"
+  });
+}
+
+export async function adicionarPacienteManualCrmApi(payload: CrmNovoLeadPayloadApi) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/manual`, {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 
