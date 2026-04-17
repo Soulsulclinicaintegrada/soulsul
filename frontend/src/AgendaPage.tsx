@@ -2483,51 +2483,50 @@ function atualizarConfigProfissionalDia(
                               <strong>Guia e localização do trabalho</strong>
                               <span>Selecione livremente uma guia emitida do paciente e informe onde o trabalho está.</span>
                             </div>
-                            {guiasDisponiveisPaciente.length ? (
-                              <div className="agenda-manual-row compact">
-                                <label className="agenda-span-2">
-                                  <span>Guia emitida</span>
-                                  <select
-                                    value={String(form.ordemServicoId ?? "")}
-                                    onChange={(event) => {
-                                      const guia = guiasDisponiveisPaciente.find((item) => item.id === Number(event.target.value));
-                                      setForm((atual) => ({
-                                        ...atual,
-                                        ordemServicoId: guia?.id ?? null,
-                                        ordemServicoDocumentoNome: guia?.documentoNome || "",
-                                        elementoArcada: atual.elementoArcada || guia?.elementoArcada || ""
-                                      }));
-                                    }}
-                                  >
-                                    <option value="">Selecione a guia</option>
-                                    {guiasDisponiveisPaciente.map((item) => (
-                                      <option key={item.id} value={item.id}>
-                                        {descricaoGuiaAgenda(item)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <label>
-                                  <span>Local do trabalho</span>
-                                  <select
-                                    value={form.trabalhoTipo}
-                                    onChange={(event) => setForm((atual) => ({ ...atual, trabalhoTipo: event.target.value }))}
-                                  >
-                                    <option value="">Deixar em branco</option>
-                                    <option value="Trabalho na Clínica">Trabalho na Clínica</option>
-                                    <option value="Trabalho no Laboratório">Trabalho no Laboratório</option>
-                                  </select>
-                                </label>
-                                <label>
-                                  <span>Dente ou arcada</span>
-                                  <input
-                                    value={form.elementoArcada}
-                                    onChange={(event) => setForm((atual) => ({ ...atual, elementoArcada: event.target.value }))}
-                                    placeholder="Ex.: 11, 21 ou arcada superior"
-                                  />
-                                </label>
-                              </div>
-                            ) : null}
+                            <div className="agenda-manual-row compact">
+                              <label className="agenda-span-2">
+                                <span>Guia emitida</span>
+                                <select
+                                  value={String(form.ordemServicoId ?? "")}
+                                  onChange={(event) => {
+                                    const guia = guiasDisponiveisPaciente.find((item) => item.id === Number(event.target.value));
+                                    setForm((atual) => ({
+                                      ...atual,
+                                      ordemServicoId: guia?.id ?? null,
+                                      ordemServicoDocumentoNome: guia?.documentoNome || "",
+                                      elementoArcada: atual.elementoArcada || guia?.elementoArcada || ""
+                                    }));
+                                  }}
+                                  disabled={!guiasDisponiveisPaciente.length}
+                                >
+                                  <option value="">{guiasDisponiveisPaciente.length ? "Selecione a guia" : "Sem guia emitida"}</option>
+                                  {guiasDisponiveisPaciente.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {descricaoGuiaAgenda(item)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                <span>Local do trabalho</span>
+                                <select
+                                  value={form.trabalhoTipo}
+                                  onChange={(event) => setForm((atual) => ({ ...atual, trabalhoTipo: event.target.value }))}
+                                >
+                                  <option value="">Deixar em branco</option>
+                                  <option value="Trabalho na Clínica">Trabalho na Clínica</option>
+                                  <option value="Trabalho no Laboratório">Trabalho no Laboratório</option>
+                                </select>
+                              </label>
+                              <label>
+                                <span>Dente ou arcada</span>
+                                <input
+                                  value={form.elementoArcada}
+                                  onChange={(event) => setForm((atual) => ({ ...atual, elementoArcada: event.target.value }))}
+                                  placeholder="Ex.: 11, 21 ou arcada superior"
+                                />
+                              </label>
+                            </div>
                             <small className="agenda-inline-hint">{mensagemTrabalhoProt}</small>
                           </div>
                         </section>
