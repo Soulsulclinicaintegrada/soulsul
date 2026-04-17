@@ -4298,7 +4298,7 @@ def reescrever_bloco_final_termo(doc, assinatura: dict[str, str | bool]) -> None
         for cursor in candidatos_limpar:
             paragrafos[cursor].text = ""
         paragrafos[indice].text = (
-            "\n"
+            "Campos dos Goytacazes, {DATA_ATUAL}.\n\n"
             "___________________________________________________________\n"
             f"{assinatura['nome_assinatura']}\n"
             f"{assinatura['cpf_assinatura']}\n\n"
@@ -4455,6 +4455,42 @@ def compactar_linhas_declaracao(doc) -> None:
             formato.space_before = Pt(0)
             formato.space_after = Pt(2)
             formato.line_spacing = 1.0
+
+
+def normalizar_bloco_consentimento(doc, data_referencia: date | None = None) -> None:
+    if Pt is None:
+        return
+    texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
+    for paragrafo in doc.paragraphs:
+        texto = " ".join((paragrafo.text or "").split())
+        texto_norm = normalizar_texto_maiusculo(texto)
+        if not texto:
+            continue
+        if "3.1. O PACIENTE DECLARA TER FEITO USO DAS MEDICACOES" in texto_norm:
+            paragrafo.text = re.sub(r"\s*_{10,}\s*", "\n____________________", texto)
+        elif "DECLARO TER TIDO AS SEGUINTES PATOLOGIAS:" in texto_norm and "DECLARO JA TER REALIZADO AS SEGUINTES CIRURGIAS ANTERIORMENTE:" in texto_norm:
+            trecho_32 = ""
+            if "3.2." in texto:
+                partes = texto.split("3.2.", 1)
+                trecho_32 = "3.2. " + partes[1].strip()
+            paragrafo.text = (
+                "DECLARO ter tido as seguintes patologias:\n"
+                "____________________\n"
+                "DECLARO já ter realizado as seguintes cirurgias anteriormente:\n"
+                "____________________\n"
+                f"{trecho_32}".strip()
+            )
+        elif "6.1. DECLARAM TER SIDO INFORMADOS" in texto_norm and "7. DO CONSENTIMENTO ESCLARECIDO" in texto_norm:
+            partes = texto.split("7. Do Consentimento Esclarecido", 1)
+            prefixo = partes[0].strip()
+            restante = partes[1].strip() if len(partes) > 1 else ""
+            paragrafo.text = f"{prefixo}\n7. Do Consentimento Esclarecido\n{restante}".strip()
+        elif "{DATA_ATUAL}" in texto:
+            paragrafo.text = texto.replace("{DATA_ATUAL}", formatar_data_extenso_local(data_referencia))
+        formato = paragrafo.paragraph_format
+        formato.space_before = Pt(0)
+        formato.space_after = Pt(2)
+        formato.line_spacing = 1.0
 
 
 def compactar_bloco_final(doc) -> None:
@@ -4770,10 +4806,14 @@ def gerar_documento_contrato(
             executar_ajuste_contrato("ajustar_assinatura_contrato", lambda: ajustar_assinatura_contrato(doc, assinatura))
         executar_ajuste_contrato("reescrever_bloco_final_termo", lambda: reescrever_bloco_final_termo(doc, assinatura))
         executar_ajuste_contrato("atualizar_datas_cidade_contrato", lambda: atualizar_datas_cidade_contrato(doc, data_documento))
-        executar_ajuste_contrato("inserir_secao_antes_titulo_termo", lambda: inserir_secao_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO", 1))
+        executar_ajuste_contrato("inserir_secao_antes_titulo_contrato", lambda: inserir_secao_antes_titulo(doc, "CONTRATO DE PRESTACAO DE SERVICOS ODONTOLOGICOS", 1))
+        executar_ajuste_contrato("inserir_secao_antes_titulo_declaracao", lambda: inserir_secao_antes_titulo(doc, "DECLARACAO DE CONSENTIMENTO", 1))
         executar_ajuste_contrato("remover_datas_duplicadas_consecutivas", lambda: remover_datas_duplicadas_consecutivas(doc, data_documento))
+        executar_ajuste_contrato("normalizar_quebra_antes_titulo_contrato", lambda: normalizar_quebra_antes_titulo(doc, "CONTRATO DE PRESTACAO DE SERVICOS ODONTOLOGICOS"))
+        executar_ajuste_contrato("normalizar_quebra_antes_titulo_declaracao", lambda: normalizar_quebra_antes_titulo(doc, "DECLARACAO DE CONSENTIMENTO"))
         executar_ajuste_contrato("normalizar_quebra_antes_titulo_termo", lambda: normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO"))
         executar_ajuste_contrato("compactar_linhas_declaracao", lambda: compactar_linhas_declaracao(doc))
+        executar_ajuste_contrato("normalizar_bloco_consentimento", lambda: normalizar_bloco_consentimento(doc, data_documento))
         executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))
         executar_ajuste_contrato("aplicar_fonte_times_new_roman", lambda: aplicar_fonte_times_new_roman(doc))
         doc.save(caminho)
