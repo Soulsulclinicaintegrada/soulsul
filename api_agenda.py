@@ -171,6 +171,9 @@ class GuiaEmitidaItem(BaseModel):
     procedimentoNome: str
     retornoSolicitado: str = ""
     documentoNome: str = ""
+    elementoArcada: str = ""
+    dataEmissao: str = ""
+    etapasResumo: str = ""
 
 
 class PacienteContextoResposta(BaseModel):
@@ -900,10 +903,31 @@ def buscar_contexto_paciente(paciente_id: int):
 
         guias_rows = conn.execute(
             """
-            SELECT id, procedimento_nome_snapshot, retorno_solicitado, documento_nome
-            FROM ordens_servico_protetico
-            WHERE paciente_id=?
-            ORDER BY COALESCE(atualizado_em, criado_em, '') DESC, id DESC
+            SELECT
+                os.id,
+                os.procedimento_nome_snapshot,
+                os.retorno_solicitado,
+                os.documento_nome,
+                os.elemento_arcada,
+                os.criado_em,
+                COALESCE(
+                    (
+                        SELECT GROUP_CONCAT(
+                            CASE
+                                WHEN lower(COALESCE(e.etapa, ''))='outro' AND COALESCE(e.descricao_outro, '')<>''
+                                    THEN e.descricao_outro
+                                ELSE e.etapa
+                            END,
+                            ' | '
+                        )
+                        FROM ordem_servico_protetico_etapas e
+                        WHERE e.ordem_servico_id = os.id
+                    ),
+                    ''
+                ) AS etapas_resumo
+            FROM ordens_servico_protetico os
+            WHERE os.paciente_id=?
+            ORDER BY COALESCE(os.atualizado_em, os.criado_em, '') DESC, os.id DESC
             """,
             (int(paciente_id),),
         ).fetchall()
@@ -913,6 +937,9 @@ def buscar_contexto_paciente(paciente_id: int):
                 procedimentoNome=str(row["procedimento_nome_snapshot"] or ""),
                 retornoSolicitado=str(row["retorno_solicitado"] or ""),
                 documentoNome=str(row["documento_nome"] or f"Guia {int(row['id'])}"),
+                elementoArcada=str(row["elemento_arcada"] or ""),
+                dataEmissao=formatar_data_br_valor(row["criado_em"]),
+                etapasResumo=str(row["etapas_resumo"] or ""),
             )
             for row in guias_rows
         ]

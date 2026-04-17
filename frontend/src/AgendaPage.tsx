@@ -191,6 +191,20 @@ function hojeIso() {
   return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
 }
 
+function descricaoGuiaAgenda(guia: {
+  procedimentoNome: string;
+  etapasResumo?: string;
+  dataEmissao?: string;
+  elementoArcada?: string;
+}) {
+  const partes = [
+    guia.etapasResumo || guia.procedimentoNome || "Guia",
+    guia.dataEmissao ? `Emissão ${guia.dataEmissao}` : "",
+    guia.elementoArcada ? `Elementos ${guia.elementoArcada}` : ""
+  ].filter((item) => String(item || "").trim());
+  return partes.join(" · ");
+}
+
 function formatarAgoraBr() {
   const agora = new Date();
   const dia = String(agora.getDate()).padStart(2, "0");
@@ -304,13 +318,6 @@ function normalizarTextoAgenda(valor: string) {
 function normalizarEscopoAgenda(valor?: string) {
   return normalizarTextoAgenda(String(valor || ""))
     .replace("á", "a");
-}
-
-function procedimentosSeRelacionamAgenda(a: string, b: string) {
-  const primeiro = normalizarTextoAgenda(a);
-  const segundo = normalizarTextoAgenda(b);
-  if (!primeiro || !segundo) return false;
-  return primeiro === segundo || primeiro.includes(segundo) || segundo.includes(primeiro);
 }
 
 function idProfissionalImportado(nome: string) {
@@ -629,7 +636,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [sugestoesPaciente, setSugestoesPaciente] = useState<AgendaPacienteBuscaItem[]>([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
   const [contextoPaciente, setContextoPaciente] = useState<AgendaProcedimentoContrato[]>([]);
-  const [guiasEmitidasPaciente, setGuiasEmitidasPaciente] = useState<Array<{ id: number; procedimentoNome: string; retornoSolicitado?: string; documentoNome: string }>>([]);
+  const [guiasEmitidasPaciente, setGuiasEmitidasPaciente] = useState<Array<{ id: number; procedimentoNome: string; retornoSolicitado?: string; documentoNome: string; elementoArcada?: string; dataEmissao?: string; etapasResumo?: string }>>([]);
   const [procedimentosSelecionados, setProcedimentosSelecionados] = useState<ProcedimentoSelecionado[]>([]);
   const [procedimentoContratoSelecionado, setProcedimentoContratoSelecionado] = useState("");
   const [procedimentoManual, setProcedimentoManual] = useState("");
@@ -716,23 +723,16 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   );
   const minutoInicialAgenda = useMemo(() => paraMinutos(clinicaDiaAtual.inicio), [clinicaDiaAtual.inicio]);
   const mesesInfo = useMemo(() => formatarMesAno(dataSelecionada), [dataSelecionada]);
-  const guiasCompativeisSelecionadas = useMemo(() => {
-    if (!guiasEmitidasPaciente.length || !procedimentosSelecionados.length) return [];
-    return guiasEmitidasPaciente.filter((guia) =>
-      procedimentosSelecionados.some((procedimento) => procedimentosSeRelacionamAgenda(guia.procedimentoNome, procedimento.nome))
-    );
-  }, [guiasEmitidasPaciente, procedimentosSelecionados]);
+  const guiasDisponiveisPaciente = useMemo(() => guiasEmitidasPaciente, [guiasEmitidasPaciente]);
   const mensagemTrabalhoProt = useMemo(() => {
     if (!form.pacienteBusca.trim()) return "Selecione um paciente para consultar as guias emitidas.";
-    if (!procedimentosSelecionados.length) return "Selecione um procedimento no agendamento para o sistema procurar a guia correspondente.";
     if (!guiasEmitidasPaciente.length) return "Este paciente ainda não tem guia emitida.";
-    if (!guiasCompativeisSelecionadas.length) return "Nenhuma guia emitida deste paciente corresponde ao procedimento selecionado.";
-    return "Guia localizada para este procedimento. A secretária pode informar onde o trabalho está ou deixar em branco para a ASB consultar depois.";
-  }, [form.pacienteBusca, procedimentosSelecionados, guiasEmitidasPaciente, guiasCompativeisSelecionadas]);
+    return "Selecione qualquer guia do paciente. O local do trabalho pode ser informado agora ou deixado em branco para consultar depois.";
+  }, [form.pacienteBusca, guiasEmitidasPaciente]);
 
   useEffect(() => {
     if (abaModal !== "Nova Consulta") return;
-    if (!guiasCompativeisSelecionadas.length) {
+    if (!guiasDisponiveisPaciente.length) {
       setForm((atual) => (
         atual.ordemServicoId || atual.ordemServicoDocumentoNome || atual.trabalhoTipo
           ? {
@@ -745,18 +745,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       ));
       return;
     }
-
-    setForm((atual) => {
-      const guiaAtual = guiasCompativeisSelecionadas.find((item) => item.id === atual.ordemServicoId);
-      if (guiaAtual) return atual;
-      const primeiraGuia = guiasCompativeisSelecionadas[0];
-      return {
-        ...atual,
-        ordemServicoId: primeiraGuia.id,
-        ordemServicoDocumentoNome: primeiraGuia.documentoNome || ""
-      };
-    });
-  }, [abaModal, guiasCompativeisSelecionadas]);
+  }, [abaModal, guiasDisponiveisPaciente]);
   const dataTitulo = useMemo(() => formatarCabecalhoData(dataSelecionada), [dataSelecionada]);
   const diasSemana = useMemo(() => gerarDiasDaSemana(dataSelecionada), [dataSelecionada]);
   const diasMes = useMemo(() => montarDiasDoMes(dataSelecionada), [dataSelecionada]);
@@ -2475,16 +2464,16 @@ function atualizarConfigProfissionalDia(
                           <div className="agenda-procedimentos-box compact">
                             <div className="agenda-procedimentos-header">
                               <strong>Guia e localização do trabalho</strong>
-                              <span>Esse bloco usa a guia emitida do mesmo procedimento selecionado no agendamento.</span>
+                              <span>Selecione livremente uma guia emitida do paciente e informe onde o trabalho está.</span>
                             </div>
-                            {guiasCompativeisSelecionadas.length ? (
+                            {guiasDisponiveisPaciente.length ? (
                               <div className="agenda-manual-row compact">
                                 <label className="agenda-span-2">
                                   <span>Guia emitida</span>
                                   <select
                                     value={String(form.ordemServicoId ?? "")}
                                     onChange={(event) => {
-                                      const guia = guiasCompativeisSelecionadas.find((item) => item.id === Number(event.target.value));
+                                      const guia = guiasDisponiveisPaciente.find((item) => item.id === Number(event.target.value));
                                       setForm((atual) => ({
                                         ...atual,
                                         ordemServicoId: guia?.id ?? null,
@@ -2493,9 +2482,9 @@ function atualizarConfigProfissionalDia(
                                     }}
                                   >
                                     <option value="">Selecione a guia</option>
-                                    {guiasCompativeisSelecionadas.map((item) => (
+                                    {guiasDisponiveisPaciente.map((item) => (
                                       <option key={item.id} value={item.id}>
-                                        {`${item.procedimentoNome} · ${item.documentoNome}`}
+                                        {descricaoGuiaAgenda(item)}
                                       </option>
                                     ))}
                                   </select>

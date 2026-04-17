@@ -84,6 +84,9 @@ export type AgendaPacienteContexto = {
     procedimentoNome: string;
     retornoSolicitado?: string;
     documentoNome: string;
+    elementoArcada?: string;
+    dataEmissao?: string;
+    etapasResumo?: string;
   }>;
 };
 
