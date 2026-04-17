@@ -1792,23 +1792,29 @@ function atualizarConfigProfissionalDia(
   function imprimirAgendaAtual() {
     const janela = window.open("", "_blank", "width=1200,height=900");
     if (!janela) return;
+    const colunaProcedimentoImpressao = (evento: AgendaEventoUI) => {
+      const partes = [evento.procedimentos.join(", ")];
+      if (evento.ordemServicoDocumentoNome) partes.push(`Guia: ${evento.ordemServicoDocumentoNome}`);
+      if (evento.trabalhoTipo) partes.push(`Trabalho: ${evento.trabalhoTipo}`);
+      return partes.filter((item) => item.trim()).join("<br/>");
+    };
     const linhas =
       visao === "Dia"
         ? eventosDia
             .sort((a, b) => paraMinutos(a.inicio) - paraMinutos(b.inicio))
-            .map((evento) => `<tr><td>${evento.inicio}</td><td>${evento.fim}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${evento.procedimentos.join(", ")}</td></tr>`)
+            .map((evento) => `<tr><td>${evento.inicio}</td><td>${evento.fim}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${colunaProcedimentoImpressao(evento)}</td></tr>`)
             .join("")
         : visao === "Semana"
           ? eventosDaSemana
               .sort((a, b) => (a.data + a.inicio).localeCompare(b.data + b.inicio))
-              .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.fim}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${evento.procedimentos.join(", ")}</td></tr>`)
+              .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.fim}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${colunaProcedimentoImpressao(evento)}</td></tr>`)
               .join("")
           : diasMes
               .map((diaIso) => {
                 const eventosDiaMes = eventosVisiveis.filter((evento) => evento.data === isoParaBr(diaIso));
                 if (!eventosDiaMes.length) return "";
                 return eventosDiaMes
-                  .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${evento.procedimentos.join(", ")}</td></tr>`)
+                  .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${colunaProcedimentoImpressao(evento)}</td></tr>`)
                   .join("");
               })
               .join("");
@@ -1820,7 +1826,7 @@ function atualizarConfigProfissionalDia(
         h1{font-size:22px;margin:0 0 6px}
         h2{font-size:14px;font-weight:400;margin:0 0 18px;color:#555}
         table{width:100%;border-collapse:collapse}
-        th,td{border:1px solid #d4d4d4;padding:8px 10px;font-size:12px;text-align:left}
+        th,td{border:1px solid #d4d4d4;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top}
         th{background:#efefef}
       </style></head><body>
       <h1>Agenda</h1>
