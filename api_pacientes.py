@@ -3567,15 +3567,18 @@ def listar_exames_paciente(paciente_row: sqlite3.Row) -> list[ArquivoPacienteIte
 
 
 def listar_documentos_paciente(paciente_row: sqlite3.Row, conn: sqlite3.Connection | None = None) -> list[ArquivoPacienteItem]:
+    prontuario = normalizar_texto(formatar_prontuario_valor(paciente_row["prontuario"]))
+    nome = normalizar_texto(limpar_nome(paciente_row["nome"]))
     if not os.path.isdir(DOCS_DIR):
         itens: list[ArquivoPacienteItem] = []
     else:
-        prontuario = normalizar_texto(formatar_prontuario_valor(paciente_row["prontuario"]))
-        nome = normalizar_texto(limpar_nome(paciente_row["nome"]))
         itens = []
         for nome_arquivo in sorted(os.listdir(DOCS_DIR), reverse=True):
             caminho = os.path.join(DOCS_DIR, nome_arquivo)
             if not os.path.isfile(caminho):
+                continue
+            nome_upper = str(nome_arquivo or "").upper()
+            if nome_upper.startswith("CONTRATO_") or nome_upper.startswith("ORDEM_SERVICO_"):
                 continue
             nome_norm = normalizar_texto(nome_arquivo)
             if (prontuario and prontuario in nome_norm) or (nome and nome in nome_norm):
@@ -3602,16 +3605,55 @@ def listar_documentos_paciente(paciente_row: sqlite3.Row, conn: sqlite3.Connecti
             """,
             (int(paciente_row["id"]),),
         ).fetchall()
+        arquivos_existentes = {}
+        if os.path.isdir(DOCS_DIR):
+            for nome_arquivo in os.listdir(DOCS_DIR):
+                caminho = os.path.join(DOCS_DIR, nome_arquivo)
+                if not os.path.isfile(caminho):
+                    continue
+                arquivos_existentes[str(nome_arquivo)] = caminho
+
         for row in contratos_rows:
             contrato_id = int(row["id"])
-            nome_virtual = f"{nome_base_contrato(paciente_row, contrato_id)}.docx"
+            prefixo = f"{nome_base_contrato(paciente_row, contrato_id)}_".upper()
+            arquivo_contrato = next(
+                (
+                    nome_arquivo
+                    for nome_arquivo in sorted(arquivos_existentes.keys(), reverse=True)
+                    if str(nome_arquivo).upper().startswith(prefixo)
+                ),
+                "",
+            )
+            nome_virtual = arquivo_contrato or f"{nome_base_contrato(paciente_row, contrato_id)}.docx"
             data_ref = parse_data_contrato(row["data_aprovacao"]) or parse_data_contrato(row["data_criacao"]) or date.today()
             itens.append(
                 ArquivoPacienteItem(
                     nome=nome_virtual,
-                    caminho=os.path.join(DOCS_DIR, nome_virtual),
+                    caminho=arquivos_existentes.get(nome_virtual, os.path.join(DOCS_DIR, nome_virtual)),
                     modificadoEm=formatar_data_br(data_ref),
                     extensao=".docx",
+                )
+            )
+        ordens_rows = conn.execute(
+            """
+            SELECT id, documento_nome, criado_em
+            FROM ordens_servico_protetico
+            WHERE paciente_id=?
+            ORDER BY COALESCE(criado_em, '') DESC, id DESC
+            """,
+            (int(paciente_row["id"]),),
+        ).fetchall()
+        for row in ordens_rows:
+            documento_nome = str(row["documento_nome"] or "").strip()
+            if not documento_nome:
+                continue
+            data_ref = parse_data_contrato(row["criado_em"]) or date.today()
+            itens.append(
+                ArquivoPacienteItem(
+                    nome=documento_nome,
+                    caminho=arquivos_existentes.get(documento_nome, os.path.join(DOCS_DIR, documento_nome)),
+                    modificadoEm=formatar_data_br(data_ref),
+                    extensao=os.path.splitext(documento_nome)[1].lower() or ".docx",
                 )
             )
     finally:
