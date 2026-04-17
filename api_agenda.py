@@ -859,50 +859,52 @@ def buscar_contexto_paciente(paciente_id: int):
         if not paciente:
             raise HTTPException(status_code=404, detail="Paciente não encontrado.")
 
-        rows = conn.execute(
-            """
-            SELECT
-              c.id AS contrato_id,
-              pc.procedimento,
-              pc.valor,
-              COALESCE(pr.duracao_padrao_minutos, 45) AS duracao
-            FROM contratos c
-            JOIN procedimentos_contrato pc ON pc.contrato_id = c.id
-            LEFT JOIN procedimentos pr ON lower(trim(pr.nome)) = lower(trim(pc.procedimento))
-            WHERE c.paciente_id=?
-            ORDER BY c.id DESC, pc.id
-            """,
-            (paciente_id,),
-        ).fetchall()
-
         itens: list[ProcedimentoContratoItem] = []
-        for row in rows:
-            usados_row = conn.execute(
+        try:
+            rows = conn.execute(
                 """
-                SELECT COUNT(*) AS total
-                FROM agendamento_procedimentos ap
-                JOIN agendamentos a ON a.id = ap.agendamento_id
-                WHERE ap.contrato_id=?
-                  AND lower(trim(ap.procedimento_nome_snapshot)) = lower(trim(?))
-                  AND COALESCE(a.status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+                SELECT
+                  c.id AS contrato_id,
+                  pc.procedimento,
+                  pc.valor,
+                  45 AS duracao
+                FROM contratos c
+                JOIN procedimentos_contrato pc ON pc.contrato_id = c.id
+                WHERE c.paciente_id=?
+                ORDER BY c.id DESC, pc.rowid
                 """,
-                (row["contrato_id"], row["procedimento"]),
-            ).fetchone()
-            sessoes_total = 1
-            sessoes_restantes = max(0, sessoes_total - int(usados_row["total"]))
-            if sessoes_restantes <= 0:
-                continue
-            itens.append(
-                ProcedimentoContratoItem(
-                    chave=f"{row['contrato_id']}-{row['procedimento']}",
-                    contratoId=row["contrato_id"],
-                    nome=row["procedimento"],
-                    sessoesTotal=sessoes_total,
-                    sessoesRestantes=sessoes_restantes,
-                    duracaoMinutos=int(row["duracao"] or 45),
-                    valor=f"R$ {float(row['valor'] or 0):.2f}".replace(".", ","),
+                (paciente_id,),
+            ).fetchall()
+
+            for row in rows:
+                usados_row = conn.execute(
+                    """
+                    SELECT COUNT(*) AS total
+                    FROM agendamento_procedimentos ap
+                    JOIN agendamentos a ON a.id = ap.agendamento_id
+                    WHERE ap.contrato_id=?
+                      AND lower(trim(ap.procedimento_nome_snapshot)) = lower(trim(?))
+                      AND COALESCE(a.status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+                    """,
+                    (row["contrato_id"], row["procedimento"]),
+                ).fetchone()
+                sessoes_total = 1
+                sessoes_restantes = max(0, sessoes_total - int((usados_row["total"] if usados_row else 0) or 0))
+                if sessoes_restantes <= 0:
+                    continue
+                itens.append(
+                    ProcedimentoContratoItem(
+                        chave=f"{row['contrato_id']}-{row['procedimento']}",
+                        contratoId=row["contrato_id"],
+                        nome=row["procedimento"],
+                        sessoesTotal=sessoes_total,
+                        sessoesRestantes=sessoes_restantes,
+                        duracaoMinutos=int(row["duracao"] or 45),
+                        valor=f"R$ {float(row['valor'] or 0):.2f}".replace(".", ","),
+                    )
                 )
-            )
+        except Exception:
+            itens = []
 
         guias_rows = conn.execute(
             """
