@@ -26,6 +26,8 @@ type RelatorioCrmItem = {
   detalhe: string;
 };
 
+type CrmAba = "funil" | "finalizados" | "avaliacoes" | "relatorios";
+
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   pacienteId: -1,
   nome: "",
@@ -138,6 +140,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [pipeline, setPipeline] = useState<CrmPacienteItemApi[]>([]);
   const [finalizados, setFinalizados] = useState<CrmPacienteItemApi[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<CrmAvaliacaoItemApi[]>([]);
+  const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
   const [relatorioSemAgendamento, setRelatorioSemAgendamento] = useState<RelatorioCrmItem[]>([]);
   const [relatorioAniversariantes, setRelatorioAniversariantes] = useState<RelatorioCrmItem[]>([]);
   const [relatorioFaltaram, setRelatorioFaltaram] = useState<RelatorioCrmItem[]>([]);
@@ -266,13 +269,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const nomeLeadManual = novoLeadManual.nome.trim();
   const telefoneLeadManual = novoLeadManual.telefone.trim();
   const previewLeadManualVisivel = Boolean(nomeLeadManual || telefoneLeadManual);
+  const finalizadosIds = useMemo(() => new Set(finalizados.map((item) => item.id)), [finalizados]);
 
   const pipelineFiltrado = useMemo(
     () =>
       [...pipeline]
+        .filter((item) => !item.origemFinalizado && !finalizadosIds.has(item.id))
         .filter((item) => correspondeBusca(item, termoBusca))
         .sort((a, b) => b.id - a.id),
-    [pipeline, termoBusca]
+    [finalizadosIds, pipeline, termoBusca]
   );
   const finalizadosFiltrados = useMemo(
     () => finalizados.filter((item) => correspondeBusca(item, termoBusca)),
@@ -432,7 +437,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       <section className="module-kpis">
         <article className="panel module-kpi-card">
           <span className="panel-kicker">Funil</span>
-          <strong>{pipeline.length}</strong>
+          <strong>{pipelineFiltrado.length}</strong>
           <span>pacientes trabalhando no CRM</span>
         </article>
         <article className="panel module-kpi-card">
@@ -450,8 +455,17 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       {erro ? <p className="users-password-feedback error">{erro}</p> : null}
       {feedback ? <p className="users-password-feedback success">{feedback}</p> : null}
 
-      <section className="crm-grid">
-        <article className="panel crm-panel">
+      <section className="panel crm-tabs-panel">
+        <div className="tab-shell tab-shell-primary crm-tabs-shell">
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "funil" ? "active" : ""}`} onClick={() => setAbaAtiva("funil")}>Funil</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizados" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizados")}>Finalizados</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>Avaliações</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "relatorios" ? "active" : ""}`} onClick={() => setAbaAtiva("relatorios")}>Relatórios</button>
+        </div>
+      </section>
+
+      <section className={abaAtiva === "finalizados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
+        <article className={abaAtiva === "finalizados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
           <div className="section-title-row">
             <div>
               <span className="panel-kicker">Entrada manual</span>
@@ -483,7 +497,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           </div>
         </article>
 
-        <article className="panel crm-panel">
+        <article className={abaAtiva === "avaliacoes" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
           <div className="section-title-row">
             <div>
               <span className="panel-kicker">Entrada automática</span>
@@ -545,7 +559,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         </article>
       </section>
 
-      <section className="crm-grid">
+      <section className={abaAtiva === "relatorios" ? "crm-grid" : "crm-grid crm-section-hidden"}>
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
@@ -609,7 +623,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         </article>
       </section>
 
-      <section className="crm-grid">
+      <section className={abaAtiva === "relatorios" ? "crm-grid" : "crm-grid crm-section-hidden"}>
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
@@ -673,7 +687,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         </article>
       </section>
 
-      <section className="panel crm-panel crm-pipeline-panel">
+      <section className={abaAtiva === "funil" ? "panel crm-panel crm-pipeline-panel" : "panel crm-panel crm-pipeline-panel crm-section-hidden"}>
         <div className="section-title-row">
           <div>
             <span className="panel-kicker">Campanhas</span>
