@@ -2460,7 +2460,7 @@ function atualizarConfigProfissionalDia(
                               <strong>Adicionar procedimento manual</strong>
                               <span>Use esta área apenas quando precisar complementar o atendimento com um procedimento fora do contrato.</span>
                             </div>
-                            <div className="agenda-manual-row agenda-work-row compact">
+                            <div className="agenda-manual-row compact">
                               <label>
                                 <span>Procedimento manual</span>
                                 <input value={procedimentoManual} onChange={(event) => setProcedimentoManual(event.target.value)} placeholder="Ex.: Moldagem" />
