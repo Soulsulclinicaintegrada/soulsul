@@ -988,6 +988,7 @@ class OrdemServicoResumoResposta(BaseModel):
     retornoSolicitado: str = ""
     documentoNome: str = ""
     observacao: str = ""
+    criadoPor: str = ""
     criadoEm: str = ""
     etapas: list[OrdemServicoEtapaPayload] = Field(default_factory=list)
 
@@ -1926,6 +1927,7 @@ def listar_ordens_servico_paciente(paciente_id: int):
                     retornoSolicitado=str(ordem["retorno_solicitado"] or ""),
                     documentoNome=str(ordem["documento_nome"] or ""),
                     observacao=corrigir_texto_importado(str(ordem["observacao"] or "")),
+                    criadoPor=corrigir_texto_importado(str(ordem["criado_por"] or "")),
                     criadoEm=str(ordem["criado_em"] or ""),
                     etapas=[
                         OrdemServicoEtapaPayload(
@@ -1945,6 +1947,7 @@ def listar_ordens_servico_paciente(paciente_id: int):
 def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload, request: Request):
     conn = conectar()
     try:
+        usuario_criacao = corrigir_texto_importado(usuario_request(request) or "").strip()
         paciente = conn.execute("SELECT id, nome, prontuario FROM pacientes WHERE id=?", (int(paciente_id),)).fetchone()
         if paciente is None:
             raise HTTPException(status_code=404, detail="Paciente nao encontrado.")
@@ -1976,13 +1979,6 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         elemento_arcada = corrigir_texto_importado(str(payload.elemento_arcada or "").strip())
         retorno_solicitado = str(payload.retorno_solicitado or "").strip()
         carga_imediata = bool(payload.carga_imediata)
-        if not material:
-            raise HTTPException(status_code=400, detail="Selecione o material.")
-        materiais_validos = mapear_procedimento_resumo(procedimento).materiaisPadrao
-        if materiais_validos and material not in materiais_validos:
-            raise HTTPException(status_code=400, detail="Selecione um material permitido para o procedimento.")
-        if normalizar_texto(material) == "outro" and not material_outro:
-            raise HTTPException(status_code=400, detail="Descreva o material quando selecionar Outro.")
         if not elemento_arcada:
             raise HTTPException(status_code=400, detail="Informe o elemento ou arcada.")
         if not retorno_solicitado:
@@ -2006,8 +2002,8 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         cursor = conn.execute(
             """
             INSERT INTO ordens_servico_protetico
-            (paciente_id, procedimento_id, procedimento_nome_snapshot, material, material_outro, cor, escala, elemento_arcada, carga_imediata, retorno_solicitado, observacao, criado_em, atualizado_em)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (paciente_id, procedimento_id, procedimento_nome_snapshot, material, material_outro, cor, escala, elemento_arcada, carga_imediata, retorno_solicitado, observacao, criado_por, criado_em, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(paciente_id),
@@ -2021,6 +2017,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
                 1 if carga_imediata else 0,
                 retorno_solicitado,
                 corrigir_texto_importado(str(payload.observacao or "").strip()),
+                usuario_criacao,
                 agora_str(),
                 agora_str(),
             ),
@@ -2048,6 +2045,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             retorno_solicitado=retorno_solicitado,
             etapas=etapas_limpas,
             observacao=corrigir_texto_importado(str(payload.observacao or "").strip()),
+            criado_por=usuario_criacao,
         )
         conn.execute("UPDATE ordens_servico_protetico SET documento_nome=?, atualizado_em=? WHERE id=?", (documento_nome, agora_str(), ordem_id))
         conn.commit()
@@ -2077,6 +2075,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         retornoSolicitado=str(ordem["retorno_solicitado"] or ""),
         documentoNome=str(ordem["documento_nome"] or ""),
         observacao=corrigir_texto_importado(str(ordem["observacao"] or "")),
+        criadoPor=corrigir_texto_importado(str(ordem["criado_por"] or "")),
         criadoEm=str(ordem["criado_em"] or ""),
         etapas=[OrdemServicoEtapaPayload(etapa=etapa, descricao_outro=descricao_outro) for etapa, descricao_outro in etapas_limpas],
     )
@@ -3796,6 +3795,7 @@ def gerar_documento_ordem_servico(
     retorno_solicitado: str,
     etapas: list[tuple[str, str]],
     observacao: str,
+    criado_por: str,
 ) -> str:
     if Document is None or not os.path.isfile(TEMPLATE_ORDEM_SERVICO_PATH):
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico nao encontrado.")
@@ -3806,7 +3806,6 @@ def gerar_documento_ordem_servico(
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico invalido.")
 
     data_emissao = agora_local().strftime("%d/%m/%Y %H:%M")
-    material_final = material if normalizar_texto(material) != "outro" else f"OUTRO - {material_outro}"
     etapas_texto = " | ".join(
         f"{etapa}: {descricao}" if normalizar_texto(etapa) == "outro" and descricao else etapa
         for etapa, descricao in etapas
@@ -3816,10 +3815,10 @@ def gerar_documento_ordem_servico(
         f"PACIENTE: {formatar_titulo(valor_row(paciente_row, 'nome'))}",
         f"PRONTUÁRIO: {formatar_prontuario_valor(paciente_row['prontuario'])}",
         f"DATA E HORA DE EMISSÃO: {data_emissao}",
+        f"ORDEM FEITA POR: {formatar_titulo(criado_por) if str(criado_por or '').strip() else 'NÃO INFORMADO'}",
         f"DATA DE RETORNO SOLICITADA: {formatar_data_br_valor(retorno_solicitado) or retorno_solicitado}",
     ]
     linhas_servico = [
-        f"MATERIAL: {material_final}",
         f"SERVIÇO: {procedimento_nome}",
         f"ELEMENTO (S): {elemento_arcada}",
         f"ESCALA: {escala}" if str(escala or "").strip() else "ESCALA:",

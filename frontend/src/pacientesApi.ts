@@ -147,6 +147,7 @@ export type OrdemServicoResumoApi = {
   retornoSolicitado?: string;
   documentoNome?: string;
   observacao?: string;
+  criadoPor?: string;
   criadoEm?: string;
   etapas: OrdemServicoEtapaApi[];
 };

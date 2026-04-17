@@ -624,6 +624,7 @@ def inicializar_banco():
             retorno_solicitado TEXT,
             documento_nome TEXT,
             observacao TEXT,
+            criado_por TEXT,
             criado_em TEXT,
             atualizado_em TEXT
         )
@@ -1108,6 +1109,7 @@ def inicializar_banco():
     garantir_coluna(conn, "ordens_servico_protetico", "retorno_solicitado TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "documento_nome TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "observacao TEXT")
+    garantir_coluna(conn, "ordens_servico_protetico", "criado_por TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "criado_em TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "atualizado_em TEXT")
     garantir_coluna(conn, "ordem_servico_protetico_etapas", "ordem_servico_id INTEGER")

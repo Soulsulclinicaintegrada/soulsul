@@ -184,8 +184,6 @@ type ProcedimentoCatalogo = {
 
 type OrdemServicoForm = {
   procedimentoId: string;
-  material: string;
-  materialOutro: string;
   cor: string;
   escala: string;
   elementoArcada: string;
@@ -315,22 +313,8 @@ const DESCONTO_INICIAL: DescontoOrcamento = {
   validade: ""
 };
 
-const MATERIAIS_ORDEM_SERVICO = [
-  "Metal",
-  "Barra",
-  "Cera",
-  "Mockup",
-  "Cerâmica",
-  "Cerômero",
-  "Placa miorrelaxante",
-  "Placa de clareamento",
-  "Outro"
-] as const;
-
 const ORDEM_SERVICO_INICIAL: OrdemServicoForm = {
   procedimentoId: "",
-  material: "",
-  materialOutro: "",
   cor: "",
   escala: "",
   elementoArcada: "",
@@ -1129,11 +1113,6 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     () => procedimentosCatalogo.find((item) => item.id === Number(ordemServicoForm.procedimentoId)) || null,
     [ordemServicoForm.procedimentoId, procedimentosCatalogo]
   );
-  const materiaisOrdemServicoDisponiveis = useMemo(() => {
-    if (!procedimentoOrdemServicoSelecionado) return [...MATERIAIS_ORDEM_SERVICO];
-    const materiais = (procedimentoOrdemServicoSelecionado.materiaisPadrao || []).filter(Boolean);
-    return materiais.length ? materiais : [...MATERIAIS_ORDEM_SERVICO];
-  }, [procedimentoOrdemServicoSelecionado]);
   const procedimentosContratadosPaciente = useMemo(() => {
     const nomesContratados = new Set(
       (ficha?.contratos || [])
@@ -1155,16 +1134,6 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     if (!modalPagamentoAberto) return;
     setPlanoPagamentoEditor((atual) => normalizarPlanoPagamento(atual, totalOrcamentoFinal, orcamentoDraft.data));
   }, [modalPagamentoAberto, totalOrcamentoFinal, orcamentoDraft.data]);
-
-  useEffect(() => {
-    if (!ordemServicoForm.material) return;
-    if (materiaisOrdemServicoDisponiveis.includes(ordemServicoForm.material)) return;
-    setOrdemServicoForm((atual) => ({
-      ...atual,
-      material: "",
-      materialOutro: ""
-    }));
-  }, [materiaisOrdemServicoDisponiveis, ordemServicoForm.material]);
 
   async function salvarNovoPaciente() {
     setSalvandoNovo(true);
@@ -1779,8 +1748,6 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   function redefinirOrdemServicoForm(procedimentoId = "") {
     setOrdemServicoForm({
       procedimentoId,
-      material: "",
-      materialOutro: "",
       cor: "",
       escala: "",
       elementoArcada: "",
@@ -1832,14 +1799,6 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       setErro("Descreva a etapa quando selecionar Outro.");
       return;
     }
-    if (!ordemServicoForm.material) {
-      setErro("Selecione o material.");
-      return;
-    }
-    if (ordemServicoForm.material === "Outro" && !ordemServicoForm.materialOutro.trim()) {
-      setErro("Descreva o material quando selecionar Outro.");
-      return;
-    }
     if (!ordemServicoForm.elementoArcada.trim()) {
       setErro("Informe o elemento ou arcada.");
       return;
@@ -1853,8 +1812,8 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     try {
       const ordem = await criarOrdemServicoPacienteApi(pacienteAtivoId, {
         procedimento_id: procedimentoOrdemServicoSelecionado.id,
-        material: ordemServicoForm.material,
-        material_outro: ordemServicoForm.materialOutro,
+        material: "",
+        material_outro: "",
         cor: ordemServicoForm.cor,
         escala: ordemServicoForm.escala,
         elemento_arcada: ordemServicoForm.elementoArcada,
@@ -3023,36 +2982,6 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
           </label>
 
           <label>
-            <span>Material</span>
-            <select
-              value={ordemServicoForm.material}
-              onChange={(event) =>
-                setOrdemServicoForm((atual) => ({
-                  ...atual,
-                  material: event.target.value,
-                  materialOutro: event.target.value === "Outro" ? atual.materialOutro : ""
-                }))
-              }
-            >
-              <option value="">Selecione</option>
-              {materiaisOrdemServicoDisponiveis.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </label>
-
-          {ordemServicoForm.material === "Outro" ? (
-            <label>
-              <span>Descrição do material</span>
-              <input
-                value={ordemServicoForm.materialOutro}
-                onChange={(event) => setOrdemServicoForm((atual) => ({ ...atual, materialOutro: event.target.value }))}
-                placeholder="Descreva o material"
-              />
-            </label>
-          ) : null}
-
-          <label>
             <span>Elemento ou arcada</span>
             <input
               value={ordemServicoForm.elementoArcada}
@@ -3159,7 +3088,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                 <span>{formatarDataHora(item.criadoEm)}</span>
               </div>
               <div className="clinical-element-row muted">
-                <span>{item.material}{item.materialOutro ? ` - ${item.materialOutro}` : ""}</span>
+                <span>{item.criadoPor ? `Feito por ${item.criadoPor}` : "Autor não informado"}</span>
                 <span>{item.elementoArcada || "Sem elemento informado"}</span>
               </div>
               <div className="clinical-element-row muted">
