@@ -5358,12 +5358,24 @@ textarea::placeholder {
 }
 
 .agenda-work-row {
-  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 220px) minmax(180px, 220px);
-  align-items: start;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 220px);
+  align-items: end;
 }
 
 .agenda-work-row .agenda-span-2 {
   grid-column: auto;
+}
+
+.agenda-work-row > label:first-child {
+  grid-column: 1;
+}
+
+.agenda-work-row > label.small {
+  grid-column: 2;
+}
+
+.agenda-work-row > label:last-of-type {
+  grid-column: 1;
 }
 
 .agenda-add-procedimento {

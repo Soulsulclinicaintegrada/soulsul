@@ -727,10 +727,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const mesesInfo = useMemo(() => formatarMesAno(dataSelecionada), [dataSelecionada]);
   const guiasDisponiveisPaciente = useMemo(() => guiasEmitidasPaciente, [guiasEmitidasPaciente]);
   const mensagemTrabalhoProt = useMemo(() => {
-    if (!form.pacienteBusca.trim()) return "Selecione um paciente para consultar as guias emitidas.";
+    if (!form.pacienteId && !form.pacienteBusca.trim() && !form.nomePaciente.trim()) return "Selecione um paciente para consultar as guias emitidas.";
     if (!guiasEmitidasPaciente.length) return "Este paciente ainda não tem guia emitida.";
     return "Selecione qualquer guia do paciente. O local do trabalho pode ser informado agora ou deixado em branco para consultar depois.";
-  }, [form.pacienteBusca, guiasEmitidasPaciente]);
+  }, [form.nomePaciente, form.pacienteBusca, form.pacienteId, guiasEmitidasPaciente]);
 
   useEffect(() => {
     if (abaModal !== "Nova Consulta") return;
@@ -749,6 +749,32 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       return;
     }
   }, [abaModal, guiasDisponiveisPaciente]);
+
+  useEffect(() => {
+    if (abaModal !== "Nova Consulta") return;
+    if (!form.pacienteId || modoNovoPacienteRapido) return;
+    let cancelado = false;
+    void (async () => {
+      try {
+        const contexto = await buscarContextoPacienteAgenda(form.pacienteId!);
+        if (cancelado) return;
+        setContextoPaciente(contexto.procedimentosContratados);
+        setGuiasEmitidasPaciente(contexto.guiasEmitidas);
+        setForm((atual) => ({
+          ...atual,
+          nomePaciente: atual.nomePaciente || contexto.nome,
+          pacienteBusca: atual.pacienteBusca || contexto.nome,
+          prontuario: contexto.prontuario,
+          celular: contexto.celular
+        }));
+      } catch {
+        if (cancelado) return;
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [abaModal, form.pacienteId, modoNovoPacienteRapido]);
   const dataTitulo = useMemo(() => formatarCabecalhoData(dataSelecionada), [dataSelecionada]);
   const diasSemana = useMemo(() => gerarDiasDaSemana(dataSelecionada), [dataSelecionada]);
   const diasMes = useMemo(() => montarDiasDoMes(dataSelecionada), [dataSelecionada]);
