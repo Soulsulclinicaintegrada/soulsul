@@ -1,6 +1,6 @@
 import { eventosAgendaDia, pacientesMock, type EventoAgenda } from "./mockData";
 import { nomeUsuarioCabecalho } from "./auth";
-import { listarOrdensServicoPacienteApi } from "./pacientesApi";
+import { detalharPacienteApi, listarOrdensServicoPacienteApi } from "./pacientesApi";
 
 function apiBasePadrao() {
   if (typeof window === "undefined") {
@@ -382,7 +382,33 @@ export async function buscarContextoPacienteAgenda(
         `${API_BASE_URL}/api/agenda/pacientes/${pacienteId}/contexto`
       );
     } catch {
-      // segue para fallback local
+      try {
+        const [paciente, ordens] = await Promise.all([
+          detalharPacienteApi(pacienteId),
+          listarOrdensServicoPacienteApi(pacienteId)
+        ]);
+        return {
+          id: paciente.id,
+          nome: paciente.nome,
+          prontuario: paciente.prontuario,
+          celular: paciente.telefone || "",
+          procedimentosContratados: [],
+          guiasEmitidas: ordens.map((item) => ({
+            id: item.id,
+            procedimentoNome: item.procedimentoNome,
+            retornoSolicitado: item.retornoSolicitado,
+            documentoNome: item.documentoNome || `Guia ${item.id}`,
+            elementoArcada: item.elementoArcada || "",
+            dataEmissao: item.criadoEm || "",
+            etapasResumo: (item.etapas || [])
+              .map((etapa) => etapa.etapa === "Outro" ? etapa.descricao_outro || "Outro" : etapa.etapa)
+              .filter(Boolean)
+              .join(" | ")
+          }))
+        };
+      } catch {
+        // segue para fallback local
+      }
     }
   }
 
