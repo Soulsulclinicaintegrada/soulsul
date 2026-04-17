@@ -5635,6 +5635,11 @@ textarea::placeholder {
   background: rgba(255, 255, 255, 0.82);
 }
 
+.crm-pipeline-card-preview {
+  border-style: dashed;
+  background: rgba(248, 244, 236, 0.92);
+}
+
 .crm-list-item {
   display: flex;
   align-items: center;

@@ -263,9 +263,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   }, [feedback]);
 
   const termoBusca = normalizarTexto(busca);
+  const nomeLeadManual = novoLeadManual.nome.trim();
+  const telefoneLeadManual = novoLeadManual.telefone.trim();
+  const previewLeadManualVisivel = Boolean(nomeLeadManual || telefoneLeadManual);
 
   const pipelineFiltrado = useMemo(
-    () => pipeline.filter((item) => correspondeBusca(item, termoBusca)),
+    () =>
+      [...pipeline]
+        .filter((item) => correspondeBusca(item, termoBusca))
+        .sort((a, b) => b.id - a.id),
     [pipeline, termoBusca]
   );
   const finalizadosFiltrados = useMemo(
@@ -716,6 +722,33 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
         <div className="crm-pipeline-list">
           {carregando ? <div className="module-subitem"><strong>Carregando funil...</strong></div> : null}
+          {!carregando && previewLeadManualVisivel ? (
+            <article className="crm-pipeline-card crm-pipeline-card-preview">
+              <header className="crm-pipeline-card-header">
+                <div>
+                  <strong>{nomeLeadManual || "Nome do paciente"}</strong>
+                  <span>{telefoneLeadManual || "Sem telefone informado"}</span>
+                </div>
+                <div className="crm-origin-tags">
+                  <span className="crm-tag">Prévia do novo lead</span>
+                </div>
+              </header>
+              <div className="crm-form-grid">
+                <label>
+                  <span>Etapa do funil</span>
+                  <input value="Novo lead" readOnly />
+                </label>
+                <label>
+                  <span>Canal</span>
+                  <input value="Facebook" readOnly />
+                </label>
+                <label className="crm-field-wide">
+                  <span>Observações</span>
+                  <textarea rows={3} readOnly value="Ao clicar em Adicionar ao CRM, esta ficha será criada com o nome e o telefone digitados acima." />
+                </label>
+              </div>
+            </article>
+          ) : null}
           {!carregando && pipelineFiltrado.map((item) => (
             <article key={item.id} className="crm-pipeline-card">
               <header className="crm-pipeline-card-header">
