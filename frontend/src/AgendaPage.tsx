@@ -1792,11 +1792,23 @@ function atualizarConfigProfissionalDia(
   function imprimirAgendaAtual() {
     const janela = window.open("", "_blank", "width=1200,height=900");
     if (!janela) return;
+    const extrairDataGuiaImpressao = (valor?: string) => {
+      const texto = String(valor || "").trim();
+      if (!texto) return "";
+      const dataBr = texto.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (dataBr) return `${dataBr[1]}/${dataBr[2]}/${dataBr[3]}`;
+      const dataCompacta = texto.match(/(20\d{2})(\d{2})(\d{2})/);
+      if (dataCompacta) return `${dataCompacta[3]}/${dataCompacta[2]}/${dataCompacta[1]}`;
+      return "";
+    };
     const colunaProcedimentoImpressao = (evento: AgendaEventoUI) => {
-      const partes = [evento.procedimentos.join(", ")];
-      if (evento.ordemServicoDocumentoNome) partes.push(`Guia: ${evento.ordemServicoDocumentoNome}`);
-      if (evento.trabalhoTipo) partes.push(`Trabalho: ${evento.trabalhoTipo}`);
-      return partes.filter((item) => item.trim()).join("<br/>");
+      const procedimento = evento.procedimentos.join(", ") || "-";
+      const dataGuia = extrairDataGuiaImpressao(evento.ordemServicoDocumentoNome);
+      const trabalho = evento.trabalhoTipo || "A consultar";
+      const partes = [`<div class="agenda-print-main">${procedimento}</div>`];
+      if (dataGuia) partes.push(`<div class="agenda-print-meta">Data da guia: ${dataGuia}</div>`);
+      partes.push(`<div class="agenda-print-meta">Trabalho: ${trabalho}</div>`);
+      return partes.join("");
     };
     const linhas =
       visao === "Dia"
@@ -1828,6 +1840,8 @@ function atualizarConfigProfissionalDia(
         table{width:100%;border-collapse:collapse}
         th,td{border:1px solid #d4d4d4;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top}
         th{background:#efefef}
+        .agenda-print-main{font-weight:600;line-height:1.35;margin-bottom:4px}
+        .agenda-print-meta{line-height:1.35;color:#555}
       </style></head><body>
       <h1>Agenda</h1>
       <h2>${dataTitulo} · ${visao}</h2>
