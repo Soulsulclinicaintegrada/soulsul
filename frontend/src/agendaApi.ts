@@ -10,7 +10,21 @@ function apiBasePadrao() {
   return `${protocol}//${hostname}:8002`;
 }
 
-const API_BASE_URL = (import.meta.env.VITE_AGENDA_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || apiBasePadrao()).trim();
+function apiBaseConfigurada() {
+  const configurada = String(import.meta.env.VITE_AGENDA_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || "").trim();
+  if (!configurada) return apiBasePadrao();
+  if (typeof window === "undefined") return configurada;
+  const hostAtual = window.location.hostname;
+  const hostConfigurado = configurada.replace(/^https?:\/\//, "").split("/")[0]?.split(":")[0]?.toLowerCase();
+  const emAmbienteLocal = ["localhost", "127.0.0.1"].includes(hostAtual);
+  const configuracaoLocal = ["localhost", "127.0.0.1"].includes(hostConfigurado || "");
+  if (!emAmbienteLocal && configuracaoLocal) {
+    return apiBasePadrao();
+  }
+  return configurada;
+}
+
+const API_BASE_URL = apiBaseConfigurada();
 const API_BASE_FALLBACK_URL = apiBasePadrao();
 
 export type AgendaApiAgendamento = {
