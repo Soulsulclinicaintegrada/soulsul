@@ -141,6 +141,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [finalizados, setFinalizados] = useState<CrmPacienteItemApi[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<CrmAvaliacaoItemApi[]>([]);
   const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
+  const [buscaLead, setBuscaLead] = useState("");
+  const [leadSelecionadoId, setLeadSelecionadoId] = useState<number | null>(null);
+  const [relatorioAberto, setRelatorioAberto] = useState<"sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram">("sem-agendamento");
   const [relatorioSemAgendamento, setRelatorioSemAgendamento] = useState<RelatorioCrmItem[]>([]);
   const [relatorioAniversariantes, setRelatorioAniversariantes] = useState<RelatorioCrmItem[]>([]);
   const [relatorioFaltaram, setRelatorioFaltaram] = useState<RelatorioCrmItem[]>([]);
@@ -279,6 +282,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         .sort((a, b) => b.id - a.id),
     [finalizadosIds, pipeline, termoBusca]
   );
+  const termoBuscaLead = normalizarTexto(buscaLead);
+  const leadsFiltrados = useMemo(
+    () => pipelineFiltrado.filter((item) => correspondeBusca(item, termoBuscaLead)),
+    [pipelineFiltrado, termoBuscaLead]
+  );
+  const leadSelecionado = useMemo(
+    () => leadsFiltrados.find((item) => item.id === leadSelecionadoId) || leadsFiltrados[0] || null,
+    [leadSelecionadoId, leadsFiltrados]
+  );
   const finalizadosFiltrados = useMemo(
     () => finalizados.filter((item) => correspondeBusca(item, termoBusca)),
     [finalizados, termoBusca]
@@ -319,6 +331,16 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     () => relatorioDesmarcaram.filter((item) => correspondeBusca(item, termoBusca)),
     [relatorioDesmarcaram, termoBusca]
   );
+
+  useEffect(() => {
+    if (!leadsFiltrados.length) {
+      if (leadSelecionadoId !== null) setLeadSelecionadoId(null);
+      return;
+    }
+    if (!leadSelecionado || leadSelecionado.id !== leadSelecionadoId) {
+      setLeadSelecionadoId(leadsFiltrados[0].id);
+    }
+  }, [leadSelecionado, leadSelecionadoId, leadsFiltrados]);
 
   function atualizarItemLocal(crmId: number, parcial: Partial<CrmPacienteItemApi>) {
     const aplicar = (lista: CrmPacienteItemApi[]) =>
@@ -381,6 +403,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         setFinalizados((atual) => [novoItem, ...atual.filter((item) => item.id !== novoItem.id)]);
       }
       setNovoLeadManual({ nome: "", telefone: "" });
+      setBuscaLead(novoItem.nome);
+      setLeadSelecionadoId(novoItem.id);
       setFeedback(`CRM criado para ${novoItem.nome}.`);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao criar lead manual no CRM.");
@@ -432,6 +456,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     );
   }
 
+  function alternarRelatorio(chave: "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram") {
+    setRelatorioAberto(chave);
+  }
+
   return (
     <section className="module-shell crm-shell">
       <section className="module-kpis">
@@ -462,6 +490,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>Avaliações</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "relatorios" ? "active" : ""}`} onClick={() => setAbaAtiva("relatorios")}>Relatórios</button>
         </div>
+        {abaAtiva === "relatorios" ? (
+          <div className="tab-shell crm-report-tabs-shell">
+            <button type="button" className={`segmented-tab ${relatorioAberto === "sem-agendamento" ? "active" : ""}`} onClick={() => alternarRelatorio("sem-agendamento")}>Sem agendamento</button>
+            <button type="button" className={`segmented-tab ${relatorioAberto === "aniversariantes" ? "active" : ""}`} onClick={() => alternarRelatorio("aniversariantes")}>Aniversariantes</button>
+            <button type="button" className={`segmented-tab ${relatorioAberto === "faltaram" ? "active" : ""}`} onClick={() => alternarRelatorio("faltaram")}>Faltaram</button>
+            <button type="button" className={`segmented-tab ${relatorioAberto === "desmarcaram" ? "active" : ""}`} onClick={() => alternarRelatorio("desmarcaram")}>Desmarcaram</button>
+          </div>
+        ) : null}
       </section>
 
       <section className={abaAtiva === "finalizados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
@@ -574,7 +610,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <Search size={18} />
             </div>
           </div>
-          <div className="crm-list">
+          {relatorioAberto === "sem-agendamento" ? <div className="crm-list">
             {!carregando && semAgendamentoFiltrados.map((item) => (
               <article key={item.chave} className="crm-list-item">
                 <div>
@@ -588,7 +624,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </article>
             ))}
             {!carregando && !semAgendamentoFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente nesta condição.</strong></div> : null}
-          </div>
+          </div> : null}
         </article>
 
         <article className="panel crm-panel">
@@ -605,7 +641,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <CalendarDays size={18} />
             </div>
           </div>
-          <div className="crm-list">
+          {relatorioAberto === "aniversariantes" ? <div className="crm-list">
             {!carregando && aniversariantesFiltrados.map((item) => (
               <article key={item.chave} className="crm-list-item">
                 <div>
@@ -619,7 +655,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </article>
             ))}
             {!carregando && !aniversariantesFiltrados.length ? <div className="module-subitem"><strong>Nenhum aniversariante encontrado.</strong></div> : null}
-          </div>
+          </div> : null}
         </article>
       </section>
 
@@ -638,7 +674,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <CalendarDays size={18} />
             </div>
           </div>
-          <div className="crm-list">
+          {relatorioAberto === "faltaram" ? <div className="crm-list">
             {!carregando && faltaramFiltrados.map((item) => (
               <article key={item.chave} className="crm-list-item">
                 <div>
@@ -652,7 +688,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </article>
             ))}
             {!carregando && !faltaramFiltrados.length ? <div className="module-subitem"><strong>Nenhuma falta registrada.</strong></div> : null}
-          </div>
+          </div> : null}
         </article>
 
         <article className="panel crm-panel">
@@ -669,7 +705,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <CalendarDays size={18} />
             </div>
           </div>
-          <div className="crm-list">
+          {relatorioAberto === "desmarcaram" ? <div className="crm-list">
             {!carregando && desmarcaramFiltrados.map((item) => (
               <article key={item.chave} className="crm-list-item">
                 <div>
@@ -683,7 +719,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </article>
             ))}
             {!carregando && !desmarcaramFiltrados.length ? <div className="module-subitem"><strong>Nenhuma desmarcação registrada.</strong></div> : null}
-          </div>
+          </div> : null}
         </article>
       </section>
 
@@ -736,6 +772,44 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
         <div className="crm-pipeline-list">
           {carregando ? <div className="module-subitem"><strong>Carregando funil...</strong></div> : null}
+          {!carregando ? (
+            <div className="crm-selector-card">
+              <div className="crm-manual-entry-header">
+                <div>
+                  <span className="panel-kicker">Buscar lead</span>
+                  <strong>Escolha um lead cadastrado para editar</strong>
+                </div>
+                <span>Aqui aparece apenas um cadastro por vez.</span>
+              </div>
+              <div className="crm-selector-grid">
+                <label className="crm-field-wide">
+                  <span>Buscar pelo nome, telefone, campanha ou etapa</span>
+                  <input
+                    value={buscaLead}
+                    onChange={(event) => setBuscaLead(event.target.value)}
+                    placeholder="Ex.: Maria, 2299..., Facebook ou Conversando"
+                  />
+                </label>
+                <label className="crm-field-wide">
+                  <span>Lead selecionado</span>
+                  <select
+                    value={leadSelecionado?.id ?? ""}
+                    onChange={(event) => setLeadSelecionadoId(event.target.value ? Number(event.target.value) : null)}
+                  >
+                    {leadsFiltrados.length ? (
+                      leadsFiltrados.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.nome} {item.telefone ? `· ${item.telefone}` : ""} {item.etapaFunil ? `· ${item.etapaFunil}` : ""}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Nenhum lead encontrado</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+            </div>
+          ) : null}
           {!carregando && previewLeadManualVisivel ? (
             <article className="crm-pipeline-card crm-pipeline-card-preview">
               <header className="crm-pipeline-card-header">
@@ -763,23 +837,23 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </div>
             </article>
           ) : null}
-          {!carregando && pipelineFiltrado.map((item) => (
-            <article key={item.id} className="crm-pipeline-card">
+          {!carregando && leadSelecionado ? (
+            <article key={leadSelecionado.id} className="crm-pipeline-card">
               <header className="crm-pipeline-card-header">
                 <div>
-                  <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                  <strong>{leadSelecionado.nome}</strong>
+                  <span>{leadSelecionado.prontuario || "Sem prontuário"} · {leadSelecionado.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-origin-tags">
-                  {item.origemFinalizado ? <span className="crm-tag">Finalizado</span> : null}
-                  {item.origemAvaliacao ? <span className="crm-tag">Avaliação</span> : null}
+                  {leadSelecionado.origemFinalizado ? <span className="crm-tag">Finalizado</span> : null}
+                  {leadSelecionado.origemAvaliacao ? <span className="crm-tag">Avaliação</span> : null}
                 </div>
               </header>
 
               <div className="crm-form-grid">
                 <label>
                   <span>Etapa do funil</span>
-                  <select value={item.etapaFunil || "Novo lead"} onChange={(event) => atualizarItemLocal(item.id, { etapaFunil: event.target.value })}>
+                  <select value={leadSelecionado.etapaFunil || "Novo lead"} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { etapaFunil: event.target.value })}>
                     {ETAPAS_CRM.map((etapa) => (
                       <option key={etapa} value={etapa}>{etapa}</option>
                     ))}
@@ -787,57 +861,57 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </label>
                 <label>
                   <span>Canal</span>
-                  <input value={item.canal || "Facebook"} onChange={(event) => atualizarItemLocal(item.id, { canal: event.target.value })} />
+                  <input value={leadSelecionado.canal || "Facebook"} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { canal: event.target.value })} />
                 </label>
                 <label>
                   <span>Campanha</span>
-                  <input value={item.campanha || ""} onChange={(event) => atualizarItemLocal(item.id, { campanha: event.target.value })} />
+                  <input value={leadSelecionado.campanha || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { campanha: event.target.value })} />
                 </label>
                 <label>
                   <span>Conjunto</span>
-                  <input value={item.conjuntoAnuncio || ""} onChange={(event) => atualizarItemLocal(item.id, { conjuntoAnuncio: event.target.value })} />
+                  <input value={leadSelecionado.conjuntoAnuncio || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { conjuntoAnuncio: event.target.value })} />
                 </label>
                 <label>
                   <span>Anúncio</span>
-                  <input value={item.anuncio || ""} onChange={(event) => atualizarItemLocal(item.id, { anuncio: event.target.value })} />
+                  <input value={leadSelecionado.anuncio || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { anuncio: event.target.value })} />
                 </label>
                 <label>
                   <span>Responsável</span>
-                  <input value={item.responsavel || ""} onChange={(event) => atualizarItemLocal(item.id, { responsavel: event.target.value })} />
+                  <input value={leadSelecionado.responsavel || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { responsavel: event.target.value })} />
                 </label>
                 <label>
                   <span>Próximo contato</span>
-                  <input type="date" value={item.proximoContato || ""} onChange={(event) => atualizarItemLocal(item.id, { proximoContato: event.target.value })} />
+                  <input type="date" value={leadSelecionado.proximoContato || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { proximoContato: event.target.value })} />
                 </label>
                 <label>
                   <span>Última interação</span>
-                  <input type="date" value={item.ultimaInteracao || ""} onChange={(event) => atualizarItemLocal(item.id, { ultimaInteracao: event.target.value })} />
+                  <input type="date" value={leadSelecionado.ultimaInteracao || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { ultimaInteracao: event.target.value })} />
                 </label>
                 <label className="crm-field-wide">
                   <span>Observações da campanha</span>
-                  <textarea value={item.observacao || ""} rows={4} onChange={(event) => atualizarItemLocal(item.id, { observacao: event.target.value })} />
+                  <textarea value={leadSelecionado.observacao || ""} rows={4} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { observacao: event.target.value })} />
                 </label>
               </div>
 
               <footer className="crm-pipeline-card-footer">
                 <div className="crm-footer-meta">
-                  <span>{item.ultimaAvaliacaoEm ? `Avaliação: ${item.ultimaAvaliacaoEm}` : "Sem avaliação registrada"}</span>
-                  <span>{item.finalizadoEm ? `Finalizado: ${item.finalizadoEm}` : "Sem finalização registrada"}</span>
+                  <span>{leadSelecionado.ultimaAvaliacaoEm ? `Avaliação: ${leadSelecionado.ultimaAvaliacaoEm}` : "Sem avaliação registrada"}</span>
+                  <span>{leadSelecionado.finalizadoEm ? `Finalizado: ${leadSelecionado.finalizadoEm}` : "Sem finalização registrada"}</span>
                 </div>
                 <div className="crm-inline-actions">
-                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>
+                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(leadSelecionado.pacienteId)}>
                     <Search size={15} />
                     Abrir paciente
                   </button>
-                  <button type="button" className="primary-action" onClick={() => void salvarItem(item)} disabled={salvandoId === item.id}>
+                  <button type="button" className="primary-action" onClick={() => void salvarItem(leadSelecionado)} disabled={salvandoId === leadSelecionado.id}>
                     <Save size={15} />
-                    {salvandoId === item.id ? "Salvando..." : "Salvar CRM"}
+                    {salvandoId === leadSelecionado.id ? "Salvando..." : "Salvar CRM"}
                   </button>
                 </div>
               </footer>
             </article>
-          ))}
-          {!carregando && !pipelineFiltrado.length ? <div className="module-subitem"><strong>Nenhum lead no funil.</strong></div> : null}
+          ) : null}
+          {!carregando && !leadsFiltrados.length ? <div className="module-subitem"><strong>Nenhum lead encontrado para edição.</strong></div> : null}
         </div>
       </section>
     </section>

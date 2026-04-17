@@ -5,6 +5,7 @@ import {
   listarCrmApi,
   painelDashboardApi,
   type CrmPainelApi,
+  type DashboardCalendarioPagamentoItemApi,
   type DashboardPainelApi
 } from "./pacientesApi";
 
@@ -36,6 +37,7 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
     percentualMetaAno: 0
   },
   agendaHoje: [],
+  calendarioPagamentos: [],
   alertas: [],
   atividades: []
 };
@@ -168,6 +170,28 @@ function montarFunilEvolucao(crm: CrmPainelApi) {
 function formatoPercentual(valor: number, base: number) {
   if (!base) return "0,0%";
   return `${((valor / base) * 100).toFixed(1).replace(".", ",")}%`;
+}
+
+function montarDiasDoMesAtual() {
+  const agora = new Date();
+  const inicio = new Date(agora.getFullYear(), agora.getMonth(), 1);
+  const inicioGrade = new Date(inicio);
+  const diaSemana = (inicio.getDay() + 6) % 7;
+  inicioGrade.setDate(inicio.getDate() - diaSemana);
+  return Array.from({ length: 35 }, (_, indice) => {
+    const dia = new Date(inicioGrade);
+    dia.setDate(inicioGrade.getDate() + indice);
+    return dia;
+  });
+}
+
+function diaIsoLocal(data: Date) {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+}
+
+function nomeMesAnoAtual() {
+  const agora = new Date();
+  return agora.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 }
 
 type FunilProps = {
@@ -312,6 +336,14 @@ export function DashboardPage() {
   const metaEditavelNumero = useMemo(() => moedaParaNumero(metaEditavel), [metaEditavel]);
   const funilMeta = useMemo(() => montarFunilMeta(metaEditavelNumero || metaMesNumero), [metaEditavelNumero, metaMesNumero]);
   const funilEvolucao = useMemo(() => montarFunilEvolucao(crmPainel), [crmPainel]);
+  const calendarioPagamentos = useMemo(() => {
+    const mapa = new Map<string, DashboardCalendarioPagamentoItemApi>();
+    (painel.calendarioPagamentos || []).forEach((item) => {
+      if (item.data) mapa.set(item.data, item);
+    });
+    return mapa;
+  }, [painel.calendarioPagamentos]);
+  const diasCalendario = useMemo(() => montarDiasDoMesAtual(), []);
 
   async function salvarMetaRapida() {
     try {
@@ -443,6 +475,33 @@ export function DashboardPage() {
                 <span>Fechamentos necessários</span>
                 <strong>{funilMeta.fechou}</strong>
               </div>
+            </div>
+          </article>
+
+          <article className="panel summary-panel">
+            <div className="section-title-row">
+              <div>
+                <span className="panel-kicker">Financeiro</span>
+                <h2>Calendário de pagamentos</h2>
+              </div>
+              <span className="panel-meta">{nomeMesAnoAtual()}</span>
+            </div>
+            <div className="mini-calendar-weekdays">
+              {["S", "T", "Q", "Q", "S", "S", "D"].map((dia, indice) => <span key={`${dia}-${indice}`}>{dia}</span>)}
+            </div>
+            <div className="mini-calendar-grid dashboard-payment-calendar">
+              {diasCalendario.map((dia) => {
+                const chave = diaIsoLocal(dia);
+                const item = calendarioPagamentos.get(chave);
+                const mesAtual = dia.getMonth() === new Date().getMonth();
+                return (
+                  <div key={chave} className={`dashboard-payment-day${mesAtual ? "" : " muted"}${item ? " has-value" : ""}`}>
+                    <strong>{dia.getDate()}</strong>
+                    <span>{item?.quantidade ? `${item.quantidade} pagamento(s)` : ""}</span>
+                    <small>{item?.total || ""}</small>
+                  </div>
+                );
+              })}
             </div>
           </article>
         </div>

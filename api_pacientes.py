@@ -743,6 +743,12 @@ class DashboardAgendaHojeItemResposta(BaseModel):
     subtitulo: str = ""
 
 
+class DashboardCalendarioPagamentoItemResposta(BaseModel):
+    data: str = ""
+    total: str = ""
+    quantidade: int = 0
+
+
 class DashboardAlertaItemResposta(BaseModel):
     titulo: str
     detalhe: str
@@ -774,6 +780,7 @@ class DashboardPainelResposta(BaseModel):
     resumoHoje: DashboardResumoHojeResposta
     metas: DashboardMetasResposta
     agendaHoje: list[DashboardAgendaHojeItemResposta]
+    calendarioPagamentos: list[DashboardCalendarioPagamentoItemResposta] = []
     alertas: list[DashboardAlertaItemResposta]
     atividades: list[DashboardAtividadeItemResposta]
 
@@ -3009,6 +3016,12 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
 
     recebiveis_rows = carregar_recebiveis_financeiro(conn)
     caixa_rows = carregar_caixa_financeiro(conn)
+    contratos_rows = conn.execute(
+        """
+        SELECT id, valor_total, data_criacao, data_aprovacao, status
+        FROM contratos
+        """
+    ).fetchall()
 
     total_em_aberto = sum(
         float(row["valor"] or 0)
@@ -3027,24 +3040,45 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     )
     saldo_hoje = entradas_hoje - saidas_hoje
 
+    vendas_mes_rows = []
+    for row in contratos_rows:
+        status = normalizar_texto(row["status"])
+        if status not in {"aprovado", "aprovada", "convertido"}:
+            continue
+        data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
+        if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_atual:
+            continue
+        vendas_mes_rows.append(row)
+
+    vendas_mes_qtd = len(vendas_mes_rows)
+    vendas_mes_valor = sum(float(row["valor_total"] or 0) for row in vendas_mes_rows)
+
+    a_receber_hoje = sum(
+        float(row["valor"] or 0)
+        for row in recebiveis_rows
+        if str(row["vencimento"] or "") == hoje_iso and normalizar_texto(row["status"]) in {"aberto", "atrasado"}
+    )
+    inadimplencia_rows = [
+        row
+        for row in recebiveis_rows
+        if normalizar_texto(row["status"]) == "atrasado"
+    ]
+    inadimplencia_qtd = len(inadimplencia_rows)
+    inadimplencia_valor = sum(float(row["valor"] or 0) for row in inadimplencia_rows)
+
     meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
     meta_mes = float(meta_atual.meta or 0)
     supermeta_mes = float(meta_atual.supermeta or 0)
     hipermeta_mes = float(meta_atual.hipermeta or 0)
 
-    vendas_rows = conn.execute(
-        """
-        SELECT data_venda, valor_total
-        FROM vendas
-        WHERE COALESCE(data_venda, '') <> ''
-        """
-    ).fetchall()
-
     serie_vendas: list[float] = []
     for mes_indice in range(1, 13):
         total_mes = 0.0
-        for row in vendas_rows:
-            data_ref = parse_data_contrato(str(row["data_venda"] or ""))
+        for row in contratos_rows:
+            status = normalizar_texto(row["status"])
+            if status not in {"aprovado", "aprovada", "convertido"}:
+                continue
+            data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
             if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_indice:
                 continue
             total_mes += float(row["valor_total"] or 0)
@@ -3059,30 +3093,44 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
 
     indicadores = [
         DashboardIndicadorResposta(
-            chave="vendido_mes",
-            titulo="Vendido no mês",
-            valor=formatar_moeda_br(vendido_mes),
+            chave="vendas_mes_qtd",
+            titulo="Vendas no mês",
+            valor=str(vendas_mes_qtd),
             detalhe=f"{meses[mes_atual - 1]} de {ano_atual}",
         ),
         DashboardIndicadorResposta(
-            chave="falta_meta_mes",
-            titulo="Falta para meta do mês",
-            valor=formatar_moeda_br(falta_meta_mes),
-            detalhe=f"Meta mensal: {formatar_moeda_br(meta_mes)}",
+            chave="vendas_mes_valor",
+            titulo="Quanto em dinheiro foi vendido",
+            valor=formatar_moeda_br(vendas_mes_valor),
+            detalhe=f"Total fechado em {meses[mes_atual - 1]}",
         ),
         DashboardIndicadorResposta(
-            chave="vendido_ano",
-            titulo="Vendido no ano",
-            valor=formatar_moeda_br(vendido_ano),
-            detalhe=f"Acumulado de {ano_atual}",
+            chave="a_receber_hoje",
+            titulo="A receber no dia",
+            valor=formatar_moeda_br(a_receber_hoje),
+            detalhe=f"Vencimentos de {formatar_data_br(hoje)}",
         ),
         DashboardIndicadorResposta(
-            chave="falta_meta_ano",
-            titulo="Falta para meta do ano",
-            valor=formatar_moeda_br(falta_meta_ano),
-            detalhe=f"Meta anual: {formatar_moeda_br(meta_mes * 12)}",
+            chave="inadimplencia",
+            titulo="Inadimplências",
+            valor=str(inadimplencia_qtd),
+            detalhe=formatar_moeda_br(inadimplencia_valor),
         ),
     ]
+
+    calendario_pagamentos_map: dict[str, dict[str, float | int]] = {}
+    for row in recebiveis_rows:
+        vencimento = str(row["vencimento"] or "").strip()
+        if not vencimento:
+            continue
+        data_ref = parse_data_contrato(vencimento)
+        if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_atual:
+            continue
+        if normalizar_texto(row["status"]) in {"pago", "cancelado", "suspenso"}:
+            continue
+        atual = calendario_pagamentos_map.setdefault(vencimento, {"total": 0.0, "quantidade": 0})
+        atual["total"] = float(atual["total"]) + float(row["valor"] or 0)
+        atual["quantidade"] = int(atual["quantidade"]) + 1
 
     return DashboardPainelResposta(
         indicadores=indicadores,
@@ -3105,6 +3153,14 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             percentualMetaAno=percentual_meta_ano,
         ),
         agendaHoje=[],
+        calendarioPagamentos=[
+            DashboardCalendarioPagamentoItemResposta(
+                data=data_ref,
+                total=formatar_moeda_br(float(valores["total"] or 0)),
+                quantidade=int(valores["quantidade"] or 0),
+            )
+            for data_ref, valores in sorted(calendario_pagamentos_map.items())
+        ],
         alertas=[],
         atividades=[],
     )

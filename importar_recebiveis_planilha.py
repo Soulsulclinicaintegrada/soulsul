@@ -22,6 +22,14 @@ TODAY = datetime.now().date()
 
 
 def localizar_arquivo_recebiveis() -> Path:
+    prioridades = [
+        Path(r"C:\Users\jusgo\Desktop\recebíveis.xlsx"),
+        Path(r"C:\Users\jusgo\Desktop\recebiveis.xlsx"),
+        Path(r"C:\Users\jusgo\Desktop\a receber.xlsx"),
+    ]
+    for arquivo in prioridades:
+        if arquivo.exists():
+            return arquivo
     for arquivo in POSSIVEIS_ARQUIVOS_RECEBIVEIS:
         if arquivo.exists():
             return arquivo

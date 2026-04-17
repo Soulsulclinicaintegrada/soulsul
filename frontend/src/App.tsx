@@ -14,7 +14,7 @@ import { UsuariosPage } from "./UsuariosPage";
 
 type NavegacaoPaciente = {
   pacienteId?: number;
-  abaPrincipal?: "Cadastro" | "Financeiro" | "Agendamentos";
+  abaPrincipal?: "Cadastro" | "Financeiro" | "Agendamentos" | "Ordem de serviço";
   abaClinica?: "Plano e ficha clinica" | "Odontograma" | "Anamnese" | "Especialidades";
   abrirOrcamento?: boolean;
   abrirNovoPaciente?: boolean;
@@ -209,7 +209,12 @@ function App() {
           onAbrirPaciente={(pacienteId, destino) => {
             setNavegacaoPaciente({
               pacienteId,
-              abaPrincipal: destino === "financeiro" ? "Financeiro" : "Cadastro",
+              abaPrincipal:
+                destino === "financeiro"
+                  ? "Financeiro"
+                  : destino === "ordem_servico"
+                    ? "Ordem de serviço"
+                    : "Cadastro",
               abrirOrcamento: destino === "orcamentos",
               chave: Date.now()
             });

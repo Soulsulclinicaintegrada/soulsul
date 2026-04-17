@@ -460,6 +460,12 @@ export type DashboardAgendaHojeItemApi = {
   subtitulo?: string;
 };
 
+export type DashboardCalendarioPagamentoItemApi = {
+  data?: string;
+  total?: string;
+  quantidade?: number;
+};
+
 export type DashboardAlertaApi = {
   titulo: string;
   detalhe: string;
@@ -489,6 +495,7 @@ export type DashboardPainelApi = {
     percentualMetaAno: number;
   };
   agendaHoje: DashboardAgendaHojeItemApi[];
+  calendarioPagamentos?: DashboardCalendarioPagamentoItemApi[];
   alertas: DashboardAlertaApi[];
   atividades: DashboardAtividadeApi[];
 };

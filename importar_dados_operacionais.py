@@ -18,18 +18,35 @@ from importar_pacientes_planilha import should_import_row as should_import_patie
 
 
 BASE_DOWNLOADS = Path(r"C:\Users\jusgo\Downloads")
-PATIENTS_XLSX = BASE_DOWNLOADS / "Patient (2).xlsx"
-BUDGETS_XLSX = BASE_DOWNLOADS / "Budgets (2).xlsx"
-PAYMENT_HEADER_XLSX = BASE_DOWNLOADS / "PaymentHeader (2).xlsx"
-PAYMENT_ITEM_XLSX = BASE_DOWNLOADS / "PaymentItem (2).xlsx"
+PATIENTS_FILES = [
+    BASE_DOWNLOADS / "Patient (4).xlsx",
+    BASE_DOWNLOADS / "Patient (2).xlsx",
+]
+BUDGETS_FILES = [
+    BASE_DOWNLOADS / "Budgets (5).xlsx",
+    BASE_DOWNLOADS / "Budgets (2).xlsx",
+]
+PAYMENT_HEADER_FILES = [
+    BASE_DOWNLOADS / "PaymentHeader (4).xlsx",
+    BASE_DOWNLOADS / "PaymentHeader (2).xlsx",
+]
+PAYMENT_ITEM_FILES = [
+    BASE_DOWNLOADS / "PaymentItem (4).xlsx",
+    BASE_DOWNLOADS / "PaymentItem (2).xlsx",
+]
 BOOK_ENTRY_FILES = [
+    BASE_DOWNLOADS / "BookEntry (9).xlsx",
+    BASE_DOWNLOADS / "BookEntry (8).xlsx",
     BASE_DOWNLOADS / "BookEntry (4).xlsx",
     BASE_DOWNLOADS / "BookEntry.xlsx",
     BASE_DOWNLOADS / "BookEntry (1).xlsx",
     BASE_DOWNLOADS / "BookEntry (2).xlsx",
     BASE_DOWNLOADS / "BookEntry (3).xlsx",
 ]
-APPOINTMENT_XLSX = BASE_DOWNLOADS / "Appointment (3).xlsx"
+APPOINTMENT_FILES = [
+    BASE_DOWNLOADS / "Appointment (6).xlsx",
+    BASE_DOWNLOADS / "Appointment (3).xlsx",
+]
 TREATMENT_OPERATION_XLSX = BASE_DOWNLOADS / "TreatmentOperation.xlsx"
 
 NOW = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -204,8 +221,15 @@ def load_dataframe(path: Path, sheet_name: str | None = None) -> pd.DataFrame:
     return pd.read_excel(path, sheet_name=sheet_name)
 
 
+def localizar_arquivo(candidatos: list[Path], descricao: str) -> Path:
+    for arquivo in candidatos:
+        if arquivo.exists():
+            return arquivo
+    raise FileNotFoundError(f"Nenhum arquivo encontrado para {descricao}. Tentados: {', '.join(str(item) for item in candidatos)}")
+
+
 def build_patient_mapping(conn: sqlite3.Connection) -> dict[int, dict[str, Any]]:
-    df = load_dataframe(PATIENTS_XLSX)
+    df = load_dataframe(localizar_arquivo(PATIENTS_FILES, "pacientes"))
     rows = conn.execute(
         """
         SELECT id, nome, prontuario, cpf, telefone
@@ -713,8 +737,13 @@ def import_agendamentos(
     imported = 0
 
     for _, row in appointments_df.iterrows():
+        data = parse_date(row.get("date"))
         if parse_bool_x(row.get("Deleted")):
-            continue
+            try:
+                if not data or datetime.strptime(data, "%Y-%m-%d").date() < TODAY:
+                    continue
+            except ValueError:
+                continue
         appointment_id = to_int(row.get("id"))
         if not appointment_id:
             continue
@@ -724,7 +753,6 @@ def import_agendamentos(
         patient_name = title_case(row.get("PatientName")) or (patient["nome"] if patient else "")
         prontuario = clean_str(patient["prontuario"]) if patient else ""
         telefone = digits_only(row.get("MobilePhone")) or (digits_only(patient["telefone"]) if patient else "")
-        data = parse_date(row.get("date"))
         hora_inicio = parse_time(row.get("fromTime"))
         hora_fim = parse_time(row.get("toTime"))
         profissional = title_case(row.get("DentistName"))
@@ -802,10 +830,10 @@ def import_operational_data() -> dict[str, int]:
     garantir_colunas_pacientes_api()
     garantir_colunas_agenda_api()
 
-    budgets_df = load_dataframe(BUDGETS_XLSX)
-    headers_df = load_dataframe(PAYMENT_HEADER_XLSX)
-    items_df = load_dataframe(PAYMENT_ITEM_XLSX)
-    appointment_df = load_dataframe(APPOINTMENT_XLSX)
+    budgets_df = load_dataframe(localizar_arquivo(BUDGETS_FILES, "orcamentos"))
+    headers_df = load_dataframe(localizar_arquivo(PAYMENT_HEADER_FILES, "cabecalhos de pagamento"))
+    items_df = load_dataframe(localizar_arquivo(PAYMENT_ITEM_FILES, "itens de pagamento"))
+    appointment_df = load_dataframe(localizar_arquivo(APPOINTMENT_FILES, "agendamentos"))
     treatment_operation_df = load_dataframe(TREATMENT_OPERATION_XLSX) if TREATMENT_OPERATION_XLSX.exists() else pd.DataFrame()
     _ = treatment_operation_df  # reservado para uso futuro; orçamento já leva ProcedureCondition.
 

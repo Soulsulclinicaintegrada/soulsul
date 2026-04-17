@@ -11,7 +11,17 @@ from api_pacientes import garantir_colunas_pacientes_api
 from database import conectar, inicializar_banco
 
 
-ARQUIVO_PLANILHA = Path(r"C:\Users\jusgo\Downloads\Patient (2).xlsx")
+POSSIVEIS_PLANILHAS = [
+    Path(r"C:\Users\jusgo\Downloads\Patient (4).xlsx"),
+    Path(r"C:\Users\jusgo\Downloads\Patient (2).xlsx"),
+]
+
+
+def localizar_planilha() -> Path:
+    for arquivo in POSSIVEIS_PLANILHAS:
+        if arquivo.exists():
+            return arquivo
+    return POSSIVEIS_PLANILHAS[0]
 
 
 def is_blank(value: Any) -> bool:
@@ -144,13 +154,14 @@ def next_prontuario(conn: sqlite3.Connection) -> int:
 
 
 def importar() -> tuple[int, int]:
-    if not ARQUIVO_PLANILHA.exists():
-        raise FileNotFoundError(f"Planilha não encontrada: {ARQUIVO_PLANILHA}")
+    arquivo_planilha = localizar_planilha()
+    if not arquivo_planilha.exists():
+        raise FileNotFoundError(f"Planilha não encontrada: {arquivo_planilha}")
 
     inicializar_banco()
     garantir_colunas_pacientes_api()
 
-    df = pd.read_excel(ARQUIVO_PLANILHA)
+    df = pd.read_excel(arquivo_planilha)
 
     conn = conectar()
     conn.execute("DELETE FROM pacientes")

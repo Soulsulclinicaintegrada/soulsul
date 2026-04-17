@@ -7,6 +7,7 @@
   ChevronRight,
   ChevronUp,
   CircleDollarSign,
+  ClipboardList,
   FileText,
   Plus,
   Printer,
@@ -119,7 +120,7 @@ const NOMES_MESES = [
 
 type AgendaPageProps = {
   usuarioLogado?: UsuarioSessao | null;
-  onAbrirPaciente?: (pacienteId: number, destino: "cadastro" | "financeiro" | "orcamentos") => void;
+  onAbrirPaciente?: (pacienteId: number, destino: "cadastro" | "financeiro" | "orcamentos" | "ordem_servico") => void;
   onAbrirNovoPaciente?: () => void;
 };
 
@@ -1889,7 +1890,7 @@ function atualizarConfigProfissionalDia(
   }
 
 
-  function abrirPacientePorDestino(destino: "cadastro" | "financeiro" | "orcamentos") {
+  function abrirPacientePorDestino(destino: "cadastro" | "financeiro" | "orcamentos" | "ordem_servico") {
     if (!detalheAtivo?.pacienteId || !onAbrirPaciente) return;
     onAbrirPaciente(detalheAtivo.pacienteId, destino);
     setEventoAtivoId(null);
@@ -2254,6 +2255,11 @@ function atualizarConfigProfissionalDia(
             <button type="button" className="agenda-detail-action" onClick={() => abrirPacientePorDestino("orcamentos")} title="Abrir orçamentos">
               <FileText size={16} />
             </button>
+            {detalheAtivo?.ordemServicoDocumentoNome || detalheAtivo?.trabalhoTipo ? (
+              <button type="button" className="agenda-detail-action" onClick={() => abrirPacientePorDestino("ordem_servico")} title="Abrir ordem de serviço">
+                <ClipboardList size={16} />
+              </button>
+            ) : null}
             <button type="button" className="agenda-detail-action" onClick={() => abrirPacientePorDestino("financeiro")} title="Abrir financeiro">
               <CircleDollarSign size={16} />
             </button>

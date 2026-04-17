@@ -957,6 +957,41 @@ textarea::placeholder {
   font: inherit;
 }
 
+.dashboard-payment-calendar {
+  gap: 8px;
+}
+
+.dashboard-payment-day {
+  min-height: 88px;
+  padding: 10px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(199, 170, 120, 0.14);
+  background: rgba(255, 255, 255, 0.86);
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.dashboard-payment-day strong {
+  color: #584a38;
+  font-size: 0.95rem;
+}
+
+.dashboard-payment-day span,
+.dashboard-payment-day small {
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+.dashboard-payment-day.has-value {
+  background: linear-gradient(180deg, rgba(199, 170, 120, 0.18), rgba(255, 255, 255, 0.92));
+  border-color: rgba(188, 145, 85, 0.28);
+}
+
+.dashboard-payment-day.muted {
+  opacity: 0.45;
+}
+
 .activity-table th {
   color: var(--muted);
   font-weight: 600;
@@ -5637,6 +5672,13 @@ textarea::placeholder {
   margin: 0;
 }
 
+.crm-report-tabs-shell {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .crm-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5749,6 +5791,32 @@ textarea::placeholder {
   background: rgba(248, 244, 236, 0.72);
 }
 
+.crm-selector-card {
+  border: 1px solid rgba(198, 176, 139, 0.24);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  background: rgba(248, 244, 236, 0.72);
+}
+
+.crm-selector-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.9rem 1rem;
+}
+
+.crm-selector-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.crm-selector-grid label span {
+  color: #7a685a;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .crm-manual-entry-header {
   margin-bottom: 0.9rem;
 }
@@ -5808,6 +5876,17 @@ textarea::placeholder {
 .crm-form-grid input,
 .crm-form-grid select,
 .crm-form-grid textarea {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 176, 139, 0.38);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.8rem 0.95rem;
+  font: inherit;
+  color: #2d241c;
+}
+
+.crm-selector-grid input,
+.crm-selector-grid select {
   min-height: 48px;
   border-radius: 14px;
   border: 1px solid rgba(198, 176, 139, 0.38);

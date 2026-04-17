@@ -44,7 +44,7 @@ type PacientesPageProps = {
   pacientesAbas?: Record<string, string>;
   navegacao?: {
     pacienteId?: number;
-    abaPrincipal?: "Cadastro" | "Financeiro" | "Agendamentos";
+    abaPrincipal?: "Cadastro" | "Financeiro" | "Agendamentos" | "Ordem de serviço";
     abaClinica?: string;
     abrirOrcamento?: boolean;
     abrirNovoPaciente?: boolean;

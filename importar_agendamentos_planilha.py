@@ -12,7 +12,17 @@ from importar_dados_operacionais import (
 )
 
 
-APPOINTMENT_XLSX = Path(r"C:\Users\jusgo\Downloads\Appointment (5).xlsx")
+POSSIVEIS_APPOINTMENTS = [
+    Path(r"C:\Users\jusgo\Downloads\Appointment (6).xlsx"),
+    Path(r"C:\Users\jusgo\Downloads\Appointment (5).xlsx"),
+]
+
+
+def localizar_arquivo_agendamentos() -> Path:
+    for arquivo in POSSIVEIS_APPOINTMENTS:
+        if arquivo.exists():
+            return arquivo
+    return POSSIVEIS_APPOINTMENTS[0]
 
 
 def importar_agendamentos_planilha() -> int:
@@ -20,7 +30,7 @@ def importar_agendamentos_planilha() -> int:
     garantir_colunas_pacientes_api()
     garantir_colunas_agenda_api()
 
-    appointment_df = load_dataframe(APPOINTMENT_XLSX)
+    appointment_df = load_dataframe(localizar_arquivo_agendamentos())
     conn = conectar()
     conn.execute("DELETE FROM agendamento_procedimentos")
     conn.execute("DELETE FROM agendamentos")
