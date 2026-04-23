@@ -12,6 +12,8 @@ from database import conectar, inicializar_banco
 
 
 POSSIVEIS_PLANILHAS = [
+    Path(r"C:\Users\jusgo\Downloads\Patient (5).xlsx"),
+    Path(r"C:\Users\jusgo\Downloads\Patient (6).xlsx"),
     Path(r"C:\Users\jusgo\Downloads\Patient (4).xlsx"),
     Path(r"C:\Users\jusgo\Downloads\Patient (2).xlsx"),
 ]

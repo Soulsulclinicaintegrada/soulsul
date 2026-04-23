@@ -682,15 +682,15 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         .map((id) => {
           const base = profissionaisBase.find((item) => item.id === id);
           const config = configProfissionaisMap.get(id);
-          if (!base || !config) return null;
+          if (!base) return null;
           return {
             id,
             nome: base.nome,
-            usuarioVinculado: config.usuarioVinculado,
-            mostrar: config.mostrar,
-            cor: config.cor,
-            corSuave: config.corSuave,
-            nomeAgenda: config.nomeAgenda
+            usuarioVinculado: config?.usuarioVinculado || base.usuarioVinculado,
+            mostrar: config?.mostrar ?? true,
+            cor: config?.cor || base.cor,
+            corSuave: config?.corSuave || base.corSuave,
+            nomeAgenda: config?.nomeAgenda || base.nome
           };
         })
         .filter((item): item is NonNullable<typeof item> => Boolean(item)),
@@ -698,7 +698,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   );
   const profissionaisDisponiveis = useMemo(
     () => {
-      const base = profissionaisOrdenados.filter((item) => item.mostrar);
+      const profissionaisComEventos = new Set(eventos.map((evento) => evento.profissionalId));
+      const base = profissionaisOrdenados.filter((item) => item.mostrar || profissionaisComEventos.has(item.id));
       if (usuarioEhAdministrador || !agendaSomentePropria) return base;
       const usuarioAtual = normalizarTextoAgenda(String(usuarioLogado?.usuario || ""));
       const nomeAtual = normalizarTextoAgenda(String(usuarioLogado?.nome || ""));
@@ -709,10 +710,11 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         return vinculo === usuarioAtual
           || vinculo === nomeAtual
           || nomeColuna === nomeAgendaAtual
-          || nomeColuna === nomeAtual;
+          || nomeColuna === nomeAtual
+          || profissionaisComEventos.has(item.id);
       });
     },
-    [agendaSomentePropria, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
+    [agendaSomentePropria, eventos, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
   );
   const profissionaisVisiveis = useMemo(
     () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id)),

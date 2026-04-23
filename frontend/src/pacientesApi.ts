@@ -640,6 +640,7 @@ export type CrmAvaliacaoItemApi = {
   status?: string;
   procedimento?: string;
   jaNoCrm?: boolean;
+  origemAvaliacao?: boolean;
 };
 
 export type CrmPainelApi = {
@@ -802,6 +803,12 @@ export async function reativarPacienteCrmApi(pacienteId: number) {
 
 export async function adicionarPacienteAvaliacaoCrmApi(pacienteId: number) {
   return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/avaliacao`, {
+    method: "POST"
+  });
+}
+
+export async function removerPacienteAvaliacaoCrmApi(pacienteId: number) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/avaliacao/remover`, {
     method: "POST"
   });
 }

@@ -1139,7 +1139,18 @@ def inicializar_banco():
         """
         UPDATE agendamentos
         SET
-            data_agendamento = COALESCE(NULLIF(data_agendamento, ''), NULLIF(data, '')),
+            data = CASE
+                WHEN length(COALESCE(data, '')) = 10 AND substr(data, 5, 1) = '-' AND substr(data, 8, 1) = '-'
+                    THEN substr(data, 9, 2) || '/' || substr(data, 6, 2) || '/' || substr(data, 1, 4)
+                ELSE COALESCE(data, '')
+            END,
+            data_agendamento = CASE
+                WHEN length(COALESCE(data_agendamento, '')) = 10 AND substr(data_agendamento, 5, 1) = '-' AND substr(data_agendamento, 8, 1) = '-'
+                    THEN substr(data_agendamento, 9, 2) || '/' || substr(data_agendamento, 6, 2) || '/' || substr(data_agendamento, 1, 4)
+                WHEN length(COALESCE(data, '')) = 10 AND substr(data, 5, 1) = '-' AND substr(data, 8, 1) = '-'
+                    THEN substr(data, 9, 2) || '/' || substr(data, 6, 2) || '/' || substr(data, 1, 4)
+                ELSE COALESCE(NULLIF(data_agendamento, ''), NULLIF(data, ''))
+            END,
             nome_paciente_snapshot = COALESCE(NULLIF(nome_paciente_snapshot, ''), NULLIF(paciente_nome, '')),
             procedimento_nome_snapshot = COALESCE(NULLIF(procedimento_nome_snapshot, ''), NULLIF(procedimento, '')),
             observacoes = COALESCE(NULLIF(observacoes, ''), NULLIF(observacao, '')),

@@ -19,22 +19,29 @@ from importar_pacientes_planilha import should_import_row as should_import_patie
 
 BASE_DOWNLOADS = Path(r"C:\Users\jusgo\Downloads")
 PATIENTS_FILES = [
+    BASE_DOWNLOADS / "Patient (5).xlsx",
+    BASE_DOWNLOADS / "Patient (6).xlsx",
     BASE_DOWNLOADS / "Patient (4).xlsx",
     BASE_DOWNLOADS / "Patient (2).xlsx",
 ]
 BUDGETS_FILES = [
+    BASE_DOWNLOADS / "Budgets (6).xlsx",
     BASE_DOWNLOADS / "Budgets (5).xlsx",
     BASE_DOWNLOADS / "Budgets (2).xlsx",
 ]
 PAYMENT_HEADER_FILES = [
+    BASE_DOWNLOADS / "PaymentHeader (5).xlsx",
     BASE_DOWNLOADS / "PaymentHeader (4).xlsx",
     BASE_DOWNLOADS / "PaymentHeader (2).xlsx",
 ]
 PAYMENT_ITEM_FILES = [
+    BASE_DOWNLOADS / "PaymentItem (5).xlsx",
     BASE_DOWNLOADS / "PaymentItem (4).xlsx",
     BASE_DOWNLOADS / "PaymentItem (2).xlsx",
 ]
 BOOK_ENTRY_FILES = [
+    BASE_DOWNLOADS / "BookEntry (11).xlsx",
+    BASE_DOWNLOADS / "BookEntry (10).xlsx",
     BASE_DOWNLOADS / "BookEntry (9).xlsx",
     BASE_DOWNLOADS / "BookEntry (8).xlsx",
     BASE_DOWNLOADS / "BookEntry (4).xlsx",
@@ -44,6 +51,7 @@ BOOK_ENTRY_FILES = [
     BASE_DOWNLOADS / "BookEntry (3).xlsx",
 ]
 APPOINTMENT_FILES = [
+    BASE_DOWNLOADS / "Appointment (7).xlsx",
     BASE_DOWNLOADS / "Appointment (6).xlsx",
     BASE_DOWNLOADS / "Appointment (3).xlsx",
 ]
@@ -130,6 +138,14 @@ def parse_datetime(value: Any) -> str:
 def parse_date(value: Any) -> str:
     dt = parse_datetime(value)
     return dt[:10] if dt else ""
+
+
+def iso_para_br(data_iso: str) -> str:
+    texto = clean_str(data_iso)
+    if len(texto) == 10 and texto[4] == "-" and texto[7] == "-":
+        ano, mes, dia = texto.split("-")
+        return f"{dia}/{mes}/{ano}"
+    return texto
 
 
 def parse_time(value: Any) -> str:
@@ -737,7 +753,7 @@ def import_agendamentos(
     imported = 0
 
     for _, row in appointments_df.iterrows():
-        data = parse_date(row.get("date"))
+        data = iso_para_br(parse_date(row.get("date")))
         if parse_bool_x(row.get("Deleted")):
             try:
                 if not data or datetime.strptime(data, "%Y-%m-%d").date() < TODAY:

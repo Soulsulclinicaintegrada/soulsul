@@ -850,6 +850,7 @@ class CrmAvaliacaoItemResposta(BaseModel):
     status: str = ""
     procedimento: str = ""
     jaNoCrm: bool = False
+    origemAvaliacao: bool = False
 
 
 class CrmPainelResposta(BaseModel):
@@ -5347,6 +5348,7 @@ def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResp
             status=str(row["status"] or ""),
             procedimento=str(row["procedimento"] or row["tipo_atendimento"] or ""),
             jaNoCrm=crm_bool(row["crm_id"]),
+            origemAvaliacao=crm_bool(row["origem_avaliacao"]),
         )
     return list(por_paciente.values())
 
@@ -5672,6 +5674,52 @@ def adicionar_paciente_avaliacao_crm(paciente_id: int, request: Request):
         info=str(paciente["nome"] or f"Paciente {paciente_id}"),
         metodo_http="POST",
         rota=f"/api/crm/pacientes/{paciente_id}/avaliacao",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.post("/api/crm/pacientes/{paciente_id}/avaliacao/remover", response_model=CrmPacienteItemResposta)
+def remover_paciente_avaliacao_crm(paciente_id: int, request: Request):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        atual = crm_entry_por_paciente(conn, int(paciente_id))
+        if atual is None:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado no CRM.")
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET origem_avaliacao=0,
+                atualizado_por=?,
+                atualizado_em=?
+            WHERE paciente_id=?
+            """,
+            (
+                usuario_request(request),
+                agora_str(),
+                int(paciente_id),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.paciente_id=?
+            LIMIT 1
+            """,
+            (int(paciente_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Paciente avaliação removida",
+        info=str(paciente["nome"] or f"Paciente {paciente_id}"),
+        metodo_http="POST",
+        rota=f"/api/crm/pacientes/{paciente_id}/avaliacao/remover",
     )
     return mapear_crm_paciente_item(row)
 

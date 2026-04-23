@@ -189,6 +189,17 @@ function App() {
   }, [menuAtivo]);
 
   const renderizarPagina = () => {
+    const abrirPaciente = (pacienteId: number, abaPrincipal: NavegacaoPaciente["abaPrincipal"] = "Cadastro", abrirOrcamento = false) => {
+      setBuscaGlobal("");
+      setNavegacaoPaciente({
+        pacienteId,
+        abaPrincipal,
+        abrirOrcamento,
+        chave: Date.now()
+      });
+      setMenuAtivo("Pacientes");
+    };
+
     if (acessoModuloAtual <= 0) {
       return (
         <section className="panel empty-state">
@@ -207,18 +218,15 @@ function App() {
         <AgendaPage
           usuarioLogado={usuarioLogado}
           onAbrirPaciente={(pacienteId, destino) => {
-            setNavegacaoPaciente({
+            abrirPaciente(
               pacienteId,
-              abaPrincipal:
-                destino === "financeiro"
-                  ? "Financeiro"
-                  : destino === "ordem_servico"
-                    ? "Ordem de serviço"
-                    : "Cadastro",
-              abrirOrcamento: destino === "orcamentos",
-              chave: Date.now()
-            });
-            setMenuAtivo("Pacientes");
+              destino === "financeiro"
+                ? "Financeiro"
+                : destino === "ordem_servico"
+                  ? "Ordem de serviço"
+                  : "Cadastro",
+              destino === "orcamentos"
+            );
           }}
           onAbrirNovoPaciente={() => {
             setNavegacaoPaciente({
@@ -236,12 +244,7 @@ function App() {
         <CRMPage
           busca={buscaGlobal}
           onAbrirPaciente={(pacienteId) => {
-            setNavegacaoPaciente({
-              pacienteId,
-              abaPrincipal: "Cadastro",
-              chave: Date.now()
-            });
-            setMenuAtivo("Pacientes");
+            abrirPaciente(pacienteId);
           }}
         />
       );

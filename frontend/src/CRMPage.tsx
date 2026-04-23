@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   adicionarPacienteManualCrmApi,
   adicionarPacienteAvaliacaoCrmApi,
+  removerPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
   listarPacientesApi,
   listarCrmApi,
@@ -38,6 +39,7 @@ const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   status: "",
   procedimento: "",
   jaNoCrm: false,
+  origemAvaliacao: false,
 };
 
 function escaparCsv(valor: unknown) {
@@ -169,7 +171,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const fimFuturo = adicionarDias(hoje, 180);
       const resultados = await Promise.allSettled([
         listarCrmApi(),
-        listarPacientesApi("", 5000),
+        listarPacientesApi("", 500),
         listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/")),
       ]);
 
@@ -384,6 +386,20 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       await carregarPainel();
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao levar avaliação para o CRM.");
+    } finally {
+      setAdicionandoAvaliacaoId(null);
+    }
+  }
+
+  async function removerAvaliacaoDoCrm(pacienteId: number) {
+    setAdicionandoAvaliacaoId(pacienteId);
+    setErro(null);
+    try {
+      await removerPacienteAvaliacaoCrmApi(pacienteId);
+      setFeedback("Paciente de avaliação removido do CRM.");
+      await carregarPainel();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao desfazer avaliação no CRM.");
     } finally {
       setAdicionandoAvaliacaoId(null);
     }
@@ -619,11 +635,17 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                     <button
                       type="button"
                       className="primary-action"
-                      onClick={() => void adicionarAvaliacaoAoCrm(item.pacienteId)}
-                      disabled={item.jaNoCrm || adicionandoAvaliacaoId === item.pacienteId}
+                      onClick={() => void (item.origemAvaliacao ? removerAvaliacaoDoCrm(item.pacienteId) : adicionarAvaliacaoAoCrm(item.pacienteId))}
+                      disabled={adicionandoAvaliacaoId === item.pacienteId || (!item.origemAvaliacao && item.jaNoCrm)}
                     >
                       <UserRoundPlus size={15} />
-                      {item.jaNoCrm ? "No CRM" : adicionandoAvaliacaoId === item.pacienteId ? "Enviando..." : "Levar ao CRM"}
+                      {adicionandoAvaliacaoId === item.pacienteId
+                        ? item.origemAvaliacao ? "Desfazendo..." : "Enviando..."
+                        : item.origemAvaliacao
+                          ? "Desfazer CRM"
+                          : item.jaNoCrm
+                            ? "No CRM"
+                            : "Levar ao CRM"}
                     </button>
                   </div>
                 </div>
