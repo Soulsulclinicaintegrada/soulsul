@@ -28,6 +28,11 @@ function apiBaseConfigurada() {
 const API_BASE_URL = apiBaseConfigurada();
 const API_BASE_FALLBACK_URL = apiBasePadrao();
 
+function podeUsarMockFallback() {
+  if (typeof window === "undefined") return false;
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
 export type AgendaApiAgendamento = {
   id: number;
   pacienteId?: number | null;
@@ -175,6 +180,32 @@ function normalizarTexto(valor: string) {
     .trim();
 }
 
+function normalizarStatusAgenda(valor?: string) {
+  const texto = normalizarTexto(String(valor || ""));
+  const mapa: Record<string, string> = {
+    agendado: "Agendado",
+    scheduled: "Agendado",
+    confirmado: "Confirmado",
+    confirmed: "Confirmado",
+    "em espera": "Em espera",
+    pending: "Em espera",
+    "em atendimento": "Em atendimento",
+    "in session": "Em atendimento",
+    atendido: "Atendido",
+    checkout: "Atendido",
+    atrasado: "Atrasado",
+    late: "Atrasado",
+    faltou: "Faltou",
+    missed: "Faltou",
+    desmarcado: "Desmarcado",
+    rescheduled: "Desmarcado",
+    cancelado: "Cancelado",
+    canceled: "Cancelado",
+    cancelled: "Cancelado"
+  };
+  return mapa[texto] || String(valor || "").trim() || "Agendado";
+}
+
 function normalizarDataAgenda(valor: string) {
   const texto = String(valor || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
@@ -233,7 +264,8 @@ function mapearEventoMock(evento: EventoAgenda): AgendaApiAgendamento {
 function mapearEventoApi(evento: AgendaApiAgendamento): AgendaApiAgendamento {
   return {
     ...evento,
-    data: normalizarDataAgenda(evento.data)
+    data: normalizarDataAgenda(evento.data),
+    status: normalizarStatusAgenda(evento.status)
   };
 }
 
@@ -285,7 +317,7 @@ export async function buscarDisponibilidadeAgenda(
         `${API_BASE_URL}/api/agenda/disponibilidade?profissional_id=${profissionalId}&data=${encodeURIComponent(data)}`
       );
     } catch {
-      // segue para fallback local
+      if (!podeUsarMockFallback()) throw new Error("Agenda indisponivel no momento.");
     }
   }
 
@@ -325,7 +357,7 @@ export async function listarAgendamentosAgenda(
       );
       return resposta.agendamentos.map(mapearEventoApi);
     } catch {
-      // segue para fallback local
+      if (!podeUsarMockFallback()) throw new Error("Agenda indisponivel no momento.");
     }
   }
 
@@ -475,10 +507,10 @@ export async function salvarAgendamentoAgenda(
   payload: AgendaSalvarPayload
 ): Promise<AgendaDetalheResponse> {
   if (API_BASE_URL) {
-    return fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos`, {
+    return mapearEventoApi(await fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos`, {
       method: "POST",
       body: JSON.stringify(payload)
-    });
+    }));
   }
 
   return {
@@ -492,7 +524,7 @@ export async function salvarAgendamentoAgenda(
     tipoAtendimentoId: payload.tipoAtendimentoId,
     tipoAtendimento: payload.tipoAtendimentoNome,
     procedimentos: payload.procedimentos.map((item) => item.nome),
-    status: payload.status ?? "Agendado",
+    status: normalizarStatusAgenda(payload.status),
     data: payload.data,
     inicio: payload.horaInicio,
     fim: payload.horaFim,
@@ -511,10 +543,10 @@ export async function atualizarAgendamentoAgenda(
   payload: AgendaSalvarPayload
 ): Promise<AgendaDetalheResponse> {
   if (API_BASE_URL) {
-    return fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}`, {
+    return mapearEventoApi(await fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}`, {
       method: "PUT",
       body: JSON.stringify(payload)
-    });
+    }));
   }
 
   return {
@@ -528,7 +560,7 @@ export async function atualizarAgendamentoAgenda(
     tipoAtendimentoId: payload.tipoAtendimentoId,
     tipoAtendimento: payload.tipoAtendimentoNome,
     procedimentos: payload.procedimentos.map((item) => item.nome),
-    status: payload.status ?? "Agendado",
+    status: normalizarStatusAgenda(payload.status),
     data: payload.data,
     inicio: payload.horaInicio,
     fim: payload.horaFim,
@@ -546,7 +578,7 @@ export async function buscarDetalhesAgendamentoAgenda(
   agendamentoId: number
 ): Promise<AgendaDetalheResponse> {
   if (API_BASE_URL) {
-    return fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}`);
+    return mapearEventoApi(await fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}`));
   }
 
   const evento = eventosAgendaDia.map(mapearEventoMock).find((item) => item.id === agendamentoId);

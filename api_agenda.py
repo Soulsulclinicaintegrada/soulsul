@@ -82,6 +82,68 @@ def row_val(row: sqlite3.Row, key: str, default=None):
         return default
 
 
+def normalizar_status_agendamento(valor: object) -> str:
+    texto = " ".join(str(valor or "").strip().lower().split())
+    mapa = {
+        "agendado": "Agendado",
+        "scheduled": "Agendado",
+        "confirmado": "Confirmado",
+        "confirmed": "Confirmado",
+        "em espera": "Em espera",
+        "pending": "Em espera",
+        "em atendimento": "Em atendimento",
+        "in session": "Em atendimento",
+        "atendido": "Atendido",
+        "checkout": "Atendido",
+        "atrasado": "Atrasado",
+        "late": "Atrasado",
+        "faltou": "Faltou",
+        "missed": "Faltou",
+        "desmarcado": "Desmarcado",
+        "rescheduled": "Desmarcado",
+        "cancelado": "Cancelado",
+        "canceled": "Cancelado",
+        "cancelled": "Cancelado",
+    }
+    return mapa.get(texto, str(valor or "").strip() or "Agendado")
+
+
+def normalizar_data_agenda(valor: object) -> str:
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    for formato in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(texto, formato).strftime("%d/%m/%Y")
+        except Exception:
+            continue
+    return texto
+
+
+def chave_ordenacao_data_agenda(valor: object) -> tuple[int, int, int, str]:
+    texto = normalizar_data_agenda(valor)
+    try:
+        data = datetime.strptime(texto, "%d/%m/%Y")
+        return (data.year, data.month, data.day, texto)
+    except Exception:
+        return (9999, 12, 31, texto)
+
+
+def data_agenda_no_intervalo(valor: object, inicio: str, fim: str) -> bool:
+    data_normalizada = normalizar_data_agenda(valor)
+    inicio_normalizado = normalizar_data_agenda(inicio)
+    fim_normalizado = normalizar_data_agenda(fim)
+    if not data_normalizada or not inicio_normalizado or not fim_normalizado:
+        return False
+    try:
+        data_atual = datetime.strptime(data_normalizada, "%d/%m/%Y").date()
+        data_inicio = datetime.strptime(inicio_normalizado, "%d/%m/%Y").date()
+        data_fim = datetime.strptime(fim_normalizado, "%d/%m/%Y").date()
+    except Exception:
+        return data_normalizada == inicio_normalizado if inicio_normalizado == fim_normalizado else False
+    return data_inicio <= data_atual <= data_fim
+
+
 class ProcedimentoPayload(BaseModel):
     nome: str
     origem: Literal["contrato", "manual"]
@@ -531,7 +593,7 @@ def descrever_alteracoes_agendamento(
         ("paciente", str(row_val(existente, "nome_paciente_snapshot", "") or row_val(existente, "paciente_nome", "") or ""), payload.nomePaciente),
         ("profissional", str(row_val(existente, "profissional", "") or ""), payload.profissionalNome),
         ("tipo", str(row_val(existente, "tipo_atendimento_nome_snapshot", "") or ""), payload.tipoAtendimentoNome),
-        ("status", str(row_val(existente, "status", "") or ""), payload.status or "Agendado"),
+        ("status", normalizar_status_agendamento(row_val(existente, "status", "")), normalizar_status_agendamento(payload.status or "Agendado")),
     ]
     for rotulo, anterior, novo in campos_texto:
         anterior_limpo = anterior.strip()
@@ -581,7 +643,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         tipoAtendimentoId=row_val(row, "tipo_atendimento_id", 0) or 0,
         tipoAtendimento=row_val(row, "tipo_atendimento_nome_snapshot", "") or "",
         procedimentos=procedimentos or ([primeiro] if primeiro else []),
-        status=row_val(row, "status", "Agendado") or "Agendado",
+        status=normalizar_status_agendamento(row_val(row, "status", "Agendado")),
         data=row[data_coluna_agenda],
         inicio=row_val(row, "hora_inicio", ""),
         fim=row_val(row, "hora_fim", ""),
@@ -609,7 +671,7 @@ def existe_conflito(conn: sqlite3.Connection, profissional_id: int, data: str, i
         FROM agendamentos
         WHERE profissional_id=?
           AND {data_coluna_agenda}=?
-          AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+          AND lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
         LIMIT 1
         """,
@@ -634,7 +696,7 @@ def existe_conflito_excluindo(
         WHERE id <> ?
           AND profissional_id=?
           AND {data_coluna_agenda}=?
-          AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+          AND lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
         LIMIT 1
         """,
@@ -692,23 +754,23 @@ def buscar_disponibilidade(
     profissional_id: int = Query(..., alias="profissional_id"),
     data: str = Query(...),
 ):
-    data_coluna_agenda = obter_data_coluna_agenda()
+    data_consulta = normalizar_data_agenda(data)
     conn = conectar()
     try:
         rows = conn.execute(
-            f"""
+            """
             SELECT *
             FROM agendamentos
             WHERE profissional_id=?
-              AND {data_coluna_agenda}=?
-              AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+              AND lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
             ORDER BY hora_inicio
             """,
-            (profissional_id, data),
+            (profissional_id,),
         ).fetchall()
+        rows_filtrados = [row for row in rows if normalizar_data_agenda(row_val(row, obter_data_coluna_agenda(), "")) == data_consulta]
 
         ocupados: list[str] = []
-        for row in rows:
+        for row in rows_filtrados:
             inicio = para_minutos(row["hora_inicio"])
             fim = para_minutos(row["hora_fim"])
             ocupados.extend(
@@ -719,7 +781,7 @@ def buscar_disponibilidade(
 
         return DisponibilidadeResposta(
             ocupados=sorted(set(ocupados), key=para_minutos),
-            agendamentos=[mapear_agendamento(conn, row) for row in rows],
+            agendamentos=[mapear_agendamento(conn, row) for row in rows_filtrados],
         )
     finally:
         conn.close()
@@ -730,23 +792,32 @@ def listar_agendamentos(
     data_inicio: str = Query(..., alias="data_inicio"),
     data_fim: str | None = Query(None, alias="data_fim"),
 ):
-    data_coluna_agenda = obter_data_coluna_agenda()
     conn = conectar()
     try:
         data_fim_real = data_fim or data_inicio
         rows = conn.execute(
-            f"""
+            """
             SELECT *
             FROM agendamentos
-            WHERE {data_coluna_agenda} >= ?
-              AND {data_coluna_agenda} <= ?
-              AND COALESCE(status, 'Agendado') <> 'Desmarcado'
-            ORDER BY {data_coluna_agenda}, hora_inicio, profissional
+            WHERE lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
+            ORDER BY hora_inicio, profissional
             """,
-            (data_inicio, data_fim_real),
         ).fetchall()
+        data_coluna_agenda = obter_data_coluna_agenda()
+        rows_filtrados = [
+            row
+            for row in rows
+            if data_agenda_no_intervalo(row_val(row, data_coluna_agenda, ""), data_inicio, data_fim_real)
+        ]
+        rows_filtrados.sort(
+            key=lambda row: (
+                chave_ordenacao_data_agenda(row_val(row, data_coluna_agenda, "")),
+                str(row_val(row, "hora_inicio", "") or ""),
+                str(row_val(row, "profissional", "") or "").lower(),
+            )
+        )
         return AgendamentosListaResposta(
-            agendamentos=[mapear_agendamento(conn, row) for row in rows]
+            agendamentos=[mapear_agendamento(conn, row) for row in rows_filtrados]
         )
     finally:
         conn.close()
@@ -1035,7 +1106,7 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             payload.ordemServicoId,
             str(payload.ordemServicoDocumentoNome or "").strip(),
             str(payload.elementoArcada or "").strip(),
-            payload.status or "Agendado",
+            normalizar_status_agendamento(payload.status or "Agendado"),
             usuario,
             momento,
             usuario,
@@ -1203,7 +1274,7 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 payload.ordemServicoId,
                 str(payload.ordemServicoDocumentoNome or "").strip(),
                 str(payload.elementoArcada or "").strip(),
-                payload.status or "Agendado",
+                normalizar_status_agendamento(payload.status or "Agendado"),
                 usuario,
                 momento,
                 agendamento_id,

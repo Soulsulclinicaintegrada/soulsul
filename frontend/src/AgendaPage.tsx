@@ -125,7 +125,8 @@ type AgendaPageProps = {
 };
 
 function statusOcultoNaAgenda(status?: string) {
-  return String(status || "").trim().toLowerCase() === "desmarcado";
+  const normalizado = String(status || "").trim().toLowerCase();
+  return normalizado === "desmarcado" || normalizado === "cancelado";
 }
 
 type ConfigProfissionalAgenda = {
@@ -606,23 +607,26 @@ function ProcedimentoBadge({
 export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente }: AgendaPageProps) {
   const usuarioAtual = (usuarioLogado?.nome || "Usuário").trim() || "Usuário";
   const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioResumoApi[]>([]);
-  const [profissionaisImportados, setProfissionaisImportados] = useState<Array<{ id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>>([]);
+  const [eventos, setEventos] = useState<AgendaEventoUI[]>(() => construirEventosIniciais());
   const profissionaisUsuariosBase = useMemo(() => construirProfissionaisBase(usuariosAgenda), [usuariosAgenda]);
-  const profissionaisBase = useMemo(() => {
+  const profissionaisImportadosAtuais = useMemo(
+    () => construirProfissionaisImportados(eventos, profissionaisUsuariosBase),
+    [eventos, profissionaisUsuariosBase]
+  );
+  const profissionaisTodos = useMemo(() => {
     const mapa = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
     profissionaisUsuariosBase.forEach((item) => mapa.set(item.id, item));
-    profissionaisImportados.forEach((item) => {
+    profissionaisImportadosAtuais.forEach((item) => {
       if (!mapa.has(item.id)) mapa.set(item.id, item);
     });
     return Array.from(mapa.values());
-  }, [profissionaisImportados, profissionaisUsuariosBase]);
-  const usuariosAgendaDisponiveis = useMemo(() => profissionaisBase.map((item) => item.nome), [profissionaisBase]);
+  }, [profissionaisImportadosAtuais, profissionaisUsuariosBase]);
+  const usuariosAgendaDisponiveis = useMemo(() => profissionaisUsuariosBase.map((item) => item.nome), [profissionaisUsuariosBase]);
   const dataInicialHoje = hojeIso();
   const [visao, setVisao] = useState<AgendaView>("Dia");
   const [dataSelecionada, setDataSelecionada] = useState(dataInicialHoje);
   const [profissionaisSelecionados, setProfissionaisSelecionados] = useState<number[]>([]);
   const [ordemProfissionais, setOrdemProfissionais] = useState<number[]>([]);
-  const [eventos, setEventos] = useState<AgendaEventoUI[]>(() => construirEventosIniciais());
   const [eventoAtivoId, setEventoAtivoId] = useState<number | null>(null);
   const [detalhePosicao, setDetalhePosicao] = useState<DetalhePopoverPosicao | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
@@ -631,10 +635,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [rascunhoSlot, setRascunhoSlot] = useState<SlotRascunho>({
     data: dataInicialHoje,
     hora: "10:00",
-    profissionalId: profissionaisBase[0]?.id ?? 1
+    profissionalId: profissionaisUsuariosBase[0]?.id ?? 1
   });
   const [form, setForm] = useState<ModalFormState>(() =>
-    criarFormulario({ data: dataInicialHoje, hora: "10:00", profissionalId: profissionaisBase[0]?.id ?? 1 }, usuarioAtual)
+    criarFormulario({ data: dataInicialHoje, hora: "10:00", profissionalId: profissionaisUsuariosBase[0]?.id ?? 1 }, usuarioAtual)
   );
   const [sugestoesPaciente, setSugestoesPaciente] = useState<AgendaPacienteBuscaItem[]>([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
@@ -668,6 +672,9 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [profissionalArrastandoId, setProfissionalArrastandoId] = useState<number | null>(null);
   const cliqueDetalheTimer = useRef<number | null>(null);
   const configuracaoAgendaCarregada = useRef(false);
+  const configuracaoAgendaInicialRef = useRef("");
+  const ultimaConfiguracaoSalvaRef = useRef("");
+  const carregamentoAgendaRef = useRef(0);
   const usuarioEhAdministrador =
     normalizarTextoAgenda(String(usuarioLogado?.perfil || "")) === "administrador"
     || normalizarTextoAgenda(String(usuarioLogado?.cargo || "")) === "administrador";
@@ -680,7 +687,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     () =>
       ordemProfissionais
         .map((id) => {
-          const base = profissionaisBase.find((item) => item.id === id);
+          const base = profissionaisUsuariosBase.find((item) => item.id === id);
           const config = configProfissionaisMap.get(id);
           if (!base) return null;
           return {
@@ -694,31 +701,32 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
           };
         })
         .filter((item): item is NonNullable<typeof item> => Boolean(item)),
-    [configProfissionaisMap, ordemProfissionais, profissionaisBase]
+    [configProfissionaisMap, ordemProfissionais, profissionaisUsuariosBase]
   );
   const profissionaisDisponiveis = useMemo(
     () => {
       const profissionaisComEventos = new Set(eventos.map((evento) => evento.profissionalId));
-      const base = profissionaisOrdenados.filter((item) => item.mostrar || profissionaisComEventos.has(item.id));
-      if (usuarioEhAdministrador || !agendaSomentePropria) return base;
+      const baseConfigurada = profissionaisOrdenados.filter((item) => item.mostrar || profissionaisComEventos.has(item.id));
+      const importados = profissionaisImportadosAtuais.filter((item) => profissionaisComEventos.has(item.id));
+      if (usuarioEhAdministrador || !agendaSomentePropria) return [...baseConfigurada, ...importados];
       const usuarioAtual = normalizarTextoAgenda(String(usuarioLogado?.usuario || ""));
       const nomeAtual = normalizarTextoAgenda(String(usuarioLogado?.nome || ""));
       const nomeAgendaAtual = normalizarTextoAgenda(String(usuarioLogado?.nomeAgenda || ""));
-      return base.filter((item) => {
+      const filtrados = baseConfigurada.filter((item) => {
         const vinculo = normalizarTextoAgenda(item.usuarioVinculado || "");
         const nomeColuna = normalizarTextoAgenda(item.nomeAgenda || item.nome || "");
         return vinculo === usuarioAtual
           || vinculo === nomeAtual
           || nomeColuna === nomeAgendaAtual
-          || nomeColuna === nomeAtual
-          || profissionaisComEventos.has(item.id);
+          || nomeColuna === nomeAtual;
       });
+      return [...filtrados, ...importados];
     },
-    [agendaSomentePropria, eventos, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
+    [agendaSomentePropria, eventos, profissionaisImportadosAtuais, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
   );
   const profissionaisVisiveis = useMemo(
-    () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id)),
-    [profissionaisDisponiveis, profissionaisSelecionados]
+    () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id) || profissionaisImportadosAtuais.some((importado) => importado.id === item.id)),
+    [profissionaisDisponiveis, profissionaisImportadosAtuais, profissionaisSelecionados]
   );
   const diaSemanaSelecionado = useMemo(() => new Date(`${dataSelecionada}T12:00:00`).getDay(), [dataSelecionada]);
   const clinicaDiaAtual = configClinicaDias[diaSemanaSelecionado] ?? configClinicaDias[1];
@@ -800,6 +808,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         setUsuariosAgenda(usuariosFiltrados);
         const base = construirProfissionaisBase(usuariosFiltrados);
         const carregada = carregarConfiguracaoAgenda(base, configuracao);
+        const configuracaoSerializada = JSON.stringify({
+          salas: carregada.salas,
+          ordemProfissionais: carregada.ordemProfissionais,
+          configClinicaDias: carregada.configClinicaDias,
+          configProfissionais: carregada.configProfissionais
+        });
+        configuracaoAgendaInicialRef.current = configuracaoSerializada;
+        ultimaConfiguracaoSalvaRef.current = configuracaoSerializada;
         setConfigClinicaDias(carregada.configClinicaDias);
         setConfigProfissionais(carregada.configProfissionais);
         setSalasAgenda(carregada.salas);
@@ -831,12 +847,16 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   useEffect(() => {
     setProfissionaisSelecionados((atual) => {
       const idsVisiveis = profissionaisDisponiveis.map((item) => item.id);
+      const idsImportados = profissionaisImportadosAtuais.map((item) => item.id);
       const filtrados = atual.filter((id) => idsVisiveis.includes(id));
+      const importadosAtivos = idsImportados.filter((id) => idsVisiveis.includes(id));
+      const combinados = [...new Set([...filtrados, ...importadosAtivos])];
+      if (combinados.length) return combinados;
       return filtrados.length ? filtrados : idsVisiveis;
     });
-  }, [profissionaisDisponiveis]);
+  }, [profissionaisDisponiveis, profissionaisImportadosAtuais]);
   useEffect(() => {
-    const idsBase = profissionaisBase.map((item) => item.id);
+    const idsBase = profissionaisUsuariosBase.map((item) => item.id);
     setOrdemProfissionais((atual) => {
       const filtrados = atual.filter((id) => idsBase.includes(id));
       const faltantes = idsBase.filter((id) => !filtrados.includes(id));
@@ -844,7 +864,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     });
     setConfigProfissionais((atual) => {
       const mapaAtual = new Map(atual.map((item) => [item.id, item]));
-      return profissionaisBase.map((item) => {
+      return profissionaisUsuariosBase.map((item) => {
         const existente = mapaAtual.get(item.id);
         if (!existente) {
           return {
@@ -867,17 +887,35 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         };
       });
     });
-  }, [profissionaisBase]);
+  }, [profissionaisUsuariosBase]);
   useEffect(() => {
-    if (!configuracaoAgendaCarregada.current || !profissionaisBase.length) return;
+    if (!configuracaoAgendaCarregada.current || !profissionaisUsuariosBase.length) return;
+    const configuracaoAtual = JSON.stringify({
+      salas: salasAgenda,
+      ordemProfissionais,
+      configClinicaDias,
+      configProfissionais
+    });
+    if (!configuracaoAgendaInicialRef.current) {
+      configuracaoAgendaInicialRef.current = configuracaoAtual;
+      ultimaConfiguracaoSalvaRef.current = configuracaoAtual;
+      return;
+    }
+    if (configuracaoAtual === ultimaConfiguracaoSalvaRef.current) return;
     const timer = window.setTimeout(() => {
       void salvarConfiguracaoAgendaApi({
         salas: salasAgenda,
         ordemProfissionais,
         configClinicaDias,
         configProfissionais
-      });
-    }, 300);
+      })
+        .then(() => {
+          ultimaConfiguracaoSalvaRef.current = configuracaoAtual;
+        })
+        .catch(() => {
+          // Mantemos a configuracao local atual e tentamos novamente apenas na proxima alteracao real.
+        });
+    }, 800);
     return () => window.clearTimeout(timer);
   }, [configClinicaDias, configProfissionais, ordemProfissionais, salasAgenda]);
   const eventosVisiveis = useMemo(
@@ -897,7 +935,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     [eventosVisiveis, diasSemana]
   );
   function nomeProfissionalPorId(profissionalId: number) {
-    return profissionaisBase.find((item) => item.id === profissionalId)?.nome ?? "Profissional";
+    return profissionaisTodos.find((item) => item.id === profissionalId)?.nome ?? "Profissional";
   }
 
   function nomeAgendaProfissional(profissionalId: number) {
@@ -1767,6 +1805,8 @@ function atualizarConfigProfissionalDia(
   }
 
   async function recarregarAgenda() {
+    const carregamentoId = carregamentoAgendaRef.current + 1;
+    carregamentoAgendaRef.current = carregamentoId;
     const dataInicio =
       visao === "Dia"
         ? isoParaBr(dataSelecionada)
@@ -1784,8 +1824,9 @@ function atualizarConfigProfissionalDia(
     try {
       carregados = await listarAgendamentosAgenda(dataInicio, dataFim);
     } catch {
-      carregados = [];
+      return;
     }
+    if (carregamentoAgendaRef.current !== carregamentoId) return;
 
     const mapaProfissionais = new Map(
       profissionaisUsuariosBase.flatMap((profissional) => [
@@ -1812,14 +1853,13 @@ function atualizarConfigProfissionalDia(
     });
 
     const idsImportados = Array.from(importadosMap.keys());
-    setProfissionaisImportados(Array.from(importadosMap.values()));
     setProfissionaisSelecionados((atual) => [...new Set([...atual, ...idsImportados])]);
     setEventos(ajustados);
   }
 
   useEffect(() => {
     void recarregarAgenda();
-  }, [dataSelecionada, visao]);
+  }, [dataSelecionada, profissionaisUsuariosBase, visao]);
 
   function imprimirAgendaAtual() {
     const janela = window.open("", "_blank", "width=1200,height=900");
@@ -2067,7 +2107,7 @@ function atualizarConfigProfissionalDia(
               <div
                 key={diaIso}
                 className={`agenda-week-day-column${diaIso === dataSelecionada ? " current" : ""}`}
-                onDoubleClick={() => abrirNovoAgendamento({ data: diaIso, hora: horariosAgenda[0] ?? "08:00", profissionalId: profissionaisVisiveis[0]?.id ?? profissionaisBase[0].id })}
+                onDoubleClick={() => abrirNovoAgendamento({ data: diaIso, hora: horariosAgenda[0] ?? "08:00", profissionalId: profissionaisVisiveis[0]?.id ?? profissionaisUsuariosBase[0]?.id ?? 1 })}
               >
                 {horariosAgenda.map((slot) => (
                   <div key={`${diaIso}-${slot}`} className="agenda-week-slot-line" />
