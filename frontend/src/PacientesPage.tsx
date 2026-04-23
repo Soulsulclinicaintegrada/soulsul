@@ -1,6 +1,8 @@
 ﻿import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, ChevronDown, FileText, IdCard, Mail, MoreVertical, Pencil, Phone, Plus, Printer, Search, Wallet, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
+  adicionarPacienteAvaliacaoCrmApi,
+  atualizarCrmApi,
   marcarPacienteFinalizadoCrmApi,
   reativarPacienteCrmApi,
   alterarStatusOrcamentoPacienteApi,
@@ -36,6 +38,7 @@ import {
   type OrdemServicoResumoApi,
   atualizarPacienteApi
 } from "./pacientesApi";
+import { adicionarMinutos, salvarAgendamentoAgenda } from "./agendaApi";
 import { Odontograma } from "./Odontograma";
 import logoSoulSul from "./assets/logo-soul-sul.png";
 
@@ -76,6 +79,11 @@ type PacienteForm = {
   menorIdade: boolean;
   responsavel: string;
   cpfResponsavel: string;
+};
+
+type AgendamentoAvaliacaoForm = {
+  data: string;
+  hora: string;
 };
 
 type AbaPrincipal = "Cadastro" | "Financeiro" | "Agendamentos" | "Clínico" | "Documentos" | "Comercial" | "Ordem de serviço";
@@ -292,6 +300,13 @@ const FORM_INICIAL: PacienteForm = {
   responsavel: "",
   cpfResponsavel: ""
 };
+
+function AGENDAMENTO_AVALIACAO_INICIAL(): AgendamentoAvaliacaoForm {
+  return {
+    data: dataHojeIso(),
+    hora: "09:00"
+  };
+}
 
 const ORCAMENTO_INICIAL = (dataAtual: string): OrcamentoDraft => ({
   clinica: CLINICAS_ORCAMENTO[0],
@@ -792,7 +807,10 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
   const [editForm, setEditForm] = useState<PacienteForm>(FORM_INICIAL);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [agendandoAvaliacao, setAgendandoAvaliacao] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [agendamentoAvaliacaoNovo, setAgendamentoAvaliacaoNovo] = useState<AgendamentoAvaliacaoForm>(AGENDAMENTO_AVALIACAO_INICIAL);
+  const [agendamentoAvaliacaoEdicao, setAgendamentoAvaliacaoEdicao] = useState<AgendamentoAvaliacaoForm>(AGENDAMENTO_AVALIACAO_INICIAL);
   const [abaPrincipal, setAbaPrincipal] = useState<AbaPrincipal>("Cadastro");
   const [abaClinica, setAbaClinica] = useState<AbaClinica>("Plano e ficha clínica");
   const [abaDocumentos, setAbaDocumentos] = useState<AbaDocumentos>("Documentos");
@@ -1064,6 +1082,61 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
+  function agoraBr() {
+    const agora = new Date();
+    return `${String(agora.getDate()).padStart(2, "0")}/${String(agora.getMonth() + 1).padStart(2, "0")}/${agora.getFullYear()} ${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
+  }
+
+  async function agendarAvaliacaoCrmPaciente(
+    pacienteId: number,
+    dadosPaciente: { nome: string; prontuario?: string; telefone?: string; crm?: FichaPacienteApi["crm"] | null },
+    agendamento: AgendamentoAvaliacaoForm
+  ) {
+    if (!agendamento.data || !agendamento.hora) {
+      throw new Error("Informe a data e a hora da avaliação.");
+    }
+    if (!dadosPaciente.nome.trim()) {
+      throw new Error("O paciente precisa ter nome para agendar a avaliação.");
+    }
+    if (!String(dadosPaciente.telefone || "").trim()) {
+      throw new Error("Informe o telefone do paciente antes de agendar a avaliação.");
+    }
+
+    const dataBr = agendamento.data.split("-").reverse().join("/");
+    await salvarAgendamentoAgenda({
+      pacienteId,
+      nomePaciente: dadosPaciente.nome.trim(),
+      prontuario: String(dadosPaciente.prontuario || "").trim(),
+      telefone: String(dadosPaciente.telefone || "").trim(),
+      profissionalId: 0,
+      profissionalNome: "Avaliação",
+      tipoAtendimentoId: 0,
+      tipoAtendimentoNome: "Avaliação",
+      data: dataBr,
+      horaInicio: agendamento.hora,
+      horaFim: adicionarMinutos(agendamento.hora, 45),
+      duracaoMinutos: 45,
+      status: "Agendado",
+      agendadoPor: "CRM",
+      agendadoEm: agoraBr(),
+      observacoes: "Lead agendado diretamente pela ficha do paciente.",
+      procedimentos: [{ nome: "Avaliação", origem: "manual", duracaoMinutos: 45 }]
+    });
+
+    const crmItem = await adicionarPacienteAvaliacaoCrmApi(pacienteId);
+    await atualizarCrmApi(crmItem.id, {
+      etapa_funil: "Agendou avaliação",
+      canal: crmItem.canal || dadosPaciente.crm?.canal || "Facebook",
+      campanha: crmItem.campanha || dadosPaciente.crm?.campanha || "",
+      conjunto_anuncio: crmItem.conjuntoAnuncio || "",
+      anuncio: crmItem.anuncio || "",
+      responsavel: crmItem.responsavel || "",
+      proximo_contato: agendamento.data,
+      observacao: crmItem.observacao || "Avaliação agendada diretamente pela ficha do paciente.",
+      ultima_interacao: crmItem.ultimaInteracao || ""
+    });
+  }
+
   useEffect(() => {
     const cep = novoForm.cep.replace(/\D/g, "");
     if (cep.length !== 8 || cep === ultimoCepNovo.current) return;
@@ -1135,36 +1208,69 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     setPlanoPagamentoEditor((atual) => normalizarPlanoPagamento(atual, totalOrcamentoFinal, orcamentoDraft.data));
   }, [modalPagamentoAberto, totalOrcamentoFinal, orcamentoDraft.data]);
 
-  async function salvarNovoPaciente() {
+  async function salvarNovoPaciente(agendarAvaliacao = false) {
     setSalvandoNovo(true);
+    setAgendandoAvaliacao(agendarAvaliacao);
     setErro(null);
     try {
       const criado = await criarPacienteApi(mapFormParaPayload(novoForm));
+      let mensagem = "Paciente criado com sucesso.";
+      if (agendarAvaliacao) {
+        await agendarAvaliacaoCrmPaciente(
+          criado.id,
+          {
+            nome: criado.nome,
+            prontuario: criado.prontuario,
+            telefone: criado.telefone,
+            crm: null
+          },
+          agendamentoAvaliacaoNovo
+        );
+        mensagem = "Paciente criado e avaliação agendada no CRM.";
+      }
       setModalNovoAberto(false);
       setNovoForm(FORM_INICIAL);
-      setFeedback("Paciente criado com sucesso.");
+      setAgendamentoAvaliacaoNovo(AGENDAMENTO_AVALIACAO_INICIAL());
+      setFeedback(mensagem);
       await carregarLista();
       setPacienteAtivoId(criado.id);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao criar paciente.");
     } finally {
       setSalvandoNovo(false);
+      setAgendandoAvaliacao(false);
     }
   }
 
-  async function salvarEdicaoPaciente() {
+  async function salvarEdicaoPaciente(agendarAvaliacao = false) {
     if (!pacienteAtivoId) return;
     setSalvandoEdicao(true);
+    setAgendandoAvaliacao(agendarAvaliacao);
     setErro(null);
     try {
-      await atualizarPacienteApi(pacienteAtivoId, mapFormParaPayload(editForm));
-      setFeedback("Paciente atualizado com sucesso.");
+      const atualizado = await atualizarPacienteApi(pacienteAtivoId, mapFormParaPayload(editForm));
+      if (agendarAvaliacao) {
+        await agendarAvaliacaoCrmPaciente(
+          pacienteAtivoId,
+          {
+            nome: atualizado.nome,
+            prontuario: atualizado.prontuario,
+            telefone: atualizado.telefone,
+            crm: ficha?.crm || null
+          },
+          agendamentoAvaliacaoEdicao
+        );
+        setFeedback("Paciente atualizado e avaliação agendada no CRM.");
+      } else {
+        setFeedback("Paciente atualizado com sucesso.");
+      }
       await carregarLista();
       await carregarFicha(pacienteAtivoId);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao atualizar paciente.");
     } finally {
       setSalvandoEdicao(false);
+      setAgendandoAvaliacao(false);
     }
   }
 
@@ -2220,7 +2326,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                   <button type="button" className="ghost-action" onClick={() => setEditForm(mapPacienteParaForm(pacienteDetalhe))}>
                     Cancelar
                   </button>
-                  <button type="button" className="primary-action" onClick={salvarEdicaoPaciente} disabled={salvandoEdicao}>
+                  <button type="button" className="primary-action" onClick={() => void salvarEdicaoPaciente()} disabled={salvandoEdicao}>
                     {salvandoEdicao ? "Salvando..." : "Salvar paciente"}
                   </button>
                 </div>
@@ -2666,11 +2772,40 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                   </div>
                 ) : null}
 
+                <div className="patient-crm-quick-card">
+                  <div className="patient-form-heading">
+                    <span className="patient-form-heading-icon" aria-hidden="true"><CalendarDays size={18} /></span>
+                    <div className="patient-form-title">CRM e avaliação</div>
+                  </div>
+                  <p>Agende este lead direto no profissional "Avaliação" e já leve para a etapa de CRM correspondente.</p>
+                  <div className="patient-form-grid two">
+                    <label className="patient-line-field">
+                      <span>Data da avaliação</span>
+                      <input
+                        type="date"
+                        value={agendamentoAvaliacaoEdicao.data}
+                        onChange={(e) => setAgendamentoAvaliacaoEdicao((atual) => ({ ...atual, data: e.target.value }))}
+                      />
+                    </label>
+                    <label className="patient-line-field">
+                      <span>Hora da avaliação</span>
+                      <input
+                        type="time"
+                        value={agendamentoAvaliacaoEdicao.hora}
+                        onChange={(e) => setAgendamentoAvaliacaoEdicao((atual) => ({ ...atual, hora: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <div className="patient-form-actions">
                   <button type="button" className="ghost-action" onClick={() => setEditForm(mapPacienteParaForm(pacienteDetalhe))}>
                     Cancelar
                   </button>
-                  <button type="button" className="primary-action" onClick={salvarEdicaoPaciente} disabled={salvandoEdicao}>
+                  <button type="button" className="ghost-action" onClick={() => void salvarEdicaoPaciente(true)} disabled={salvandoEdicao || agendandoAvaliacao}>
+                    {salvandoEdicao && agendandoAvaliacao ? "Agendando..." : "Salvar e agendar avaliação"}
+                  </button>
+                  <button type="button" className="primary-action" onClick={() => void salvarEdicaoPaciente()} disabled={salvandoEdicao}>
                     {salvandoEdicao ? "Salvando..." : "Salvar paciente"}
                   </button>
                 </div>
@@ -3283,13 +3418,25 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
                     <label className="full"><span>Observações</span><textarea rows={5} value={novoForm.observacoes} onChange={(e) => setNovoForm({ ...novoForm, observacoes: e.target.value })} /></label>
                   </div>
                 </div>
+
+                <div className="form-block">
+                  <h3>Agendar avaliação no CRM</h3>
+                  <div className="form-grid two">
+                    <label><span>Data da avaliação</span><input type="date" value={agendamentoAvaliacaoNovo.data} onChange={(e) => setAgendamentoAvaliacaoNovo((atual) => ({ ...atual, data: e.target.value }))} /></label>
+                    <label><span>Hora da avaliação</span><input type="time" value={agendamentoAvaliacaoNovo.hora} onChange={(e) => setAgendamentoAvaliacaoNovo((atual) => ({ ...atual, hora: e.target.value }))} /></label>
+                  </div>
+                  <p className="patient-crm-quick-copy">Ao salvar e agendar, o paciente entra na Agenda no profissional "Avaliação" e vai para a etapa "Agendou avaliação" no CRM.</p>
+                </div>
               </div>
             </div>
 
             <footer className="modal-footer">
               <div className="sticky-actions">
                 <button type="button" className="ghost-action" onClick={() => setModalNovoAberto(false)}>Cancelar</button>
-                <button type="button" className="primary-action" onClick={salvarNovoPaciente} disabled={salvandoNovo}>
+                <button type="button" className="ghost-action" onClick={() => void salvarNovoPaciente(true)} disabled={salvandoNovo || agendandoAvaliacao}>
+                  {salvandoNovo && agendandoAvaliacao ? "Agendando..." : "Salvar e agendar avaliação"}
+                </button>
+                <button type="button" className="primary-action" onClick={() => void salvarNovoPaciente()} disabled={salvandoNovo}>
                   {salvandoNovo ? "Salvando..." : "Salvar paciente"}
                 </button>
               </div>

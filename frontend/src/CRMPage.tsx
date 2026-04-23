@@ -27,7 +27,7 @@ type RelatorioCrmItem = {
   detalhe: string;
 };
 
-type CrmAba = "funil" | "finalizados" | "avaliacoes" | "relatorios";
+type CrmAba = "funil" | "agendados" | "finalizados" | "avaliacoes" | "relatorios";
 
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   pacienteId: -1,
@@ -291,6 +291,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     () => pipelineFiltrado.filter((item) => correspondeBusca(item, termoBuscaLead)),
     [pipelineFiltrado, termoBuscaLead]
   );
+  const agendadosFiltrados = useMemo(
+    () =>
+      pipelineFiltrado
+        .filter((item) => normalizarTexto(item.etapaFunil || "") === "agendou avaliacao")
+        .sort((a, b) => `${a.proximoContato || ""} ${a.nome}`.localeCompare(`${b.proximoContato || ""} ${b.nome}`)),
+    [pipelineFiltrado]
+  );
   const leadSelecionado = useMemo(
     () => leadsFiltrados.find((item) => item.id === leadSelecionadoId) || leadsFiltrados[0] || null,
     [leadSelecionadoId, leadsFiltrados]
@@ -541,6 +548,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       <section className="panel crm-tabs-panel">
         <div className="tab-shell tab-shell-primary crm-tabs-shell">
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "funil" ? "active" : ""}`} onClick={() => setAbaAtiva("funil")}>Funil</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "agendados" ? "active" : ""}`} onClick={() => setAbaAtiva("agendados")}>Agendados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizados" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizados")}>Finalizados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>Avaliações</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "relatorios" ? "active" : ""}`} onClick={() => setAbaAtiva("relatorios")}>Relatórios</button>
@@ -555,7 +563,40 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         ) : null}
       </section>
 
-      <section className={abaAtiva === "finalizados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
+      <section className={abaAtiva === "agendados" || abaAtiva === "finalizados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
+        <article className={abaAtiva === "agendados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
+          <div className="section-title-row">
+            <div>
+              <span className="panel-kicker">Leads</span>
+              <h2>Leads agendados para avaliação</h2>
+            </div>
+            <div className="crm-inline-actions">
+              <Search size={18} />
+            </div>
+          </div>
+          <div className="crm-list">
+            {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
+            {!carregando && agendadosFiltrados.map((item) => (
+              <article key={`agendado-${item.id}`} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.proximoContato ? `Avaliação em ${item.proximoContato}` : "Agendado no CRM"}</span>
+                  <div className="crm-inline-actions">
+                    {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
+                    <button type="button" className="ghost-action" onClick={() => { setAbaAtiva("funil"); setLeadSelecionadoId(item.id); }}>
+                      Editar CRM
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {!carregando && !agendadosFiltrados.length ? <div className="module-subitem"><strong>Nenhum lead com avaliação agendada.</strong></div> : null}
+          </div>
+        </article>
+
         <article className={abaAtiva === "finalizados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
           <div className="section-title-row">
             <div>
