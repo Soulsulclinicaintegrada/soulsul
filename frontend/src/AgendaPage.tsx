@@ -1149,6 +1149,16 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     selecionarDataAgenda(adicionarDias(dataSelecionada, delta));
   }
 
+  function navegarMesLateral(delta: number) {
+    const atual = new Date(`${dataSelecionada}T12:00:00`);
+    const destino = new Date(atual);
+    destino.setDate(1);
+    destino.setMonth(destino.getMonth() + delta);
+    const diaNoMes = Math.min(atual.getDate(), new Date(destino.getFullYear(), destino.getMonth() + 1, 0).getDate());
+    destino.setDate(diaNoMes);
+    selecionarDataAgenda(`${destino.getFullYear()}-${String(destino.getMonth() + 1).padStart(2, "0")}-${String(destino.getDate()).padStart(2, "0")}`);
+  }
+
   function toggleProfissional(profissionalId: number) {
     setProfissionaisSelecionados((atual) =>
       atual.includes(profissionalId) ? atual.filter((id) => id !== profissionalId) : [...atual, profissionalId]
@@ -1945,9 +1955,9 @@ function atualizarConfigProfissionalDia(
     return (
       <div className="agenda-mini-calendar">
         <div className="agenda-mini-header">
-          <button type="button" onClick={() => navegar(-1)}><ChevronLeft size={18} /></button>
+          <button type="button" onClick={() => navegarMesLateral(-1)}><ChevronLeft size={18} /></button>
           <div><strong>{mesesInfo.mes}</strong><span>{mesesInfo.ano}</span></div>
-          <button type="button" onClick={() => navegar(1)}><ChevronRight size={18} /></button>
+          <button type="button" onClick={() => navegarMesLateral(1)}><ChevronRight size={18} /></button>
         </div>
         <div className="agenda-mini-weekdays">
           {NOMES_DIAS.map((dia) => <span key={dia}>{dia}</span>)}
