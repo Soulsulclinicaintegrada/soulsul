@@ -6,6 +6,10 @@ function apiBasePadrao() {
   }
 
   const { protocol, hostname } = window.location;
+  const hostNormalizado = hostname.toLowerCase();
+  if (!["localhost", "127.0.0.1"].includes(hostNormalizado)) {
+    return "https://soulsul-production.up.railway.app";
+  }
   return `${protocol}//${hostname}:8001`;
 }
 
