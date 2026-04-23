@@ -6,6 +6,7 @@ import { AgendaPage } from "./AgendaPage";
 import { CRMPage } from "./CRMPage";
 import { DashboardPage } from "./DashboardPage";
 import { FinanceiroPage } from "./FinanceiroPage";
+import { GuiasPage } from "./GuiasPage";
 import { ImportacoesPage } from "./ImportacoesPage";
 import { menuItems, type MenuKey } from "./mockData";
 import { PacientesPage } from "./PacientesPage";
@@ -24,6 +25,7 @@ type NavegacaoPaciente = {
 const MENU_TO_MODULO: Record<MenuKey, string> = {
   Dashboard: "Dashboard",
   Pacientes: "Pacientes",
+  Guias: "Pacientes",
   Agenda: "Agenda",
   CRM: "CRM",
   Financeiro: "Financeiro",
@@ -181,6 +183,7 @@ function App() {
   const paginaAtual = useMemo(() => {
     if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente, contrato, venda ou vencimento..." };
     if (menuAtivo === "Pacientes") return { titulo: "Pacientes", busca: "Buscar paciente, prontuario, telefone ou CPF..." };
+    if (menuAtivo === "Guias") return { titulo: "Guias", busca: "Buscar paciente ou prontuário..." };
     if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente, profissional, procedimento ou horario..." };
     if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar lead, paciente, campanha ou etapa..." };
     if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar recebivel, conta a pagar, categoria ou vencimento..." };
@@ -213,6 +216,7 @@ function App() {
     if (menuAtivo === "Pacientes") {
       return <PacientesPage busca={buscaGlobal} navegacao={navegacaoPaciente} pacientesAbas={pacientesAbasUsuario} />;
     }
+    if (menuAtivo === "Guias") return <GuiasPage />;
     if (menuAtivo === "Agenda") {
       return (
         <AgendaPage

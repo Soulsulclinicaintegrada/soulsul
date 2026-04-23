@@ -1,6 +1,6 @@
 ﻿import { Shield, UserCog } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { buscarConfiguracaoAgendaApi, salvarConfiguracaoAgendaApi, type AgendaDiaConfiguracaoApi } from "./agendaApi";
+import { buscarConfiguracaoAgendaApi, salvarConfiguracaoAgendaApi } from "./agendaApi";
 import { obterUsuariosSistema } from "./mockData";
 import { atualizarUsuarioApi, criarUsuarioApi, excluirUsuarioApi, listarUsuariosApi, redefinirSenhaUsuarioApi, urlExportarAcoesUsuariosApi, type UsuarioResumoApi } from "./pacientesApi";
 
@@ -40,8 +40,6 @@ type AgendaConfigUsuario = {
 const MODULOS_BASE = ["Dashboard", "Pacientes", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"] as const;
 const ABAS_PACIENTES = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"] as const;
 const OPCOES_PERMISSAO: NivelPermissao[] = ["Sem acesso", "Visualizacao", "Edicao"];
-const DIAS_CURTOS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"] as const;
-
 function criarConfiguracaoDiasPadrao() {
   return Object.fromEntries(
     [0, 1, 2, 3, 4, 5, 6].map((dia) => [
@@ -294,26 +292,6 @@ export function UsuariosPage() {
         ...parcial
       }
     }));
-  }
-
-  function atualizarAgendaDiaUsuarioSelecionado(dia: string, parcial: Partial<AgendaDiaConfiguracaoApi>) {
-    if (!usuarioSelecionado) return;
-    setAgendaConfig((atual) => {
-      const atualUsuario = atual[usuarioSelecionado.id] || agendaConfigPadraoUsuario();
-      return {
-        ...atual,
-        [usuarioSelecionado.id]: {
-          ...atualUsuario,
-          configuracaoDias: {
-            ...atualUsuario.configuracaoDias,
-            [dia]: {
-              ...(atualUsuario.configuracaoDias[dia] || criarConfiguracaoDiasPadrao()[dia]),
-              ...parcial
-            }
-          }
-        }
-      };
-    });
   }
 
   function aplicarPadraoCargoNoUsuario(usuarioId: number, cargo: CargoUsuario) {
@@ -806,7 +784,7 @@ export function UsuariosPage() {
               <section className="users-permission-section">
                 <div className="users-permission-section-head">
                   <strong>Agenda do usuario</strong>
-                  <span>Edite disponibilidade e horarios sem sair desta tela.</span>
+                  <span>Controle apenas exibição e capacidade. Os horários ficam centralizados na Agenda.</span>
                 </div>
                 {agendaUsuarioSelecionado ? (
                   <div className="users-agenda-grid">
@@ -834,47 +812,6 @@ export function UsuariosPage() {
                         }
                       />
                     </label>
-                    {Object.entries(agendaUsuarioSelecionado.configuracaoDias).map(([dia, config]) => (
-                      <div key={dia} className="users-agenda-day-card">
-                        <div className="users-agenda-day-head">
-                          <strong>{DIAS_CURTOS[Number(dia)]}</strong>
-                          <label className="users-agenda-day-toggle">
-                            <span>Ativo</span>
-                            <input
-                              type="checkbox"
-                              checked={config.ativo}
-                              onChange={(e) => atualizarAgendaDiaUsuarioSelecionado(dia, { ativo: e.target.checked })}
-                            />
-                          </label>
-                        </div>
-                        <div className="users-agenda-day-grid">
-                          <label>
-                            <span>Início</span>
-                            <input type="time" value={config.inicio} onChange={(e) => atualizarAgendaDiaUsuarioSelecionado(dia, { inicio: e.target.value })} />
-                          </label>
-                          <label>
-                            <span>Fim</span>
-                            <input type="time" value={config.fim} onChange={(e) => atualizarAgendaDiaUsuarioSelecionado(dia, { fim: e.target.value })} />
-                          </label>
-                          <label>
-                            <span>Almoço início</span>
-                            <input
-                              type="time"
-                              value={config.almocoInicio}
-                              onChange={(e) => atualizarAgendaDiaUsuarioSelecionado(dia, { almocoInicio: e.target.value })}
-                            />
-                          </label>
-                          <label>
-                            <span>Almoço fim</span>
-                            <input
-                              type="time"
-                              value={config.almocoFim}
-                              onChange={(e) => atualizarAgendaDiaUsuarioSelecionado(dia, { almocoFim: e.target.value })}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 ) : null}
               </section>

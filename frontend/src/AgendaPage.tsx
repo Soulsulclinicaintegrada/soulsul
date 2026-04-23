@@ -479,12 +479,7 @@ function corTipo(tipoId: number) {
 }
 
 function resumoEventoAgenda(nome: string) {
-  return nome
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte.slice(0, 3).toUpperCase())
-    .join(" ");
+  return nome.trim() || "Sem nome";
 }
 
 function calcularColunasSobrepostas(eventosDia: AgendaEventoUI[]) {
@@ -725,8 +720,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     [agendaSomentePropria, eventos, profissionaisImportadosAtuais, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
   );
   const profissionaisVisiveis = useMemo(
-    () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id) || profissionaisImportadosAtuais.some((importado) => importado.id === item.id)),
-    [profissionaisDisponiveis, profissionaisImportadosAtuais, profissionaisSelecionados]
+    () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id)),
+    [profissionaisDisponiveis, profissionaisSelecionados]
   );
   const diaSemanaSelecionado = useMemo(() => new Date(`${dataSelecionada}T12:00:00`).getDay(), [dataSelecionada]);
   const clinicaDiaAtual = configClinicaDias[diaSemanaSelecionado] ?? configClinicaDias[1];
@@ -847,14 +842,11 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   useEffect(() => {
     setProfissionaisSelecionados((atual) => {
       const idsVisiveis = profissionaisDisponiveis.map((item) => item.id);
-      const idsImportados = profissionaisImportadosAtuais.map((item) => item.id);
       const filtrados = atual.filter((id) => idsVisiveis.includes(id));
-      const importadosAtivos = idsImportados.filter((id) => idsVisiveis.includes(id));
-      const combinados = [...new Set([...filtrados, ...importadosAtivos])];
-      if (combinados.length) return combinados;
+      if (filtrados.length) return filtrados;
       return filtrados.length ? filtrados : idsVisiveis;
     });
-  }, [profissionaisDisponiveis, profissionaisImportadosAtuais]);
+  }, [profissionaisDisponiveis]);
   useEffect(() => {
     const idsBase = profissionaisUsuariosBase.map((item) => item.id);
     setOrdemProfissionais((atual) => {
@@ -1165,6 +1157,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
 
   function selecionarSomenteProfissional(profissionalId: number) {
     setProfissionaisSelecionados([profissionalId]);
+  }
+
+  function selecionarTodosProfissionais() {
+    setProfissionaisSelecionados(profissionaisDisponiveis.map((item) => item.id));
+  }
+
+  function limparSelecaoProfissionais() {
+    setProfissionaisSelecionados([]);
   }
 
   function abrirNovoAgendamento(slot: SlotRascunho) {
@@ -2214,6 +2214,14 @@ function atualizarConfigProfissionalDia(
               <div><span className="panel-kicker">Equipe</span><h2>Profissionais</h2></div>
             </div>
             <div className="agenda-profissionais-list">
+              <div className="agenda-profissionais-actions">
+                <button type="button" className="ghost-action compact" onClick={selecionarTodosProfissionais}>
+                  Mostrar todos
+                </button>
+                <button type="button" className="ghost-action compact" onClick={limparSelecaoProfissionais}>
+                  Limpar seleção
+                </button>
+              </div>
               {profissionaisDisponiveis.map((profissional) => (
                 <div
                   key={profissional.id}
@@ -2228,14 +2236,18 @@ function atualizarConfigProfissionalDia(
                   >
                     <span className="agenda-prof-option-dot" style={{ background: profissional.cor }} />
                   </button>
-                  <button
-                    type="button"
+                  <label
                     className="agenda-prof-option-label"
-                    onClick={() => toggleProfissional(profissional.id)}
                     title="Adicionar ou remover da seleção"
                   >
-                    {nomeAgendaProfissional(profissional.id)}
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={profissionaisSelecionados.includes(profissional.id)}
+                      onChange={() => toggleProfissional(profissional.id)}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                    <span>{nomeAgendaProfissional(profissional.id)}</span>
+                  </label>
                 </div>
               ))}
             </div>
