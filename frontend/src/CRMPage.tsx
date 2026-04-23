@@ -287,9 +287,16 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [finalizadosIds, pipeline, termoBusca]
   );
   const termoBuscaLead = normalizarTexto(buscaLead);
+  const todosLeadsCrm = useMemo(() => {
+    const mapa = new Map<number, CrmPacienteItemApi>();
+    [...pipeline, ...finalizados].forEach((item) => {
+      if (!mapa.has(item.id)) mapa.set(item.id, item);
+    });
+    return Array.from(mapa.values()).sort((a, b) => b.id - a.id);
+  }, [finalizados, pipeline]);
   const leadsFiltrados = useMemo(
-    () => pipelineFiltrado.filter((item) => correspondeBusca(item, termoBuscaLead)),
-    [pipelineFiltrado, termoBuscaLead]
+    () => todosLeadsCrm.filter((item) => correspondeBusca(item, termoBuscaLead)),
+    [termoBuscaLead, todosLeadsCrm]
   );
   const agendadosFiltrados = useMemo(
     () =>
