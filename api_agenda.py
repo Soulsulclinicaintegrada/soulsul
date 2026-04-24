@@ -583,6 +583,47 @@ def usuario_request(request: Request) -> str:
     return (request.headers.get("x-usuario") or "").strip() or "Sistema"
 
 
+def descrever_agendamento_para_auditoria(
+    agendamento_id: int,
+    payload: AgendamentoPayload,
+    alteracoes: str = "",
+) -> str:
+    procedimentos = ", ".join(item.nome.strip() for item in payload.procedimentos if item.nome.strip())
+    partes = [
+        f"Agendamento #{agendamento_id}",
+        str(payload.nomePaciente or "").strip() or "Paciente sem nome",
+        f"{payload.data} {payload.horaInicio}-{payload.horaFim}",
+        str(payload.profissionalNome or "").strip() or "Profissional não informado",
+    ]
+    if procedimentos:
+        partes.append(procedimentos)
+    if alteracoes.strip():
+        partes.append(f"alterações: {alteracoes.strip()}")
+    return " | ".join(partes)
+
+
+def registrar_acao_agendamento(
+    usuario: str,
+    *,
+    acao: str,
+    rota: str,
+    info: str,
+) -> None:
+    try:
+        from api_pacientes import registrar_acao_usuario
+
+        registrar_acao_usuario(
+            usuario,
+            acao=acao,
+            tipo="Agendamento",
+            info=info,
+            metodo_http="POST" if acao == "Criacao" else "PUT",
+            rota=rota,
+        )
+    except Exception:
+        pass
+
+
 def descrever_alteracoes_agendamento(
     existente: sqlite3.Row,
     payload: AgendamentoPayload,
@@ -1170,6 +1211,12 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
         row = conn.execute("SELECT * FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=500, detail="Agendamento não encontrado após salvar.")
+        registrar_acao_agendamento(
+            usuario,
+            acao="Criacao",
+            rota="/api/agenda/agendamentos",
+            info=descrever_agendamento_para_auditoria(agendamento_id, payload),
+        )
         return mapear_agendamento(conn, row)
     finally:
         conn.close()
@@ -1320,6 +1367,16 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
         row = conn.execute("SELECT * FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=500, detail="Agendamento não encontrado após atualizar.")
+        registrar_acao_agendamento(
+            usuario,
+            acao="Edicao",
+            rota=f"/api/agenda/agendamentos/{agendamento_id}",
+            info=descrever_agendamento_para_auditoria(
+                agendamento_id,
+                payload,
+                descricao_alteracoes or "sem mudancas estruturais identificadas",
+            ),
+        )
         return mapear_agendamento(conn, row)
     finally:
         conn.close()

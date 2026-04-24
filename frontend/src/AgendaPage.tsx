@@ -1844,15 +1844,19 @@ function atualizarConfigProfissionalDia(
         [normalizarTextoAgenda(profissional.usuarioVinculado), profissional.id]
       ])
     );
+    const idsProfissionaisBase = new Set(profissionaisUsuariosBase.map((profissional) => profissional.id));
 
     const importadosMap = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
     const ajustados: AgendaEventoUI[] = carregados.map((evento) => {
+      const nomeProfissionalNormalizado = normalizarTextoAgenda(evento.profissional);
+      const profissionalMapeado = nomeProfissionalNormalizado ? mapaProfissionais.get(nomeProfissionalNormalizado) : undefined;
+      const profissionalIdExistente = evento.profissionalId && idsProfissionaisBase.has(evento.profissionalId) ? evento.profissionalId : undefined;
       const profissionalIdResolvido =
-        evento.profissionalId && evento.profissionalId > 0
-          ? evento.profissionalId
-          : mapaProfissionais.get(normalizarTextoAgenda(evento.profissional)) ?? idProfissionalImportado(evento.profissional);
+        profissionalMapeado
+        ?? profissionalIdExistente
+        ?? idProfissionalImportado(evento.profissional || `PROFISSIONAL ${evento.profissionalId || 0}`);
 
-      if (!mapaProfissionais.has(normalizarTextoAgenda(evento.profissional)) && evento.profissional.trim()) {
+      if (!profissionalMapeado && evento.profissional.trim()) {
         importadosMap.set(
           profissionalIdResolvido,
           construirProfissionalImportado(evento.profissional, importadosMap.size + profissionaisUsuariosBase.length)
@@ -2051,11 +2055,14 @@ function atualizarConfigProfissionalDia(
                   {eventosProfissional.map((evento) => {
                     const topo = ((paraMinutos(evento.inicio) - minutoInicialAgenda) / 15) * SLOT_HEIGHT;
                     const altura = ((paraMinutos(evento.fim) - paraMinutos(evento.inicio)) / 15) * SLOT_HEIGHT;
+                    const eventoCompacto = altura < 54;
+                    const eventoMinimo = altura < 32;
+                    const procedimentoPrincipal = evento.procedimentos[0] || evento.tipoAtendimento || "";
                     return (
                       <button
                         key={evento.id}
                         type="button"
-                        className="agenda-event-card"
+                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}`}
                         style={{ top: `${topo}px`, height: `${altura}px`, background: corTipo(evento.tipoAtendimentoId) }}
                         onClick={(event) => agendarAberturaDetalhes(evento, event.currentTarget)}
                         onDoubleClick={(event) => {
@@ -2068,8 +2075,10 @@ function atualizarConfigProfissionalDia(
                         }}
                       >
                         <span className="agenda-event-dot" style={{ background: corStatusAgendamento(evento.status) }} />
-                        <strong>{evento.paciente}</strong>
-                        <span>{evento.procedimentos[0]}</span>
+                        <div className="agenda-event-card-copy">
+                          <strong title={evento.paciente}>{evento.paciente}</strong>
+                          {!eventoMinimo && procedimentoPrincipal ? <span title={procedimentoPrincipal}>{procedimentoPrincipal}</span> : null}
+                        </div>
                       </button>
                     );
                   })}
@@ -2153,7 +2162,7 @@ function atualizarConfigProfissionalDia(
                         void abrirEdicaoAgendamento(evento);
                       }}
                     >
-                      <span>{resumoEventoAgenda(evento.paciente)}</span>
+                      <span title={evento.paciente}>{resumoEventoAgenda(evento.paciente)}</span>
                     </button>
                   );
                 })}

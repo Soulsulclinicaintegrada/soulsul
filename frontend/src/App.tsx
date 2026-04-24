@@ -25,7 +25,7 @@ type NavegacaoPaciente = {
 const MENU_TO_MODULO: Record<MenuKey, string> = {
   Dashboard: "Dashboard",
   Pacientes: "Pacientes",
-  Guias: "Pacientes",
+  Guias: "Guias",
   Agenda: "Agenda",
   CRM: "CRM",
   Financeiro: "Financeiro",
@@ -52,6 +52,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   const modulos: Record<string, string> = {
     Dashboard: "Sem acesso",
     Pacientes: "Sem acesso",
+    Guias: "Sem acesso",
     Agenda: "Sem acesso",
     CRM: "Sem acesso",
     Financeiro: "Sem acesso",
@@ -78,6 +79,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   }
   if (cargo === "profissional") {
     modulos.Pacientes = "Edicao";
+    modulos.Guias = "Edicao";
     modulos.Agenda = "Visualizacao";
     modulos.CRM = "Sem acesso";
     pacientesAbas.Documentos = "Edicao";
@@ -88,6 +90,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   }
   modulos.Dashboard = "Visualizacao";
   modulos.Pacientes = "Edicao";
+  modulos.Guias = "Edicao";
   modulos.Agenda = "Edicao";
   modulos.CRM = "Edicao";
   modulos.Financeiro = "Visualizacao";

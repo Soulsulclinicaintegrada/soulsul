@@ -12,6 +12,14 @@
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+function ToothIcon({ size = 19 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7.5 4.5C5.3 4.5 3.5 6.6 3.5 9.1c0 1.7.8 3.3 1.8 4.5.8 1 .9 1.8 1.1 3.2.2 1.5.7 2.7 1.9 2.7 1.1 0 1.5-1.3 1.8-2.4.3-1.1.7-2.1 1.9-2.1s1.6 1 1.9 2.1c.3 1.1.7 2.4 1.8 2.4 1.2 0 1.7-1.2 1.9-2.7.2-1.4.3-2.2 1.1-3.2 1-1.2 1.8-2.8 1.8-4.5 0-2.5-1.8-4.6-4-4.6-1.3 0-2.1.6-2.9.6-.8 0-1.7-.6-3-.6Z" />
+    </svg>
+  );
+}
+
 export type MenuKey =
   | "Dashboard"
   | "Pacientes"
@@ -112,7 +120,7 @@ export type EventoAgenda = {
 export const menuItems: MenuItem[] = [
   { key: "Dashboard", label: "Dashboard", icon: <LayoutDashboard size={19} /> },
   { key: "Pacientes", label: "Pacientes", icon: <CircleUserRound size={19} /> },
-  { key: "Guias", label: "Guias", icon: <Stethoscope size={19} /> },
+  { key: "Guias", label: "Guias", icon: <ToothIcon size={19} /> },
   { key: "Agenda", label: "Agenda", icon: <CalendarDays size={19} /> },
   { key: "CRM", label: "CRM", icon: <TrendingUp size={19} /> },
   { key: "Tabelas", label: "Tabelas", icon: <Import size={19} /> },

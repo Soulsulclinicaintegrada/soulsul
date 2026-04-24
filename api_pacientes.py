@@ -1248,16 +1248,18 @@ async def auditoria_middleware(request: Request, call_next):
 
     response = await call_next(Request(request.scope, receive))
 
-    if request.url.path.startswith("/api/") and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 500:
+    rota = request.url.path
+    deve_pular_agenda = rota.startswith("/api/agenda/agendamentos")
+    if rota.startswith("/api/") and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 500 and not deve_pular_agenda:
         usuario = usuario_request(request)
-        if usuario and not request.url.path.startswith("/api/auth/"):
+        if usuario and not rota.startswith("/api/auth/"):
             registrar_acao_usuario(
                 usuario,
                 acao=mapear_acao_http(request.method),
-                tipo=mapear_tipo_rota(request.url.path),
+                tipo=mapear_tipo_rota(rota),
                 info=extrair_info_acao(payload_dict),
                 metodo_http=request.method,
-                rota=request.url.path,
+                rota=rota,
             )
     return response
 
@@ -1281,7 +1283,7 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
     )
 
 
-MODULOS_USUARIOS = ["Dashboard", "Pacientes", "Agenda", "Financeiro", "Tabelas", "Usuarios"]
+MODULOS_USUARIOS = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"]
 ABAS_PACIENTES_USUARIOS = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"]
 
 
@@ -1298,6 +1300,7 @@ def permissoes_padrao_backend(cargo: str, perfil: str) -> tuple[dict[str, str], 
         agenda_escopo = "TODA_CLINICA"
     elif cargo_limpo == "Profissional":
         modulos["Pacientes"] = "Edicao"
+        modulos["Guias"] = "Edicao"
         modulos["Agenda"] = "Visualizacao"
         pacientes_abas["Documentos"] = "Edicao"
         pacientes_abas["Plano e Ficha Clinica"] = "Visualizacao"
@@ -1307,7 +1310,9 @@ def permissoes_padrao_backend(cargo: str, perfil: str) -> tuple[dict[str, str], 
     else:
         modulos["Dashboard"] = "Visualizacao"
         modulos["Pacientes"] = "Edicao"
+        modulos["Guias"] = "Edicao"
         modulos["Agenda"] = "Edicao"
+        modulos["CRM"] = "Edicao"
         modulos["Financeiro"] = "Visualizacao"
         pacientes_abas["Cadastro"] = "Edicao"
         pacientes_abas["Orcamentos"] = "Visualizacao"
