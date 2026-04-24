@@ -4143,6 +4143,8 @@ textarea::placeholder {
   line-height: 1.08;
   font-weight: 800;
   text-transform: uppercase;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .agenda-event-card-copy span {
@@ -4153,6 +4155,8 @@ textarea::placeholder {
   font-size: 0.68rem;
   color: rgba(39, 35, 29, 0.74);
   line-height: 1.08;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .agenda-event-card.compact {

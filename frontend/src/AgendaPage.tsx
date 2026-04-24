@@ -2057,7 +2057,9 @@ function atualizarConfigProfissionalDia(
                     const altura = ((paraMinutos(evento.fim) - paraMinutos(evento.inicio)) / 15) * SLOT_HEIGHT;
                     const eventoCompacto = altura < 54;
                     const eventoMinimo = altura < 32;
+                    const colunaMuitoApertada = profissionaisVisiveis.length >= 10;
                     const procedimentoPrincipal = evento.procedimentos[0] || evento.tipoAtendimento || "";
+                    const mostrarProcedimento = !eventoMinimo && !colunaMuitoApertada && altura >= 72 && Boolean(procedimentoPrincipal);
                     return (
                       <button
                         key={evento.id}
@@ -2077,7 +2079,7 @@ function atualizarConfigProfissionalDia(
                         <span className="agenda-event-dot" style={{ background: corStatusAgendamento(evento.status) }} />
                         <div className="agenda-event-card-copy">
                           <strong title={evento.paciente}>{evento.paciente}</strong>
-                          {!eventoMinimo && procedimentoPrincipal ? <span title={procedimentoPrincipal}>{procedimentoPrincipal}</span> : null}
+                          {mostrarProcedimento ? <span title={procedimentoPrincipal}>{procedimentoPrincipal}</span> : null}
                         </div>
                       </button>
                     );
