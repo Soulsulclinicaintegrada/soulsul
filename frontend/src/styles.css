@@ -95,6 +95,35 @@ textarea::placeholder {
   grid-template-columns: 1fr;
 }
 
+.shell.agenda-focus .main-area {
+  padding: 10px;
+  gap: 8px;
+}
+
+.shell.agenda-focus .topbar {
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
+}
+
+.shell.agenda-focus .topbar-left,
+.shell.agenda-focus .topbar-right {
+  gap: 10px;
+}
+
+.shell.agenda-focus .topbar-menu-toggle {
+  width: 38px;
+  height: 38px;
+}
+
+.shell.agenda-focus .page-eyebrow {
+  margin-bottom: 2px;
+}
+
+.shell.agenda-focus .page-title {
+  font-size: 1.45rem;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -3313,9 +3342,9 @@ textarea::placeholder {
 
 .agenda-shell {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  gap: 14px;
-  height: calc(100vh - 144px);
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 8px;
+  height: calc(100vh - 102px);
   min-height: 720px;
 }
 
@@ -3326,11 +3355,11 @@ textarea::placeholder {
 }
 
 .agenda-leftbar {
-  padding: 14px;
+  padding: 10px;
   align-self: start;
   position: sticky;
-  top: 18px;
-  max-height: calc(100vh - 144px);
+  top: 10px;
+  max-height: calc(100vh - 102px);
   overflow: auto;
 }
 
@@ -3338,7 +3367,7 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: 34px 1fr 34px;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .agenda-calendar-title {
@@ -3348,7 +3377,7 @@ textarea::placeholder {
 }
 
 .agenda-calendar-title strong {
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   letter-spacing: 0.18em;
   color: #6f624d;
 }
@@ -3362,7 +3391,7 @@ textarea::placeholder {
 .mini-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: 2px;
 }
 
 .mini-calendar-weekdays {
@@ -3378,7 +3407,7 @@ textarea::placeholder {
   background: transparent;
   color: var(--text);
   border-radius: 999px;
-  height: 28px;
+  height: 24px;
   cursor: pointer;
 }
 
@@ -3389,9 +3418,9 @@ textarea::placeholder {
 }
 
 .agenda-side-section {
-  margin-top: 18px;
+  margin-top: 10px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .agenda-side-title {
@@ -3431,25 +3460,25 @@ textarea::placeholder {
 }
 
 .agenda-main {
-  padding: 14px;
+  padding: 8px;
   overflow: hidden;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 12px;
+  gap: 8px;
 }
 
 .agenda-toolbar {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 0;
 }
 
 .agenda-toolbar-btn {
-  padding: 14px 18px;
-  min-width: 48px;
-  min-height: 48px;
+  padding: 10px 12px;
+  min-width: 40px;
+  min-height: 40px;
 }
 
 .agenda-toolbar-left,
@@ -3998,7 +4027,7 @@ textarea::placeholder {
 }
 
 .agenda-day-column-head {
-  height: 48px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4012,13 +4041,13 @@ textarea::placeholder {
 .agenda-prof-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   max-width: calc(100% - 4px);
   min-width: 0;
-  padding: 7px 10px;
+  padding: 4px 7px;
   border-radius: 999px;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   line-height: 1.05;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -4046,7 +4075,7 @@ textarea::placeholder {
 .agenda-day-column-body {
   position: relative;
   height: 1272px;
-  border-radius: 18px;
+  border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(199, 170, 120, 0.16);
 }
@@ -4085,16 +4114,16 @@ textarea::placeholder {
 
 .agenda-event-card {
   position: absolute;
-  left: 5px;
-  right: 5px;
+  left: 2px;
+  right: 2px;
   border: 1px solid rgba(77, 73, 63, 0.18);
-  border-radius: 10px;
-  padding: 5px 6px;
+  border-radius: 7px;
+  padding: 4px 4px;
   text-align: left;
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
   align-items: start;
-  column-gap: 7px;
+  column-gap: 4px;
   cursor: pointer;
   overflow: hidden;
 }
@@ -4110,7 +4139,7 @@ textarea::placeholder {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   line-height: 1.08;
   font-weight: 800;
   text-transform: uppercase;
@@ -4121,7 +4150,7 @@ textarea::placeholder {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: rgba(39, 35, 29, 0.74);
   line-height: 1.08;
 }
@@ -4182,7 +4211,7 @@ textarea::placeholder {
 .agenda-week-head,
 .agenda-week-grid-visual {
   display: grid;
-  grid-template-columns: 76px repeat(7, minmax(140px, 1fr));
+  grid-template-columns: 60px repeat(7, minmax(112px, 1fr));
 }
 
 .agenda-week-head {
@@ -4193,8 +4222,8 @@ textarea::placeholder {
 }
 
 .agenda-week-head > span {
-  min-height: 42px;
-  padding: 10px 8px;
+  min-height: 34px;
+  padding: 6px 4px;
   text-align: center;
   border-right: 1px solid rgba(173, 181, 196, 0.55);
   border-bottom: 1px solid rgba(173, 181, 196, 0.55);
@@ -4246,13 +4275,13 @@ textarea::placeholder {
 
 .agenda-week-event-block {
   position: absolute;
-  margin-left: 4px;
+  margin-left: 2px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 3px;
   color: #111;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  padding: 4px 5px;
+  padding: 3px 4px;
   overflow: hidden;
   text-align: left;
   z-index: 1;
