@@ -1239,22 +1239,11 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     let detalhe = evento;
     try {
       const detalheApi = await buscarDetalhesAgendamentoAgenda(evento.id);
-      detalhe = {
+      detalhe = resolverProfissionalEvento({
         ...evento,
         ...detalheApi,
         procedimentos: detalheApi.procedimentos.length ? detalheApi.procedimentos : evento.procedimentos
-      };
-      setEventos((atual) =>
-        atual.map((item) =>
-          item.id === evento.id
-            ? {
-                ...item,
-                ...detalhe,
-                procedimentos: detalhe.procedimentos
-              }
-            : item
-        )
-      );
+      });
     } catch {
       // mantém os dados locais quando a API não responder
     }
