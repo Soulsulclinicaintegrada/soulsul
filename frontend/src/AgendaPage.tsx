@@ -723,6 +723,29 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id)),
     [profissionaisDisponiveis, profissionaisSelecionados]
   );
+  const resolverProfissionalEvento = useMemo(() => {
+    const mapaProfissionais = new Map(
+      profissionaisUsuariosBase.flatMap((profissional) => [
+        [normalizarTextoAgenda(profissional.nome), profissional.id],
+        [normalizarTextoAgenda(profissional.usuarioVinculado), profissional.id]
+      ])
+    );
+    const idsProfissionaisBase = new Set(profissionaisUsuariosBase.map((profissional) => profissional.id));
+    return (evento: AgendaApiAgendamento | AgendaEventoUI): AgendaEventoUI => {
+      const nomeProfissionalNormalizado = normalizarTextoAgenda(evento.profissional);
+      const profissionalMapeado = nomeProfissionalNormalizado ? mapaProfissionais.get(nomeProfissionalNormalizado) : undefined;
+      const profissionalIdExistente = evento.profissionalId && idsProfissionaisBase.has(evento.profissionalId) ? evento.profissionalId : undefined;
+      const profissionalIdResolvido =
+        profissionalMapeado
+        ?? profissionalIdExistente
+        ?? idProfissionalImportado(evento.profissional || `PROFISSIONAL ${evento.profissionalId || 0}`);
+      return {
+        ...evento,
+        profissionalId: profissionalIdResolvido,
+        marcadores: "marcadores" in evento ? (evento.marcadores ?? []) : []
+      } as AgendaEventoUI;
+    };
+  }, [profissionaisUsuariosBase]);
   const diaSemanaSelecionado = useMemo(() => new Date(`${dataSelecionada}T12:00:00`).getDay(), [dataSelecionada]);
   const clinicaDiaAtual = configClinicaDias[diaSemanaSelecionado] ?? configClinicaDias[1];
   const horariosAgenda = useMemo(
@@ -1705,12 +1728,12 @@ function atualizarConfigProfissionalDia(
     setEventos((atual) =>
       atual.map((item) =>
         item.id === evento.id
-          ? {
+          ? resolverProfissionalEvento({
               ...item,
               ...atualizado,
               ...overridesLocais,
               procedimentos: atualizado.procedimentos.length ? atualizado.procedimentos : item.procedimentos
-            }
+            })
           : item
       )
     );
@@ -1739,7 +1762,11 @@ function atualizarConfigProfissionalDia(
       setEventos((atual) =>
         atual.map((item) =>
           item.id === evento.id
-            ? { ...item, ...detalhe, procedimentos: detalhe.procedimentos.length ? detalhe.procedimentos : item.procedimentos }
+            ? resolverProfissionalEvento({
+                ...item,
+                ...detalhe,
+                procedimentos: detalhe.procedimentos.length ? detalhe.procedimentos : item.procedimentos
+              })
             : item
         )
       );
@@ -1838,32 +1865,19 @@ function atualizarConfigProfissionalDia(
     }
     if (carregamentoAgendaRef.current !== carregamentoId) return;
 
-    const mapaProfissionais = new Map(
-      profissionaisUsuariosBase.flatMap((profissional) => [
-        [normalizarTextoAgenda(profissional.nome), profissional.id],
-        [normalizarTextoAgenda(profissional.usuarioVinculado), profissional.id]
-      ])
-    );
-    const idsProfissionaisBase = new Set(profissionaisUsuariosBase.map((profissional) => profissional.id));
-
     const importadosMap = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
     const ajustados: AgendaEventoUI[] = carregados.map((evento) => {
-      const nomeProfissionalNormalizado = normalizarTextoAgenda(evento.profissional);
-      const profissionalMapeado = nomeProfissionalNormalizado ? mapaProfissionais.get(nomeProfissionalNormalizado) : undefined;
-      const profissionalIdExistente = evento.profissionalId && idsProfissionaisBase.has(evento.profissionalId) ? evento.profissionalId : undefined;
-      const profissionalIdResolvido =
-        profissionalMapeado
-        ?? profissionalIdExistente
-        ?? idProfissionalImportado(evento.profissional || `PROFISSIONAL ${evento.profissionalId || 0}`);
-
+      const ajustado = resolverProfissionalEvento(evento);
+      const profissionalMapeado = normalizarTextoAgenda(evento.profissional)
+        ? profissionaisUsuariosBase.find((profissional) => profissional.id === ajustado.profissionalId)
+        : undefined;
       if (!profissionalMapeado && evento.profissional.trim()) {
         importadosMap.set(
-          profissionalIdResolvido,
+          ajustado.profissionalId,
           construirProfissionalImportado(evento.profissional, importadosMap.size + profissionaisUsuariosBase.length)
         );
       }
-
-      return { ...evento, profissionalId: profissionalIdResolvido, marcadores: [] };
+      return ajustado;
     });
 
     const idsImportados = Array.from(importadosMap.keys());
@@ -1873,7 +1887,7 @@ function atualizarConfigProfissionalDia(
 
   useEffect(() => {
     void recarregarAgenda();
-  }, [dataSelecionada, profissionaisUsuariosBase, visao]);
+  }, [dataSelecionada, profissionaisUsuariosBase, resolverProfissionalEvento, visao]);
 
   function imprimirAgendaAtual() {
     const janela = window.open("", "_blank", "width=1200,height=900");
