@@ -473,9 +473,23 @@ function classeFinanceiroAgenda(valor?: string) {
 function corTipo(tipoId: number) {
   const nome = (tiposAtendimentoAgenda.find((item) => item.id === tipoId)?.nome ?? "").toLowerCase();
   if (nome.includes("comprom")) return "#c8ccd3";
-  if (nome.includes("cirurg")) return "#d8c0f4";
-  if (nome.includes("consulta")) return "#c9e9d5";
-  return tiposAtendimentoAgenda.find((item) => item.id === tipoId)?.cor ?? "#c9e9d5";
+  if (nome.includes("emerg")) return "#ffb4b4";
+  if (nome.includes("cirurg")) return "#dcc7f7";
+  if (nome.includes("avali")) return "#fff1a8";
+  if (nome.includes("consulta")) return "#c7efd6";
+  return tiposAtendimentoAgenda.find((item) => item.id === tipoId)?.cor ?? "#c7efd6";
+}
+
+function corEventoAgenda(evento: Pick<AgendaEventoUI, "tipoAtendimentoId" | "tipoAtendimento" | "procedimentos">) {
+  const termos = [
+    String(evento.tipoAtendimento || "").toLowerCase(),
+    ...(evento.procedimentos || []).map((item) => String(item || "").toLowerCase())
+  ].join(" ");
+  if (termos.includes("emerg")) return "#ffb4b4";
+  if (termos.includes("cirurg")) return "#dcc7f7";
+  if (termos.includes("avali")) return "#fff1a8";
+  if (termos.includes("consulta")) return "#c7efd6";
+  return corTipo(evento.tipoAtendimentoId);
 }
 
 function resumoEventoAgenda(nome: string) {
@@ -2068,7 +2082,7 @@ function atualizarConfigProfissionalDia(
                         key={evento.id}
                         type="button"
                         className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}`}
-                        style={{ top: `${topo}px`, height: `${altura}px`, background: corTipo(evento.tipoAtendimentoId) }}
+                        style={{ top: `${topo}px`, height: `${altura}px`, background: corEventoAgenda(evento) }}
                         onClick={(event) => agendarAberturaDetalhes(evento, event.currentTarget)}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
@@ -2152,7 +2166,7 @@ function atualizarConfigProfissionalDia(
                         height: `${Math.max(altura, 18)}px`,
                         width: largura,
                         left: esquerda,
-                        background: corProfissionalPorId(evento.profissionalId)
+                        background: corEventoAgenda(evento)
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2203,7 +2217,7 @@ function atualizarConfigProfissionalDia(
                     <span
                       key={evento.id}
                       className="agenda-month-marker"
-                      style={{ background: corProfissionalPorId(evento.profissionalId) }}
+                      style={{ background: corEventoAgenda(evento) }}
                       onClick={(event) => {
                         event.stopPropagation();
                         agendarAberturaDetalhes(evento, event.currentTarget as HTMLElement);
