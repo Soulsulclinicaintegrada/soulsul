@@ -5465,7 +5465,7 @@ def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -
 @app.get("/api/pacientes", response_model=list[PacienteResumo])
 def listar_pacientes(
     q: str = Query("", description="Busca por nome, apelido, prontuario, CPF ou telefone"),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=5000),
 ):
     conn = conectar()
     try:

@@ -171,7 +171,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const fimFuturo = adicionarDias(hoje, 180);
       const resultados = await Promise.allSettled([
         listarCrmApi(),
-        listarPacientesApi("", 500),
+        listarPacientesApi("", 5000),
         listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/")),
       ]);
 

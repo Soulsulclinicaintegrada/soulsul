@@ -120,7 +120,7 @@ function mesclarPermissoes(
 }
 
 function App() {
-  const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Dashboard");
+  const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Agenda");
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [sidebarOverlayAberta, setSidebarOverlayAberta] = useState(false);
   const [navegacaoPaciente, setNavegacaoPaciente] = useState<NavegacaoPaciente | null>(null);
@@ -166,6 +166,15 @@ function App() {
   }, [acessoModuloAtual, menuAtivo, menuDisponivel, usuarioLogado]);
 
   useEffect(() => {
+    const termo = buscaGlobal.trim();
+    if (!usuarioLogado || !termo) return;
+    if (menuAtivo === "Pacientes") return;
+    if (nivelPermissao(modulosUsuario.Pacientes) <= 0) return;
+    setMenuAtivo("Pacientes");
+    setNavegacaoPaciente(null);
+  }, [buscaGlobal, menuAtivo, modulosUsuario.Pacientes, usuarioLogado]);
+
+  useEffect(() => {
     let cancelado = false;
     void (async () => {
       try {
@@ -184,14 +193,14 @@ function App() {
   }, []);
 
   const paginaAtual = useMemo(() => {
-    if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente, contrato, venda ou vencimento..." };
+    if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente de qualquer página..." };
     if (menuAtivo === "Pacientes") return { titulo: "Pacientes", busca: "Buscar paciente, prontuario, telefone ou CPF..." };
-    if (menuAtivo === "Guias") return { titulo: "Guias", busca: "Buscar paciente ou prontuário..." };
-    if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente, profissional, procedimento ou horario..." };
-    if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar lead, paciente, campanha ou etapa..." };
-    if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar recebivel, conta a pagar, categoria ou vencimento..." };
-    if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar procedimento, categoria ou valor..." };
-    return { titulo: "Usuarios", busca: "Buscar usuario, perfil ou permissao..." };
+    if (menuAtivo === "Guias") return { titulo: "Guias", busca: "Buscar paciente de qualquer página..." };
+    if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente de qualquer página..." };
+    if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar paciente de qualquer página..." };
+    if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar paciente de qualquer página..." };
+    if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar paciente de qualquer página..." };
+    return { titulo: "Usuarios", busca: "Buscar paciente de qualquer página..." };
   }, [menuAtivo]);
 
   const renderizarPagina = () => {
