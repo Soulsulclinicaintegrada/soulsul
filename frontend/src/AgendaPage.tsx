@@ -2102,6 +2102,7 @@ function atualizarConfigProfissionalDia(
           ) : null}
           {profissionaisVisiveis.map((profissional) => {
             const eventosProfissional = eventosDia.filter((evento) => evento.profissionalId === profissional.id);
+            const colunasSobrepostas = calcularColunasSobrepostas(eventosProfissional);
             const configProfissional = configProfissionais.find((item) => item.id === profissional.id);
             const configDiaProfissional = configProfissional?.configuracaoDias[diaSemanaSelecionado];
             const profissionalBloqueado = !profissionalAtivoNoDia(profissional.id, dataSelecionada);
@@ -2155,19 +2156,28 @@ function atualizarConfigProfissionalDia(
                     );
                   })}
                   {eventosProfissional.map((evento) => {
+                    const layout = colunasSobrepostas.get(evento.id) ?? { coluna: 0, totalColunas: 1 };
                     const topo = ((paraMinutos(evento.inicio) - minutoInicialAgenda) / 15) * SLOT_HEIGHT;
                     const altura = ((paraMinutos(evento.fim) - paraMinutos(evento.inicio)) / 15) * SLOT_HEIGHT;
                     const eventoCompacto = altura < 54;
                     const eventoMinimo = altura < 32;
-                    const colunaMuitoApertada = profissionaisVisiveis.length >= 10;
+                    const colunaMuitoApertada = profissionaisVisiveis.length >= 10 || layout.totalColunas >= 3;
                     const procedimentoPrincipal = evento.procedimentos[0] || evento.tipoAtendimento || "";
                     const mostrarProcedimento = !eventoMinimo && !colunaMuitoApertada && altura >= 72 && Boolean(procedimentoPrincipal);
+                    const largura = `calc((100% - 8px) / ${layout.totalColunas})`;
+                    const esquerda = `calc(${layout.coluna} * ((100% - 8px) / ${layout.totalColunas}))`;
                     return (
                       <button
                         key={evento.id}
                         type="button"
                         className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}`}
-                        style={{ top: `${topo}px`, height: `${altura}px`, background: corEventoAgenda(evento) }}
+                        style={{
+                          top: `${topo}px`,
+                          height: `${altura}px`,
+                          width: largura,
+                          left: esquerda,
+                          background: corEventoAgenda(evento)
+                        }}
                         onClick={(event) => agendarAberturaDetalhes(evento, event.currentTarget)}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
