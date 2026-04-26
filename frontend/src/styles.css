@@ -4277,6 +4277,21 @@ textarea::placeholder {
   background: #f8f2e3;
 }
 
+.agenda-week-holiday-label {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(255, 244, 214, 0.96);
+  color: #7d5b12;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: center;
+}
+
 .agenda-week-event-block {
   position: absolute;
   margin-left: 2px;
@@ -4364,11 +4379,19 @@ textarea::placeholder {
   margin-top: 8px;
 }
 
+.agenda-month-holiday-label {
+  margin-top: 4px;
+  color: #8a6518;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .agenda-month-marker {
   display: block;
-  width: 24px;
+  width: 100%;
   height: 10px;
-  border-radius: 0;
+  border-radius: 3px;
   border: 0;
   cursor: pointer;
 }
@@ -5961,6 +5984,7 @@ textarea::placeholder {
 }
 
 .crm-filter-row input,
+.crm-filter-row select,
 .crm-manual-entry-form input {
   min-height: 48px;
   border-radius: 14px;
@@ -5969,6 +5993,17 @@ textarea::placeholder {
   padding: 0.8rem 0.95rem;
   font: inherit;
   color: #2d241c;
+}
+
+.crm-report-letter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.crm-filter-row-report {
+  margin-bottom: 1rem;
 }
 
 .crm-manual-entry {

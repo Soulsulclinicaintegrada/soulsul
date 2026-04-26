@@ -264,6 +264,9 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "financeiro", "conta_caixa TEXT")
         garantir_coluna(conn, "contas_pagar", "categoria TEXT")
         garantir_coluna(conn, "agendamentos", "tipo_atendimento_nome_snapshot TEXT")
+        garantir_coluna(conn, "agendamentos", "status_origem TEXT")
+        garantir_coluna(conn, "agendamentos", "status_motivo TEXT")
+        garantir_coluna(conn, "agendamentos", "status_usuario TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS procedimentos_dente (

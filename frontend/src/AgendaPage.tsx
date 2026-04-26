@@ -117,6 +117,24 @@ const NOMES_MESES = [
   "Novembro",
   "Dezembro"
 ];
+const FERIADOS_FIXOS_NACIONAIS = new Map<string, string>([
+  ["01-01", "Confraternização Universal"],
+  ["04-21", "Tiradentes"],
+  ["05-01", "Dia do Trabalho"],
+  ["09-07", "Independência do Brasil"],
+  ["10-12", "Nossa Senhora Aparecida"],
+  ["11-02", "Finados"],
+  ["11-15", "Proclamação da República"],
+  ["11-20", "Consciência Negra"],
+  ["12-25", "Natal"]
+]);
+const FERIADOS_FIXOS_RJ = new Map<string, string>([
+  ["04-23", "São Jorge"]
+]);
+const FERIADOS_FIXOS_CAMPOS = new Map<string, string>([
+  ["03-28", "Aniversário de Campos"],
+  ["08-06", "Santíssimo Salvador"]
+]);
 
 type AgendaPageProps = {
   usuarioLogado?: UsuarioSessao | null;
@@ -192,6 +210,55 @@ function brParaIso(dataBr: string) {
 function hojeIso() {
   const agora = new Date();
   return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+}
+
+function calcularPascoa(ano: number) {
+  const a = ano % 19;
+  const b = Math.floor(ano / 100);
+  const c = ano % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(ano, mes - 1, dia);
+}
+
+function dataDateParaIso(data: Date) {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+}
+
+function adicionarDiasDate(data: Date, dias: number) {
+  const copia = new Date(data);
+  copia.setDate(copia.getDate() + dias);
+  return copia;
+}
+
+function descricaoFeriado(dataIso: string) {
+  const [anoTexto, mes, dia] = dataIso.split("-");
+  const ano = Number(anoTexto);
+  if (!ano || !mes || !dia) return "";
+  const chaveFixa = `${mes}-${dia}`;
+  if (FERIADOS_FIXOS_NACIONAIS.has(chaveFixa)) return FERIADOS_FIXOS_NACIONAIS.get(chaveFixa) || "";
+  if (FERIADOS_FIXOS_RJ.has(chaveFixa)) return FERIADOS_FIXOS_RJ.get(chaveFixa) || "";
+  if (FERIADOS_FIXOS_CAMPOS.has(chaveFixa)) return FERIADOS_FIXOS_CAMPOS.get(chaveFixa) || "";
+
+  const pascoa = calcularPascoa(ano);
+  const sextaSanta = dataDateParaIso(adicionarDiasDate(pascoa, -2));
+  const corpusChristi = dataDateParaIso(adicionarDiasDate(pascoa, 60));
+  if (dataIso === sextaSanta) return "Paixão de Cristo";
+  if (dataIso === corpusChristi) return "Corpus Christi";
+  return "";
+}
+
+function ehFeriado(dataIso: string) {
+  return Boolean(descricaoFeriado(dataIso));
 }
 
 function descricaoGuiaAgenda(guia: {
@@ -762,6 +829,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   }, [profissionaisUsuariosBase]);
   const diaSemanaSelecionado = useMemo(() => new Date(`${dataSelecionada}T12:00:00`).getDay(), [dataSelecionada]);
   const clinicaDiaAtual = configClinicaDias[diaSemanaSelecionado] ?? configClinicaDias[1];
+  const feriadoSelecionado = useMemo(() => descricaoFeriado(dataSelecionada), [dataSelecionada]);
   const horariosAgenda = useMemo(
     () => gerarSlotsQuinzeMinutos(clinicaDiaAtual.inicio, adicionarMinutos(clinicaDiaAtual.fim, 15)),
     [clinicaDiaAtual.fim, clinicaDiaAtual.inicio]
@@ -951,17 +1019,21 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     () => eventos.filter((evento) => !statusOcultoNaAgenda(evento.status)),
     [eventos]
   );
+  const eventosFiltradosProfissionais = useMemo(
+    () => eventosVisiveis.filter((evento) => profissionaisSelecionados.includes(evento.profissionalId)),
+    [eventosVisiveis, profissionaisSelecionados]
+  );
   const eventosDia = useMemo(
-    () => eventosVisiveis.filter((evento) => evento.data === isoParaBr(dataSelecionada)),
-    [eventosVisiveis, dataSelecionada]
+    () => eventosFiltradosProfissionais.filter((evento) => evento.data === isoParaBr(dataSelecionada)),
+    [eventosFiltradosProfissionais, dataSelecionada]
   );
   const detalheAtivo = useMemo(
     () => eventos.find((item) => item.id === eventoAtivoId) ?? null,
     [eventos, eventoAtivoId]
   );
   const eventosDaSemana = useMemo(
-    () => eventosVisiveis.filter((evento) => diasSemana.map(isoParaBr).includes(evento.data)),
-    [eventosVisiveis, diasSemana]
+    () => eventosFiltradosProfissionais.filter((evento) => diasSemana.map(isoParaBr).includes(evento.data)),
+    [eventosFiltradosProfissionais, diasSemana]
   );
   function nomeProfissionalPorId(profissionalId: number) {
     return profissionaisTodos.find((item) => item.id === profissionalId)?.nome ?? "Profissional";
@@ -985,6 +1057,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   }
 
   function profissionalAtivoNoDia(profissionalId: number, dataIso: string) {
+    if (ehFeriado(dataIso)) return false;
     const diaSemana = new Date(`${dataIso}T12:00:00`).getDay();
     const configClinica = configClinicaDias[diaSemana];
     const configProfissional = configuracaoProfissionalNoDia(profissionalId, dataIso);
@@ -992,6 +1065,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   }
 
   function slotDisponivelNaAgenda(profissionalId: number, dataIso: string, slot: string) {
+    if (ehFeriado(dataIso)) return false;
     const diaSemana = new Date(`${dataIso}T12:00:00`).getDay();
     const configClinica = configClinicaDias[diaSemana];
     const configProfissional = configuracaoProfissionalNoDia(profissionalId, dataIso);
@@ -1215,6 +1289,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   }
 
   function abrirNovoAgendamento(slot: SlotRascunho) {
+    if (ehFeriado(slot.data)) return;
     const horarioValido = slotDisponivelNaAgenda(slot.profissionalId, slot.data, slot.hora)
       ? slot.hora
       : primeiroSlotDisponivel(slot.profissionalId, slot.data);
@@ -2051,7 +2126,9 @@ function atualizarConfigProfissionalDia(
                   </div>
                 </div>
                 <div className="agenda-day-column-body" style={{ background: profissional.corSuave }}>
-                  {profissionalBloqueado ? <div className="agenda-day-unavailable"><span>Indisponível no dia</span></div> : null}
+                  {profissionalBloqueado ? (
+                    <div className="agenda-day-unavailable"><span>{feriadoSelecionado ? `Feriado · ${feriadoSelecionado}` : "Indisponível no dia"}</span></div>
+                  ) : null}
                   {configDiaProfissional ? (
                     <div className="agenda-lunch-block" style={{ top: `${almocoTop}px`, height: `${almocoHeight}px` }}>
                       <span>Almoço</span>
@@ -2125,9 +2202,10 @@ function atualizarConfigProfissionalDia(
           <span></span>
           {diasSemana.map((diaIso) => {
             const data = new Date(`${diaIso}T12:00:00`);
+            const feriadoDia = descricaoFeriado(diaIso);
             return (
               <span key={diaIso} className={diaIso === dataSelecionada ? "active" : ""}>
-                {data.getDate()} - {NOMES_DIAS_LONGOS[data.getDay()]}
+                {data.getDate()} - {NOMES_DIAS_LONGOS[data.getDay()]}{feriadoDia ? ` · ${feriadoDia}` : ""}
               </span>
             );
           })}
@@ -2141,12 +2219,17 @@ function atualizarConfigProfissionalDia(
           {diasSemana.map((diaIso) => {
             const eventosDiaSemana = eventosPorDia.get(diaIso) ?? [];
             const colunas = calcularColunasSobrepostas(eventosDiaSemana);
+            const feriadoDia = descricaoFeriado(diaIso);
             return (
               <div
                 key={diaIso}
                 className={`agenda-week-day-column${diaIso === dataSelecionada ? " current" : ""}`}
-                onDoubleClick={() => abrirNovoAgendamento({ data: diaIso, hora: horariosAgenda[0] ?? "08:00", profissionalId: profissionaisVisiveis[0]?.id ?? profissionaisUsuariosBase[0]?.id ?? 1 })}
+                onDoubleClick={() => {
+                  if (feriadoDia) return;
+                  abrirNovoAgendamento({ data: diaIso, hora: horariosAgenda[0] ?? "08:00", profissionalId: profissionaisVisiveis[0]?.id ?? profissionaisUsuariosBase[0]?.id ?? 1 });
+                }}
               >
+                {feriadoDia ? <div className="agenda-week-holiday-label">{feriadoDia}</div> : null}
                 {horariosAgenda.map((slot) => (
                   <div key={`${diaIso}-${slot}`} className="agenda-week-slot-line" />
                 ))}
@@ -2166,7 +2249,7 @@ function atualizarConfigProfissionalDia(
                         height: `${Math.max(altura, 18)}px`,
                         width: largura,
                         left: esquerda,
-                        background: corEventoAgenda(evento)
+                        background: corProfissionalPorId(evento.profissionalId)
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2202,8 +2285,9 @@ function atualizarConfigProfissionalDia(
         <div className="agenda-month-grid">
           {diasMes.map((diaIso) => {
             const data = new Date(`${diaIso}T12:00:00`);
-            const eventosDiaMes = eventosVisiveis.filter((evento) => evento.data === isoParaBr(diaIso));
+            const eventosDiaMes = eventosFiltradosProfissionais.filter((evento) => evento.data === isoParaBr(diaIso));
             const foraDoMes = data.getMonth() !== new Date(`${dataSelecionada}T12:00:00`).getMonth();
+            const feriadoDia = descricaoFeriado(diaIso);
             return (
               <button
                 key={diaIso}
@@ -2212,12 +2296,13 @@ function atualizarConfigProfissionalDia(
                 onClick={() => selecionarDataAgenda(diaIso)}
               >
                 <div className="agenda-month-day-number">{data.getDate()}</div>
+                {feriadoDia ? <div className="agenda-month-holiday-label">{feriadoDia}</div> : null}
                 <div className="agenda-month-markers">
                   {eventosDiaMes.slice(0, 12).map((evento) => (
                     <span
                       key={evento.id}
                       className="agenda-month-marker"
-                      style={{ background: corEventoAgenda(evento) }}
+                      style={{ background: corProfissionalPorId(evento.profissionalId) }}
                       onClick={(event) => {
                         event.stopPropagation();
                         agendarAberturaDetalhes(evento, event.currentTarget as HTMLElement);

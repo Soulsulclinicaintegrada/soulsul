@@ -25,6 +25,12 @@ type RelatorioCrmItem = {
   prontuario: string;
   telefone: string;
   detalhe: string;
+  dataIso?: string;
+  profissional?: string;
+  tipoProcedimento?: string;
+  statusOrigem?: string;
+  motivo?: string;
+  usuario?: string;
 };
 
 type CrmAba = "funil" | "agendados" | "finalizados" | "avaliacoes" | "relatorios";
@@ -135,9 +141,50 @@ function dataNascimentoDiaMes(valor?: string) {
 
 function extrairDataIso(valor?: string) {
   const texto = String(valor || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
   const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   if (!match) return "";
   return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function inicialLetra(valor?: string) {
+  const texto = String(valor || "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const letra = texto.charAt(0).toUpperCase();
+  return /[A-Z]/.test(letra) ? letra : "#";
+}
+
+function aplicarFiltroRelatorio(
+  itens: RelatorioCrmItem[],
+  filtros: {
+    letra?: string;
+    inicio?: string;
+    fim?: string;
+    profissional?: string;
+    tipoProcedimento?: string;
+    statusOrigem?: string;
+  }
+) {
+  return itens.filter((item) => {
+    if (filtros.letra && filtros.letra !== "TODAS" && inicialLetra(item.nome) !== filtros.letra) {
+      return false;
+    }
+    if (filtros.inicio && (!item.dataIso || item.dataIso < filtros.inicio)) {
+      return false;
+    }
+    if (filtros.fim && (!item.dataIso || item.dataIso > filtros.fim)) {
+      return false;
+    }
+    if (filtros.profissional && normalizarTexto(item.profissional || "") !== normalizarTexto(filtros.profissional)) {
+      return false;
+    }
+    if (filtros.tipoProcedimento && normalizarTexto(item.tipoProcedimento || "") !== normalizarTexto(filtros.tipoProcedimento)) {
+      return false;
+    }
+    if (filtros.statusOrigem && normalizarTexto(item.statusOrigem || "") !== normalizarTexto(filtros.statusOrigem)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
@@ -160,6 +207,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [criandoManual, setCriandoManual] = useState(false);
   const [periodoAvaliacaoInicio, setPeriodoAvaliacaoInicio] = useState("");
   const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
+  const [relatorioLetra, setRelatorioLetra] = useState("TODAS");
+  const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
+  const [relatorioDataFim, setRelatorioDataFim] = useState("");
+  const [relatorioProfissional, setRelatorioProfissional] = useState("");
+  const [relatorioTipoProcedimento, setRelatorioTipoProcedimento] = useState("");
+  const [relatorioStatusOrigem, setRelatorioStatusOrigem] = useState("");
   const [novoLeadManual, setNovoLeadManual] = useState<CrmNovoLeadPayloadApi>({ nome: "", telefone: "" });
 
   async function carregarPainel() {
@@ -198,6 +251,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       setRelatorioSemAgendamento(
         pacientes
           .filter((item) => !finalizadosIds.has(item.id) && !idsComAgendaFutura.has(item.id))
+          .sort((a, b) => a.nome.localeCompare(b.nome))
           .map((item) => ({
             chave: `sem-agenda-${item.id}`,
             pacienteId: item.id,
@@ -206,7 +260,6 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             telefone: item.telefone || "",
             detalhe: "Sem agendamento futuro e não finalizado",
           }))
-          .slice(0, 80)
       );
 
       const mesAtual = Number(hoje.split("-")[1]);
@@ -238,14 +291,30 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         agendamentos
           .filter((item) => normalizarTexto(item.status || "") === "faltou")
           .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
-          .map((item) => mapearAgendamentoRelatorio("faltou", item))
+          .map((item) => ({
+            ...mapearAgendamentoRelatorio("faltou", item),
+            dataIso: extrairDataIso(item.data),
+            profissional: item.profissional || "",
+            tipoProcedimento: item.tipoAtendimento || item.procedimentos?.[0] || "",
+            statusOrigem: item.statusOrigem || "",
+            motivo: item.statusMotivo || "",
+            usuario: item.statusUsuario || "",
+          }))
       );
 
       setRelatorioDesmarcaram(
         agendamentos
           .filter((item) => normalizarTexto(item.status || "") === "desmarcado")
           .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
-          .map((item) => mapearAgendamentoRelatorio("desmarcou", item))
+          .map((item) => ({
+            ...mapearAgendamentoRelatorio("desmarcou", item),
+            dataIso: extrairDataIso(item.data),
+            profissional: item.profissional || "",
+            tipoProcedimento: item.tipoAtendimento || item.procedimentos?.[0] || "",
+            statusOrigem: item.statusOrigem || "",
+            motivo: item.statusMotivo || "",
+            usuario: item.statusUsuario || "",
+          }))
       );
 
       const fontesComFalha: string[] = [];
@@ -272,7 +341,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
-  const termoBusca = normalizarTexto(busca);
+  const termoBusca = "";
   const nomeLeadManual = novoLeadManual.nome.trim();
   const telefoneLeadManual = novoLeadManual.telefone.trim();
   const previewLeadManualVisivel = Boolean(nomeLeadManual || telefoneLeadManual);
@@ -282,9 +351,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     () =>
       [...pipeline]
         .filter((item) => !item.origemFinalizado && !finalizadosIds.has(item.id))
-        .filter((item) => correspondeBusca(item, termoBusca))
         .sort((a, b) => b.id - a.id),
-    [finalizadosIds, pipeline, termoBusca]
+    [finalizadosIds, pipeline]
   );
   const termoBuscaLead = normalizarTexto(buscaLead);
   const todosLeadsCrm = useMemo(() => {
@@ -310,8 +378,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [leadSelecionadoId, leadsFiltrados]
   );
   const finalizadosFiltrados = useMemo(
-    () => finalizados.filter((item) => correspondeBusca(item, termoBusca)),
-    [finalizados, termoBusca]
+    () => finalizados,
+    [finalizados]
   );
   const avaliacoesFiltradas = useMemo(
     () => {
@@ -319,35 +387,61 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       return avaliacoes.filter((item) => {
         const dataIso = extrairDataIso(item.dataAvaliacao);
         if (!dataIso || dataIso < periodoAvaliacaoInicio || dataIso > periodoAvaliacaoFim) return false;
-        return correspondeBusca(
-          {
-            nome: item.nome,
-            prontuario: item.prontuario,
-            telefone: item.telefone,
-            campanha: item.procedimento,
-            etapaFunil: item.status,
-          },
-          termoBusca
-        );
+        return true;
       });
     },
-    [avaliacoes, periodoAvaliacaoFim, periodoAvaliacaoInicio, termoBusca]
+    [avaliacoes, periodoAvaliacaoFim, periodoAvaliacaoInicio]
   );
   const semAgendamentoFiltrados = useMemo(
-    () => relatorioSemAgendamento.filter((item) => correspondeBusca(item, termoBusca)),
-    [relatorioSemAgendamento, termoBusca]
+    () => aplicarFiltroRelatorio(relatorioSemAgendamento, { letra: relatorioLetra }),
+    [relatorioLetra, relatorioSemAgendamento]
   );
   const aniversariantesFiltrados = useMemo(
-    () => relatorioAniversariantes.filter((item) => correspondeBusca(item, termoBusca)),
-    [relatorioAniversariantes, termoBusca]
+    () => aplicarFiltroRelatorio(relatorioAniversariantes, { letra: relatorioLetra }),
+    [relatorioAniversariantes, relatorioLetra]
   );
   const faltaramFiltrados = useMemo(
-    () => relatorioFaltaram.filter((item) => correspondeBusca(item, termoBusca)),
-    [relatorioFaltaram, termoBusca]
+    () =>
+      aplicarFiltroRelatorio(relatorioFaltaram, {
+        inicio: relatorioDataInicio,
+        fim: relatorioDataFim,
+        profissional: relatorioProfissional,
+        tipoProcedimento: relatorioTipoProcedimento,
+      }),
+    [relatorioDataFim, relatorioDataInicio, relatorioFaltaram, relatorioProfissional, relatorioTipoProcedimento]
   );
   const desmarcaramFiltrados = useMemo(
-    () => relatorioDesmarcaram.filter((item) => correspondeBusca(item, termoBusca)),
-    [relatorioDesmarcaram, termoBusca]
+    () =>
+      aplicarFiltroRelatorio(relatorioDesmarcaram, {
+        inicio: relatorioDataInicio,
+        fim: relatorioDataFim,
+        profissional: relatorioProfissional,
+        tipoProcedimento: relatorioTipoProcedimento,
+        statusOrigem: relatorioStatusOrigem,
+      }),
+    [relatorioDataFim, relatorioDataInicio, relatorioDesmarcaram, relatorioProfissional, relatorioStatusOrigem, relatorioTipoProcedimento]
+  );
+  const letrasRelatorio = useMemo(() => {
+    const base = relatorioAberto === "aniversariantes" ? relatorioAniversariantes : relatorioSemAgendamento;
+    return Array.from(new Set(base.map((item) => inicialLetra(item.nome)))).sort();
+  }, [relatorioAberto, relatorioAniversariantes, relatorioSemAgendamento]);
+  const profissionaisRelatorio = useMemo(
+    () =>
+      Array.from(
+        new Set([...relatorioFaltaram, ...relatorioDesmarcaram].map((item) => item.profissional || "").filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b)),
+    [relatorioDesmarcaram, relatorioFaltaram]
+  );
+  const tiposRelatorio = useMemo(
+    () =>
+      Array.from(
+        new Set([...relatorioFaltaram, ...relatorioDesmarcaram].map((item) => item.tipoProcedimento || "").filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b)),
+    [relatorioDesmarcaram, relatorioFaltaram]
+  );
+  const origensDesmarcacao = useMemo(
+    () => Array.from(new Set(relatorioDesmarcaram.map((item) => item.statusOrigem || "").filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [relatorioDesmarcaram]
   );
 
   useEffect(() => {
@@ -448,8 +542,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   function exportarRelatorio(nomeBase: string, linhas: RelatorioCrmItem[]) {
     baixarCsv(
       `${nomeBase}.csv`,
-      ["Paciente", "Prontuario", "Telefone", "Detalhe"],
-      linhas.map((item) => [item.nome, item.prontuario, item.telefone, item.detalhe])
+      ["Paciente", "Prontuario", "Telefone", "Data", "Profissional", "Tipo", "Origem", "Motivo", "Usuario", "Detalhe"],
+      linhas.map((item) => [
+        item.nome,
+        item.prontuario,
+        item.telefone,
+        item.dataIso || "",
+        item.profissional || "",
+        item.tipoProcedimento || "",
+        item.statusOrigem || "",
+        item.motivo || "",
+        item.usuario || "",
+        item.detalhe,
+      ])
     );
   }
 
@@ -490,6 +595,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
   function alternarRelatorio(chave: "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram") {
     setRelatorioAberto(chave);
+    if (chave === "sem-agendamento" || chave === "aniversariantes") {
+      setRelatorioDataInicio("");
+      setRelatorioDataFim("");
+      setRelatorioProfissional("");
+      setRelatorioTipoProcedimento("");
+      setRelatorioStatusOrigem("");
+    }
   }
 
   const relatorioAtual = useMemo(() => {
@@ -581,6 +693,51 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <Search size={18} />
             </div>
           </div>
+          {relatorioAberto === "sem-agendamento" || relatorioAberto === "aniversariantes" ? (
+            <div className="crm-report-letter-bar">
+              <button type="button" className={`segmented-tab ${relatorioLetra === "TODAS" ? "active" : ""}`} onClick={() => setRelatorioLetra("TODAS")}>Todas</button>
+              {letrasRelatorio.map((letra) => (
+                <button key={letra} type="button" className={`segmented-tab ${relatorioLetra === letra ? "active" : ""}`} onClick={() => setRelatorioLetra(letra)}>
+                  {letra}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {relatorioAberto === "faltaram" || relatorioAberto === "desmarcaram" ? (
+            <div className="crm-filter-row crm-filter-row-report">
+              <label>
+                <span>Data inicial</span>
+                <input type="date" value={relatorioDataInicio} onChange={(event) => setRelatorioDataInicio(event.target.value)} />
+              </label>
+              <label>
+                <span>Data final</span>
+                <input type="date" value={relatorioDataFim} onChange={(event) => setRelatorioDataFim(event.target.value)} />
+              </label>
+              <label>
+                <span>Profissional</span>
+                <select value={relatorioProfissional} onChange={(event) => setRelatorioProfissional(event.target.value)}>
+                  <option value="">Todos</option>
+                  {profissionaisRelatorio.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Tipo</span>
+                <select value={relatorioTipoProcedimento} onChange={(event) => setRelatorioTipoProcedimento(event.target.value)}>
+                  <option value="">Todos</option>
+                  {tiposRelatorio.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              {relatorioAberto === "desmarcaram" ? (
+                <label>
+                  <span>Quem desmarcou</span>
+                  <select value={relatorioStatusOrigem} onChange={(event) => setRelatorioStatusOrigem(event.target.value)}>
+                    <option value="">Todos</option>
+                    {origensDesmarcacao.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
             {!carregando && agendadosFiltrados.map((item) => (
@@ -728,6 +885,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
+                  {relatorioAberto === "desmarcaram" && (item.statusOrigem || item.motivo) ? (
+                    <span>{[item.statusOrigem ? `Origem: ${item.statusOrigem}` : "", item.motivo ? `Motivo: ${item.motivo}` : ""].filter(Boolean).join(" · ")}</span>
+                  ) : null}
                   {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
                 </div>
               </article>

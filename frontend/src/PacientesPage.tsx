@@ -985,12 +985,9 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
     try {
       const lista = await listarPacientesApi(busca);
       setPacientes(lista);
-      const alvoId = navegacao?.pacienteId ?? (buscaAtiva ? null : null);
-      if (alvoId) setPacienteAtivoId(alvoId);
-      if (buscaAtiva && !navegacao?.pacienteId) {
-        setPacienteAtivoId(null);
-        setFicha(null);
-      } else if (!buscaAtiva && !navegacao?.pacienteId) {
+      if (navegacao?.pacienteId) {
+        setPacienteAtivoId(navegacao.pacienteId);
+      } else if (buscaAtiva) {
         setPacienteAtivoId(null);
         setFicha(null);
       }

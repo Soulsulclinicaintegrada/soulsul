@@ -51,6 +51,9 @@ def garantir_colunas_agenda_api() -> None:
     try:
         garantir_coluna(conn, "agendamentos", "prontuario_snapshot TEXT")
         garantir_coluna(conn, "agendamentos", "tipo_atendimento_nome_snapshot TEXT")
+        garantir_coluna(conn, "agendamentos", "status_origem TEXT")
+        garantir_coluna(conn, "agendamentos", "status_motivo TEXT")
+        garantir_coluna(conn, "agendamentos", "status_usuario TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -200,6 +203,9 @@ class AgendamentoResposta(BaseModel):
     fim: str
     consultorio: str | None = None
     observacoes: str | None = None
+    statusOrigem: str | None = None
+    statusMotivo: str | None = None
+    statusUsuario: str | None = None
     financeiro: str | None = None
     agendadoPor: str | None = None
     agendadoEm: str | None = None
@@ -690,6 +696,9 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         fim=row_val(row, "hora_fim", ""),
         consultorio=normalizar_consultorio(row_val(row, "consultorio", "")) or None,
         observacoes=row_val(row, "observacoes", "") or row_val(row, "observacao", ""),
+        statusOrigem=row_val(row, "status_origem", "") or "",
+        statusMotivo=row_val(row, "status_motivo", "") or "",
+        statusUsuario=row_val(row, "status_usuario", "") or "",
         financeiro=financeiro,
         agendadoPor=row_val(row, "criado_por", "") or "",
         agendadoEm=row_val(row, "criado_em", "") or row_val(row, "data_criacao", ""),

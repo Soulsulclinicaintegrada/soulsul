@@ -516,6 +516,9 @@ def inicializar_banco():
             data_agendamento TEXT,
             duracao_minutos INTEGER,
             observacoes TEXT,
+            status_origem TEXT,
+            status_motivo TEXT,
+            status_usuario TEXT,
             consultorio TEXT,
             trabalho_tipo TEXT,
             ordem_servico_id INTEGER,
@@ -920,6 +923,9 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "data_agendamento TEXT")
     garantir_coluna(conn, "agendamentos", "duracao_minutos INTEGER")
     garantir_coluna(conn, "agendamentos", "observacoes TEXT")
+    garantir_coluna(conn, "agendamentos", "status_origem TEXT")
+    garantir_coluna(conn, "agendamentos", "status_motivo TEXT")
+    garantir_coluna(conn, "agendamentos", "status_usuario TEXT")
     garantir_coluna(conn, "agendamentos", "consultorio TEXT")
     garantir_coluna(conn, "agendamentos", "trabalho_tipo TEXT")
     garantir_coluna(conn, "agendamentos", "ordem_servico_id INTEGER")

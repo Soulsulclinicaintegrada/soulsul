@@ -8,6 +8,7 @@ from pathlib import Path
 from database import DB_PATH, conectar, inicializar_banco
 from importar_a_pagar_planilha import import_planilha as importar_contas_pagar_fieis
 from importar_dados_operacionais import import_operational_data
+from importar_faltas_desmarcacoes_planilha import importar_status_agendamentos
 from importar_pacientes_planilha import importar as importar_pacientes
 from importar_recebiveis_planilha import reconcile as importar_recebiveis_fieis
 
@@ -63,6 +64,7 @@ def executar_substituicao() -> dict[str, object]:
 
     pacientes_importados, pacientes_descartados = importar_pacientes()
     operacionais = import_operational_data()
+    status_agenda = importar_status_agendamentos()
     contas_pagar = importar_contas_pagar_fieis()
     recebiveis = importar_recebiveis_fieis()
 
@@ -75,6 +77,9 @@ def executar_substituicao() -> dict[str, object]:
         "financeiro_importado": operacionais["financeiro"],
         "contas_pagar_operacionais_importadas": operacionais["contas_pagar"],
         "agendamentos_importados": operacionais["agendamentos"],
+        "status_agenda_importados": status_agenda["registros"],
+        "status_agenda_atualizados": status_agenda["atualizados"],
+        "status_agenda_criados": status_agenda["criados"],
         "contas_pagar_fieis_importadas": contas_pagar["IMPORTADOS"],
         "recebiveis_fieis_importados": recebiveis["importados"],
     }

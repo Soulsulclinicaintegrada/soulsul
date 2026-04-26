@@ -193,14 +193,14 @@ function App() {
   }, []);
 
   const paginaAtual = useMemo(() => {
-    if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente de qualquer página..." };
+    if (menuAtivo === "Dashboard") return { titulo: "Dashboard Executivo", busca: "Buscar paciente" };
     if (menuAtivo === "Pacientes") return { titulo: "Pacientes", busca: "Buscar paciente, prontuario, telefone ou CPF..." };
-    if (menuAtivo === "Guias") return { titulo: "Guias", busca: "Buscar paciente de qualquer página..." };
-    if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente de qualquer página..." };
-    if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar paciente de qualquer página..." };
-    if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar paciente de qualquer página..." };
-    if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar paciente de qualquer página..." };
-    return { titulo: "Usuarios", busca: "Buscar paciente de qualquer página..." };
+    if (menuAtivo === "Guias") return { titulo: "Guias", busca: "Buscar paciente" };
+    if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente" };
+    if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar paciente" };
+    if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar paciente" };
+    if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar paciente" };
+    return { titulo: "Usuarios", busca: "Buscar paciente" };
   }, [menuAtivo]);
 
   const renderizarPagina = () => {
@@ -226,7 +226,13 @@ function App() {
     }
     if (menuAtivo === "Dashboard") return <DashboardPage />;
     if (menuAtivo === "Pacientes") {
-      return <PacientesPage busca={buscaGlobal} navegacao={navegacaoPaciente} pacientesAbas={pacientesAbasUsuario} />;
+      return (
+        <PacientesPage
+          busca={navegacaoPaciente?.pacienteId ? "" : buscaGlobal}
+          navegacao={navegacaoPaciente}
+          pacientesAbas={pacientesAbasUsuario}
+        />
+      );
     }
     if (menuAtivo === "Guias") return <GuiasPage />;
     if (menuAtivo === "Agenda") {

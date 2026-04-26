@@ -54,6 +54,9 @@ export type AgendaApiAgendamento = {
   fim: string;
   consultorio?: string | null;
   observacoes?: string;
+  statusOrigem?: string;
+  statusMotivo?: string;
+  statusUsuario?: string;
   financeiro?: string;
   agendadoPor?: string;
   agendadoEm?: string;
