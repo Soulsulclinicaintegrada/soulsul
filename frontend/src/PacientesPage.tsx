@@ -2136,7 +2136,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
         <div className="patient-search-dropdown">
           <span className="empty-inline">Carregando pacientes...</span>
         </div>
-      ) : !busca.trim() ? (
+      ) : !busca.trim() && !pacienteAtivoId ? (
         <article className="patient-search-empty">
           <strong>Digite no campo de busca para localizar um paciente.</strong>
           <span>Pesquise por nome, prontuário, telefone ou CPF.</span>
@@ -3259,7 +3259,7 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       {erro ? <article className="panel compact-panel">{erro}</article> : null}
 
       {renderListaPacientes}
-      {buscaAtiva && pacienteAtivoId ? (
+      {pacienteAtivoId ? (
         carregandoFicha ? <article className="panel compact-panel">Carregando ficha do paciente...</article> : renderFichaPacienteNova
       ) : null}
 
