@@ -243,6 +243,13 @@ function dataIsoParaBr(valor?: string) {
   return `${dia}/${mes}/${ano}`;
 }
 
+function dataEstaNoPeriodo(dataIso: string, inicio?: string, fim?: string) {
+  if (!dataIso) return !inicio && !fim;
+  if (inicio && dataIso < inicio) return false;
+  if (fim && dataIso > fim) return false;
+  return true;
+}
+
 function numeroParaMoedaBr(valor: number) {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -324,11 +331,13 @@ export function FinanceiroPage() {
   const [movimentoEditForm, setMovimentoEditForm] = useState<MovimentoEditForm | null>(null);
   const [filtroStatusRecebivel, setFiltroStatusRecebivel] = useState("");
   const [filtroFormaRecebivel, setFiltroFormaRecebivel] = useState("");
-  const [filtroVencimentoRecebivel, setFiltroVencimentoRecebivel] = useState("");
+  const [filtroVencimentoRecebivelInicio, setFiltroVencimentoRecebivelInicio] = useState("");
+  const [filtroVencimentoRecebivelFim, setFiltroVencimentoRecebivelFim] = useState("");
   const [filtroFornecedorPagar, setFiltroFornecedorPagar] = useState("");
   const [filtroStatusPagar, setFiltroStatusPagar] = useState("");
   const [filtroCategoriaPagar, setFiltroCategoriaPagar] = useState("");
-  const [filtroVencimentoPagar, setFiltroVencimentoPagar] = useState("");
+  const [filtroVencimentoPagarInicio, setFiltroVencimentoPagarInicio] = useState("");
+  const [filtroVencimentoPagarFim, setFiltroVencimentoPagarFim] = useState("");
   const [reciboForm, setReciboForm] = useState<ReciboManualForm>(RECIBO_INICIAL);
   const [recibosManuais, setRecibosManuais] = useState<ReciboManualApi[]>([]);
   const [metasAno, setMetasAno] = useState(new Date().getFullYear());
@@ -430,20 +439,28 @@ export function FinanceiroPage() {
       const buscaOk = !termo || `${item.pacienteNome || ""} ${item.prontuario || ""} ${item.parcela || ""} ${item.vencimento || ""}`.toLowerCase().includes(termo);
       const statusOk = !filtroStatusRecebivel || String(item.status || "") === filtroStatusRecebivel;
       const formaOk = !filtroFormaRecebivel || String(item.formaPagamento || "") === filtroFormaRecebivel;
-      const vencimentoOk = !filtroVencimentoRecebivel || dataBrParaIso(item.vencimento) === filtroVencimentoRecebivel;
+      const vencimentoOk = dataEstaNoPeriodo(
+        dataBrParaIso(item.vencimento),
+        filtroVencimentoRecebivelInicio,
+        filtroVencimentoRecebivelFim
+      );
       return buscaOk && statusOk && formaOk && vencimentoOk;
     });
-  }, [recebiveis, buscaRecebivel, filtroStatusRecebivel, filtroFormaRecebivel, filtroVencimentoRecebivel]);
+  }, [recebiveis, buscaRecebivel, filtroStatusRecebivel, filtroFormaRecebivel, filtroVencimentoRecebivelInicio, filtroVencimentoRecebivelFim]);
 
   const contasPagarFiltradas = useMemo(() => {
     return contasPagar.filter((item) => {
       const fornecedorOk = !filtroFornecedorPagar.trim() || String(item.fornecedor || "").toLowerCase().includes(filtroFornecedorPagar.trim().toLowerCase());
       const statusOk = !filtroStatusPagar || String(item.status || "") === filtroStatusPagar;
       const categoriaOk = !filtroCategoriaPagar.trim() || String(item.categoria || "").toLowerCase().includes(filtroCategoriaPagar.trim().toLowerCase());
-      const vencimentoOk = !filtroVencimentoPagar || dataBrParaIso(item.vencimento) === filtroVencimentoPagar;
+      const vencimentoOk = dataEstaNoPeriodo(
+        dataBrParaIso(item.vencimento),
+        filtroVencimentoPagarInicio,
+        filtroVencimentoPagarFim
+      );
       return fornecedorOk && statusOk && categoriaOk && vencimentoOk;
     });
-  }, [contasPagar, filtroFornecedorPagar, filtroStatusPagar, filtroCategoriaPagar, filtroVencimentoPagar]);
+  }, [contasPagar, filtroFornecedorPagar, filtroStatusPagar, filtroCategoriaPagar, filtroVencimentoPagarInicio, filtroVencimentoPagarFim]);
 
   const notasFiscaisOrdenadas = useMemo(
     () => [...notasFiscais].sort((a, b) => `${b.competencia}|${b.dataEmissao}`.localeCompare(`${a.competencia}|${a.dataEmissao}`)),
@@ -594,6 +611,11 @@ export function FinanceiroPage() {
     setRecebiveisBaixaSelecionados((atual) =>
       atual.map((item) => (item.id === recebivelId ? { ...item, desconto } : item))
     );
+  }
+
+  function abrirRecebivelParaEdicao(recebivelId: number) {
+    setRecebivelSelecionadoId(recebivelId);
+    setAba("individual");
   }
 
   async function salvarRecebivelIndividual() {
@@ -960,7 +982,7 @@ export function FinanceiroPage() {
               </div>
               <div className="module-sublist">
                 {caixa.length ? caixa.map((item) => (
-                  <div className="module-subitem finance-module-subitem" key={item.id}>
+                  <div className="module-subitem finance-module-subitem" key={item.id} onDoubleClick={() => abrirRecebivelParaEdicao(item.id)}>
                     <div>
                       <strong>{item.descricao || item.origem || "Movimento"}</strong>
                       <span>{item.data || "-"} · {item.contaCaixa || "-"} · {item.formaPagamento || "-"}</span>
@@ -1030,8 +1052,12 @@ export function FinanceiroPage() {
                   </select>
                 </label>
                 <label>
-                  <span>Vencimento</span>
-                  <input type="date" value={filtroVencimentoRecebivel} onChange={(e) => setFiltroVencimentoRecebivel(e.target.value)} />
+                  <span>Vencimento de</span>
+                  <input type="date" value={filtroVencimentoRecebivelInicio} onChange={(e) => setFiltroVencimentoRecebivelInicio(e.target.value)} />
+                </label>
+                <label>
+                  <span>Vencimento até</span>
+                  <input type="date" value={filtroVencimentoRecebivelFim} onChange={(e) => setFiltroVencimentoRecebivelFim(e.target.value)} />
                 </label>
               </div>
             </article>
@@ -1369,8 +1395,12 @@ export function FinanceiroPage() {
                   <input type="text" value={filtroCategoriaPagar} onChange={(e) => setFiltroCategoriaPagar(e.target.value)} />
                 </label>
                 <label>
-                  <span>Vencimento</span>
-                  <input type="date" value={filtroVencimentoPagar} onChange={(e) => setFiltroVencimentoPagar(e.target.value)} />
+                  <span>Vencimento de</span>
+                  <input type="date" value={filtroVencimentoPagarInicio} onChange={(e) => setFiltroVencimentoPagarInicio(e.target.value)} />
+                </label>
+                <label>
+                  <span>Vencimento até</span>
+                  <input type="date" value={filtroVencimentoPagarFim} onChange={(e) => setFiltroVencimentoPagarFim(e.target.value)} />
                 </label>
               </div>
               <div className="finance-mini-metrics">
