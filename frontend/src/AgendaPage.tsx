@@ -1284,6 +1284,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setProfissionaisSelecionados(profissionaisDisponiveis.map((item) => item.id));
   }
 
+  function selecionarProfissionaisDisponiveis() {
+    setProfissionaisSelecionados(
+      profissionaisDisponiveis
+        .filter((item) => profissionalAtivoNoDia(item.id, dataSelecionada))
+        .map((item) => item.id)
+    );
+  }
+
   function limparSelecaoProfissionais() {
     setProfissionaisSelecionados([]);
   }
@@ -2340,6 +2348,9 @@ function atualizarConfigProfissionalDia(
               <div className="agenda-profissionais-actions">
                 <button type="button" className="ghost-action compact" onClick={selecionarTodosProfissionais}>
                   Mostrar todos
+                </button>
+                <button type="button" className="ghost-action compact" onClick={selecionarProfissionaisDisponiveis}>
+                  Apenas disponíveis
                 </button>
                 <button type="button" className="ghost-action compact" onClick={limparSelecaoProfissionais}>
                   Limpar seleção
