@@ -135,6 +135,10 @@ const FERIADOS_FIXOS_CAMPOS = new Map<string, string>([
   ["03-28", "Aniversário de Campos"],
   ["08-06", "Santíssimo Salvador"]
 ]);
+const ALIASES_PROFISSIONAIS_AGENDA = new Map<string, string>([
+  ["psicopedagoga juliana f", "neuro juliana"],
+  ["dra ester", "ester"]
+]);
 
 type AgendaPageProps = {
   usuarioLogado?: UsuarioSessao | null;
@@ -354,15 +358,28 @@ function suavizarCor(hex: string) {
 }
 
 function construirProfissionaisBase(usuarios: UsuarioResumoApi[]) {
-  return usuarios
-    .filter((usuario) => usuario.status === "Ativo" && usuario.modulos?.Agenda !== "Sem acesso" && usuario.agendaDisponivel !== false)
-    .map((usuario, indice) => ({
-      id: usuario.id,
-      nome: usuario.nomeAgenda || usuario.nome || usuario.usuario,
-      usuarioVinculado: usuario.usuario || usuario.nome,
-      cor: CORES_AGENDA[indice % CORES_AGENDA.length],
-      corSuave: suavizarCor(CORES_AGENDA[indice % CORES_AGENDA.length])
-    }));
+  const ativos = usuarios.filter((usuario) => usuario.status === "Ativo" && usuario.modulos?.Agenda !== "Sem acesso" && usuario.agendaDisponivel !== false);
+  const deduplicados = new Map<string, UsuarioResumoApi>();
+  ativos.forEach((usuario) => {
+    const nomeAgenda = usuario.nomeAgenda || usuario.nome || usuario.usuario;
+    const chaveCanonica = nomeCanonicoProfissionalAgenda(nomeAgenda);
+    const existente = deduplicados.get(chaveCanonica);
+    if (!existente) {
+      deduplicados.set(chaveCanonica, usuario);
+      return;
+    }
+    const nomeExistente = existente.nomeAgenda || existente.nome || existente.usuario;
+    if (pontuacaoProfissionalAgenda(nomeAgenda, chaveCanonica) > pontuacaoProfissionalAgenda(nomeExistente, chaveCanonica)) {
+      deduplicados.set(chaveCanonica, usuario);
+    }
+  });
+  return Array.from(deduplicados.values()).map((usuario, indice) => ({
+    id: usuario.id,
+    nome: usuario.nomeAgenda || usuario.nome || usuario.usuario,
+    usuarioVinculado: usuario.usuario || usuario.nome,
+    cor: CORES_AGENDA[indice % CORES_AGENDA.length],
+    corSuave: suavizarCor(CORES_AGENDA[indice % CORES_AGENDA.length])
+  }));
 }
 
 function construirProfissionalImportado(nome: string, indice: number) {
@@ -385,6 +402,20 @@ function normalizarTextoAgenda(valor: string) {
     .toLowerCase();
 }
 
+function nomeCanonicoProfissionalAgenda(valor: string) {
+  const normalizado = normalizarTextoAgenda(valor);
+  return ALIASES_PROFISSIONAIS_AGENDA.get(normalizado) || normalizado;
+}
+
+function pontuacaoProfissionalAgenda(nome: string, nomeCanonico: string) {
+  const normalizado = normalizarTextoAgenda(nome);
+  let pontos = 0;
+  if (normalizado === nomeCanonico) pontos += 10;
+  if (normalizado.startsWith("dr ") || normalizado.startsWith("dra ")) pontos -= 2;
+  if (normalizado.startsWith("psicopedagoga ")) pontos -= 3;
+  return pontos;
+}
+
 function normalizarEscopoAgenda(valor?: string) {
   return normalizarTextoAgenda(String(valor || ""))
     .replace("á", "a");
@@ -404,14 +435,14 @@ function construirProfissionaisImportados(
   profissionaisBase: Array<{ id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>
 ) {
   const nomesExistentes = new Set(
-    profissionaisBase.flatMap((item) => [normalizarTextoAgenda(item.nome), normalizarTextoAgenda(item.usuarioVinculado)])
+    profissionaisBase.flatMap((item) => [nomeCanonicoProfissionalAgenda(item.nome), nomeCanonicoProfissionalAgenda(item.usuarioVinculado)])
   );
   const nomesImportados = Array.from(
     new Set(
       eventos
         .map((evento) => String(evento.profissional || "").trim())
         .filter(Boolean)
-        .filter((nome) => !nomesExistentes.has(normalizarTextoAgenda(nome)))
+        .filter((nome) => !nomesExistentes.has(nomeCanonicoProfissionalAgenda(nome)))
     )
   );
 
@@ -807,13 +838,13 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const resolverProfissionalEvento = useMemo(() => {
     const mapaProfissionais = new Map(
       profissionaisUsuariosBase.flatMap((profissional) => [
-        [normalizarTextoAgenda(profissional.nome), profissional.id],
-        [normalizarTextoAgenda(profissional.usuarioVinculado), profissional.id]
+        [nomeCanonicoProfissionalAgenda(profissional.nome), profissional.id],
+        [nomeCanonicoProfissionalAgenda(profissional.usuarioVinculado), profissional.id]
       ])
     );
     const idsProfissionaisBase = new Set(profissionaisUsuariosBase.map((profissional) => profissional.id));
     return (evento: AgendaApiAgendamento | AgendaEventoUI): AgendaEventoUI => {
-      const nomeProfissionalNormalizado = normalizarTextoAgenda(evento.profissional);
+      const nomeProfissionalNormalizado = nomeCanonicoProfissionalAgenda(evento.profissional);
       const profissionalMapeado = nomeProfissionalNormalizado ? mapaProfissionais.get(nomeProfissionalNormalizado) : undefined;
       const profissionalIdExistente = evento.profissionalId && idsProfissionaisBase.has(evento.profissionalId) ? evento.profissionalId : undefined;
       const profissionalIdResolvido =
