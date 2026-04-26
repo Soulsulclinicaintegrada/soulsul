@@ -69,6 +69,8 @@ type ModalFormState = {
   ordemServicoId: number | null;
   ordemServicoDocumentoNome: string;
   elementoArcada: string;
+  repetirIntervaloDias: number;
+  repetirQuantidade: number;
 };
 
 type ProcedimentoSelecionado = {
@@ -653,7 +655,9 @@ function criarFormulario(slot: SlotRascunho, usuarioAtual: string): ModalFormSta
     trabalhoTipo: "",
     ordemServicoId: null,
     ordemServicoDocumentoNome: "",
-    elementoArcada: ""
+    elementoArcada: "",
+    repetirIntervaloDias: 0,
+    repetirQuantidade: 0
   };
 }
 
@@ -689,6 +693,15 @@ function ajustarSelecaoParaDuracao(inicio: string, minutosDesejados: number, ocu
   }
 
   return selecionados.length ? selecionados : [inicio];
+}
+
+function montarDatasRecorrencia(dataInicialIso: string, intervaloDias: number, repeticoes: number) {
+  const datas = [dataInicialIso];
+  if (intervaloDias <= 0 || repeticoes <= 0) return datas;
+  for (let indice = 1; indice <= repeticoes; indice += 1) {
+    datas.push(adicionarDias(dataInicialIso, intervaloDias * indice));
+  }
+  return datas;
 }
 
 function ProcedimentoBadge({
@@ -1403,7 +1416,9 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       trabalhoTipo: detalhe.trabalhoTipo ?? "",
       ordemServicoId: detalhe.ordemServicoId ?? null,
       ordemServicoDocumentoNome: detalhe.ordemServicoDocumentoNome ?? "",
-      elementoArcada: detalhe.elementoArcada ?? ""
+      elementoArcada: detalhe.elementoArcada ?? "",
+      repetirIntervaloDias: 0,
+      repetirQuantidade: 0
     });
     setSlotsSelecionados(slotsDoIntervalo(detalhe.inicio, detalhe.fim));
     setModoSelecaoSlots("intervalo");
@@ -1710,9 +1725,15 @@ function atualizarConfigProfissionalDia(
         !ehConsulta && eventoTodaEquipe
           ? profissionaisDisponiveis.map((item) => item.id)
           : [form.profissionalId];
+      const datasDestino = agendamentoEditandoId
+        ? [form.data]
+        : montarDatasRecorrencia(
+            form.data,
+            Math.max(0, Math.floor(form.repetirIntervaloDias || 0)),
+            Math.max(0, Math.floor(form.repetirQuantidade || 0))
+          );
 
       const payloadBase = {
-        data: isoParaBr(form.data),
         horaInicio: slotsSelecionados[0],
         horaFim: fimSelecao(slotsSelecionados),
         duracaoMinutos: duracaoSelecao(slotsSelecionados),
@@ -1735,8 +1756,16 @@ function atualizarConfigProfissionalDia(
           }))
         : [{ nome: nomePrincipal, origem: "manual" as const, duracaoMinutos: duracaoSelecao(slotsSelecionados) }];
 
-      const persistidos = await Promise.all(
-        profissionaisDestino.map(async (profissionalId, indice) => {
+      const tentativas = datasDestino.flatMap((dataIso) =>
+        profissionaisDestino.map((profissionalId) => ({
+          dataIso,
+          profissionalId
+        }))
+      );
+      const persistidos: Array<{ salvo: AgendaApiAgendamento; dataIso: string; profissionalId: number }> = [];
+
+      for (const [indice, tentativa] of tentativas.entries()) {
+        const { dataIso, profissionalId } = tentativa;
           const payload: AgendaSalvarPayload = {
             pacienteId: ehConsulta ? pacienteIdAtual : null,
             nomePaciente: nomePacienteAtual,
@@ -1746,18 +1775,26 @@ function atualizarConfigProfissionalDia(
             profissionalNome: !ehConsulta && eventoTodaEquipe ? "Toda equipe" : nomeAgendaProfissional(profissionalId),
             tipoAtendimentoId: ehConsulta ? form.tipoAtendimentoId : 0,
             tipoAtendimentoNome: ehConsulta ? nomeTipoAtendimento(form.tipoAtendimentoId) : abaModal,
+            data: isoParaBr(dataIso),
             ...payloadBase,
             procedimentos: itensProcedimento
           };
           if (agendamentoEditandoId && indice === 0) {
-            return atualizarAgendamentoAgenda(agendamentoEditandoId, payload);
+            persistidos.push({
+              salvo: await atualizarAgendamentoAgenda(agendamentoEditandoId, payload),
+              dataIso,
+              profissionalId
+            });
+          } else {
+            persistidos.push({
+              salvo: await salvarAgendamentoAgenda(payload),
+              dataIso,
+              profissionalId
+            });
           }
-          return salvarAgendamentoAgenda(payload);
-        })
-      );
+      }
 
-      const eventosPersistidos: AgendaEventoUI[] = persistidos.map((salvo, indice) => {
-        const profissionalId = profissionaisDestino[indice];
+      const eventosPersistidos: AgendaEventoUI[] = persistidos.map(({ salvo, dataIso, profissionalId }, indice) => {
         return {
           ...salvo,
           id: agendamentoEditandoId && indice === 0 ? agendamentoEditandoId : salvo.id,
@@ -1769,7 +1806,7 @@ function atualizarConfigProfissionalDia(
           profissional: !ehConsulta && eventoTodaEquipe ? "Toda equipe" : nomeAgendaProfissional(profissionalId),
           tipoAtendimentoId: ehConsulta ? form.tipoAtendimentoId : 0,
           tipoAtendimento: ehConsulta ? nomeTipoAtendimento(form.tipoAtendimentoId) : abaModal,
-          data: isoParaBr(form.data),
+          data: isoParaBr(dataIso),
           inicio: slotsSelecionados[0],
           fim: fimSelecao(slotsSelecionados),
           procedimentos: ehConsulta ? procedimentosSelecionados.map((item) => item.nome) : [nomePrincipal],
@@ -2645,6 +2682,30 @@ function atualizarConfigProfissionalDia(
                   <label><span>Agendado por</span><input value={form.agendadoPor} readOnly /></label>
                   <label><span>Agendado em</span><input value={form.agendadoEm} readOnly /></label>
                   <label className="agenda-resumo-horario agenda-span-2"><span>Horário</span><input value={`${form.horarioInicio} - ${form.horarioFim} · ${form.duracaoMinutos} min`} readOnly /></label>
+                  {!agendamentoEditandoId ? (
+                    <>
+                      <label>
+                        <span>Repetir a cada</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={String(form.repetirIntervaloDias)}
+                          onChange={(event) => setForm((atual) => ({ ...atual, repetirIntervaloDias: Math.max(0, Number(event.target.value) || 0) }))}
+                        />
+                      </label>
+                      <label>
+                        <span>Quantidade de repetições</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={String(form.repetirQuantidade)}
+                          onChange={(event) => setForm((atual) => ({ ...atual, repetirQuantidade: Math.max(0, Number(event.target.value) || 0) }))}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                 </div>
 
                 <div className="agenda-message-row agenda-message-row-compact">
