@@ -841,18 +841,28 @@ def buscar_disponibilidade(
 def listar_agendamentos(
     data_inicio: str = Query(..., alias="data_inicio"),
     data_fim: str | None = Query(None, alias="data_fim"),
+    incluir_ocultos: bool = Query(False, alias="incluir_ocultos"),
 ):
     conn = conectar()
     try:
         data_fim_real = data_fim or data_inicio
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM agendamentos
-            WHERE lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
-            ORDER BY hora_inicio, profissional
-            """,
-        ).fetchall()
+        if incluir_ocultos:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM agendamentos
+                ORDER BY hora_inicio, profissional
+                """,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM agendamentos
+                WHERE lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
+                ORDER BY hora_inicio, profissional
+                """,
+            ).fetchall()
         data_coluna_agenda = obter_data_coluna_agenda()
         rows_filtrados = [
             row

@@ -353,14 +353,15 @@ export async function buscarDisponibilidadeAgenda(
 
 export async function listarAgendamentosAgenda(
   dataInicio: string,
-  dataFim?: string
+  dataFim?: string,
+  incluirOcultos = false
 ): Promise<AgendaApiAgendamento[]> {
   const dataFimReal = dataFim || dataInicio;
 
   if (API_BASE_URL) {
     try {
       const resposta = await fetchJson<AgendaListaResponse>(
-        `${API_BASE_URL}/api/agenda/agendamentos?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFimReal)}`
+        `${API_BASE_URL}/api/agenda/agendamentos?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFimReal)}&incluir_ocultos=${incluirOcultos ? "true" : "false"}`
       );
       return resposta.agendamentos.map(mapearEventoApi);
     } catch {

@@ -207,7 +207,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [criandoManual, setCriandoManual] = useState(false);
   const [periodoAvaliacaoInicio, setPeriodoAvaliacaoInicio] = useState("");
   const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
-  const [relatorioLetra, setRelatorioLetra] = useState("TODAS");
+  const [relatorioLetra, setRelatorioLetra] = useState("");
   const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
   const [relatorioDataFim, setRelatorioDataFim] = useState("");
   const [relatorioProfissional, setRelatorioProfissional] = useState("");
@@ -225,7 +225,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const resultados = await Promise.allSettled([
         listarCrmApi(),
         listarPacientesApi("", 5000),
-        listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/")),
+        listarAgendamentosAgenda(inicioHistorico.split("-").reverse().join("/"), fimFuturo.split("-").reverse().join("/"), true),
       ]);
 
       const [crmResult, pacientesResult, agendamentosResult] = resultados;
@@ -393,12 +393,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [avaliacoes, periodoAvaliacaoFim, periodoAvaliacaoInicio]
   );
   const semAgendamentoFiltrados = useMemo(
-    () => aplicarFiltroRelatorio(relatorioSemAgendamento, { letra: relatorioLetra }),
+    () => {
+      if (!relatorioLetra) return [];
+      return aplicarFiltroRelatorio(relatorioSemAgendamento, { letra: relatorioLetra });
+    },
     [relatorioLetra, relatorioSemAgendamento]
   );
   const aniversariantesFiltrados = useMemo(
-    () => aplicarFiltroRelatorio(relatorioAniversariantes, { letra: relatorioLetra }),
-    [relatorioAniversariantes, relatorioLetra]
+    () => relatorioAniversariantes,
+    [relatorioAniversariantes]
   );
   const faltaramFiltrados = useMemo(
     () =>
@@ -422,9 +425,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [relatorioDataFim, relatorioDataInicio, relatorioDesmarcaram, relatorioProfissional, relatorioStatusOrigem, relatorioTipoProcedimento]
   );
   const letrasRelatorio = useMemo(() => {
-    const base = relatorioAberto === "aniversariantes" ? relatorioAniversariantes : relatorioSemAgendamento;
+    const base = relatorioSemAgendamento;
     return Array.from(new Set(base.map((item) => inicialLetra(item.nome)))).sort();
-  }, [relatorioAberto, relatorioAniversariantes, relatorioSemAgendamento]);
+  }, [relatorioSemAgendamento]);
   const profissionaisRelatorio = useMemo(
     () =>
       Array.from(
@@ -595,6 +598,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
   function alternarRelatorio(chave: "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram") {
     setRelatorioAberto(chave);
+    if (chave === "sem-agendamento") {
+      setRelatorioLetra("");
+    }
     if (chave === "sem-agendamento" || chave === "aniversariantes") {
       setRelatorioDataInicio("");
       setRelatorioDataFim("");
@@ -635,11 +641,11 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           titulo: "Não finalizados sem agendamento",
           nomeExportacao: "crm-nao-finalizados-sem-agendamento",
           itens: semAgendamentoFiltrados,
-          vazio: "Nenhum paciente nesta condição.",
+          vazio: relatorioLetra ? "Nenhum paciente nesta condicao." : "Selecione uma letra para carregar o relatorio.",
           icone: <Search size={18} />,
         };
     }
-  }, [aniversariantesFiltrados, desmarcaramFiltrados, faltaramFiltrados, relatorioAberto, semAgendamentoFiltrados]);
+  }, [aniversariantesFiltrados, desmarcaramFiltrados, faltaramFiltrados, relatorioAberto, relatorioLetra, semAgendamentoFiltrados]);
 
   return (
     <section className="module-shell crm-shell">
@@ -693,51 +699,6 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <Search size={18} />
             </div>
           </div>
-          {relatorioAberto === "sem-agendamento" || relatorioAberto === "aniversariantes" ? (
-            <div className="crm-report-letter-bar">
-              <button type="button" className={`segmented-tab ${relatorioLetra === "TODAS" ? "active" : ""}`} onClick={() => setRelatorioLetra("TODAS")}>Todas</button>
-              {letrasRelatorio.map((letra) => (
-                <button key={letra} type="button" className={`segmented-tab ${relatorioLetra === letra ? "active" : ""}`} onClick={() => setRelatorioLetra(letra)}>
-                  {letra}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {relatorioAberto === "faltaram" || relatorioAberto === "desmarcaram" ? (
-            <div className="crm-filter-row crm-filter-row-report">
-              <label>
-                <span>Data inicial</span>
-                <input type="date" value={relatorioDataInicio} onChange={(event) => setRelatorioDataInicio(event.target.value)} />
-              </label>
-              <label>
-                <span>Data final</span>
-                <input type="date" value={relatorioDataFim} onChange={(event) => setRelatorioDataFim(event.target.value)} />
-              </label>
-              <label>
-                <span>Profissional</span>
-                <select value={relatorioProfissional} onChange={(event) => setRelatorioProfissional(event.target.value)}>
-                  <option value="">Todos</option>
-                  {profissionaisRelatorio.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Tipo</span>
-                <select value={relatorioTipoProcedimento} onChange={(event) => setRelatorioTipoProcedimento(event.target.value)}>
-                  <option value="">Todos</option>
-                  {tiposRelatorio.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              {relatorioAberto === "desmarcaram" ? (
-                <label>
-                  <span>Quem desmarcou</span>
-                  <select value={relatorioStatusOrigem} onChange={(event) => setRelatorioStatusOrigem(event.target.value)}>
-                    <option value="">Todos</option>
-                    {origensDesmarcacao.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-              ) : null}
-            </div>
-          ) : null}
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
             {!carregando && agendadosFiltrados.map((item) => (
@@ -876,6 +837,67 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               {relatorioAtual.icone}
             </div>
           </div>
+          {relatorioAberto === "sem-agendamento" ? (
+            <div className="crm-report-letter-bar">
+              {letrasRelatorio.map((letra) => (
+                <button
+                  key={letra}
+                  type="button"
+                  className={`segmented-tab ${relatorioLetra === letra ? "active" : ""}`}
+                  onClick={() => setRelatorioLetra(letra)}
+                >
+                  {letra}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {relatorioAberto === "faltaram" || relatorioAberto === "desmarcaram" ? (
+            <div className="crm-filter-row crm-filter-row-report">
+              <label>
+                <span>Data inicial</span>
+                <input type="date" value={relatorioDataInicio} onChange={(event) => setRelatorioDataInicio(event.target.value)} />
+              </label>
+              <label>
+                <span>Data final</span>
+                <input type="date" value={relatorioDataFim} onChange={(event) => setRelatorioDataFim(event.target.value)} />
+              </label>
+              <label>
+                <span>Profissional</span>
+                <select value={relatorioProfissional} onChange={(event) => setRelatorioProfissional(event.target.value)}>
+                  <option value="">Todos</option>
+                  {profissionaisRelatorio.map((profissional) => (
+                    <option key={profissional} value={profissional}>
+                      {profissional}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Tipo de procedimento</span>
+                <select value={relatorioTipoProcedimento} onChange={(event) => setRelatorioTipoProcedimento(event.target.value)}>
+                  <option value="">Todos</option>
+                  {tiposRelatorio.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {tipo}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {relatorioAberto === "desmarcaram" ? (
+                <label>
+                  <span>Quem desmarcou</span>
+                  <select value={relatorioStatusOrigem} onChange={(event) => setRelatorioStatusOrigem(event.target.value)}>
+                    <option value="">Todos</option>
+                    {origensDesmarcacao.map((origem) => (
+                      <option key={origem} value={origem}>
+                        {origem}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <div className="crm-list">
             {!carregando && relatorioAtual.itens.map((item) => (
               <article key={item.chave} className="crm-list-item">
