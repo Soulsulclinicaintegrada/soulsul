@@ -13,6 +13,8 @@ from importar_dados_operacionais import (
 
 
 POSSIVEIS_APPOINTMENTS = [
+    Path(r"C:\Users\jusgo\Downloads\Appointment (8).xlsx"),
+    Path(r"C:\Users\jusgo\Downloads\Appointment (7).xlsx"),
     Path(r"C:\Users\jusgo\Downloads\Appointment (6).xlsx"),
     Path(r"C:\Users\jusgo\Downloads\Appointment (5).xlsx"),
 ]

@@ -19,27 +19,33 @@ from importar_pacientes_planilha import should_import_row as should_import_patie
 
 BASE_DOWNLOADS = Path(r"C:\Users\jusgo\Downloads")
 PATIENTS_FILES = [
-    BASE_DOWNLOADS / "Patient (5).xlsx",
+    BASE_DOWNLOADS / "Patient (7).xlsx",
     BASE_DOWNLOADS / "Patient (6).xlsx",
+    BASE_DOWNLOADS / "Patient (5).xlsx",
     BASE_DOWNLOADS / "Patient (4).xlsx",
     BASE_DOWNLOADS / "Patient (2).xlsx",
 ]
 BUDGETS_FILES = [
+    BASE_DOWNLOADS / "Budgets (7).xlsx",
     BASE_DOWNLOADS / "Budgets (6).xlsx",
     BASE_DOWNLOADS / "Budgets (5).xlsx",
     BASE_DOWNLOADS / "Budgets (2).xlsx",
 ]
 PAYMENT_HEADER_FILES = [
+    BASE_DOWNLOADS / "PaymentHeader (6).xlsx",
     BASE_DOWNLOADS / "PaymentHeader (5).xlsx",
     BASE_DOWNLOADS / "PaymentHeader (4).xlsx",
     BASE_DOWNLOADS / "PaymentHeader (2).xlsx",
 ]
 PAYMENT_ITEM_FILES = [
+    BASE_DOWNLOADS / "PaymentItem (6).xlsx",
     BASE_DOWNLOADS / "PaymentItem (5).xlsx",
     BASE_DOWNLOADS / "PaymentItem (4).xlsx",
     BASE_DOWNLOADS / "PaymentItem (2).xlsx",
 ]
 BOOK_ENTRY_FILES = [
+    BASE_DOWNLOADS / "BookEntry (13).xlsx",
+    BASE_DOWNLOADS / "BookEntry (12).xlsx",
     BASE_DOWNLOADS / "BookEntry (11).xlsx",
     BASE_DOWNLOADS / "BookEntry (10).xlsx",
     BASE_DOWNLOADS / "BookEntry (9).xlsx",
@@ -51,6 +57,7 @@ BOOK_ENTRY_FILES = [
     BASE_DOWNLOADS / "BookEntry (3).xlsx",
 ]
 APPOINTMENT_FILES = [
+    BASE_DOWNLOADS / "Appointment (8).xlsx",
     BASE_DOWNLOADS / "Appointment (7).xlsx",
     BASE_DOWNLOADS / "Appointment (6).xlsx",
     BASE_DOWNLOADS / "Appointment (3).xlsx",
