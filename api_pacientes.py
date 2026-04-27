@@ -2729,16 +2729,24 @@ def atualizar_recebiveis_lote_contrato(
 
 
 def carregar_agendamentos_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -> list[sqlite3.Row]:
-    return conn.execute(
+    rows = conn.execute(
         f"""
         SELECT *
         FROM agendamentos
         WHERE paciente_id = ?
            OR lower(trim(COALESCE(nome_paciente_snapshot, paciente_nome, ''))) = lower(trim(?))
-        ORDER BY COALESCE({DATA_COLUNA_AGENDA}, data), hora_inicio, id
         """,
         (int(paciente_row["id"]), str(paciente_row["nome"] or "")),
     ).fetchall()
+    return sorted(
+        rows,
+        key=lambda row: (
+            parse_data_contrato(row[DATA_COLUNA_AGENDA] if DATA_COLUNA_AGENDA in row.keys() else row["data"]) or date.min,
+            str(row["hora_inicio"] or "").strip(),
+            int(row["id"] or 0),
+        ),
+        reverse=True,
+    )
 
 
 def proximo_agendamento_paciente(agendamentos: list[sqlite3.Row]) -> sqlite3.Row | None:
