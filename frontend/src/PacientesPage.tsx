@@ -3775,19 +3775,24 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                                       disabled={orcamentoBloqueado}
                                     />
                                   </label>
-                                  <span className="budget-preview-region-name">{regiao.nome}</span>
-                                  <div className="budget-preview-faces">
-                                    {FACES_PADRAO.map((face) => (
-                                      <button
-                                        key={face}
-                                        type="button"
-                                        className={`budget-face-chip${regiao.faces.includes(face) ? " active" : ""}`}
-                                        onClick={() => atualizarFacesRegiao(item.id, regiao.id, face)}
-                                        disabled={orcamentoBloqueado}
-                                      >
-                                        {face}
-                                      </button>
-                                    ))}
+                                  <div className="budget-preview-detail-body">
+                                    <span className="budget-preview-region-name">{regiao.nome || "Região não informada"}</span>
+                                    <span className="budget-preview-detail-copy">
+                                      {regiao.faces.length ? `Faces: ${regiao.faces.join(", ")}` : "Sem faces selecionadas"}
+                                    </span>
+                                    <div className="budget-preview-faces">
+                                      {FACES_PADRAO.map((face) => (
+                                        <button
+                                          key={face}
+                                          type="button"
+                                          className={`budget-face-chip${regiao.faces.includes(face) ? " active" : ""}`}
+                                          onClick={() => atualizarFacesRegiao(item.id, regiao.id, face)}
+                                          disabled={orcamentoBloqueado}
+                                        >
+                                          {face}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
                                   <input
                                     className="budget-preview-value-input"
@@ -3800,9 +3805,13 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             </div>
                           ) : null}
 
-                          <span>{item.clinica}</span>
-                          <span>{item.profissional}</span>
-                          <span>{item.regioes.map((regiao) => regiao.nome).join(",")}</span>
+                          <div className="budget-preview-meta">
+                            <span className="budget-preview-meta-line">{item.clinica}</span>
+                            <span className="budget-preview-meta-line">{item.profissional}</span>
+                            <span className="budget-preview-meta-line budget-preview-region-summary">
+                              {item.regioes.map((regiao) => regiao.nome || "Região não informada").join(", ")}
+                            </span>
+                          </div>
                         </div>
                         <div className="budget-preview-value">
                           <strong>{formatarMoeda(subtotalProcedimento(item))}</strong>

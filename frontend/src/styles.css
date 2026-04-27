@@ -2641,10 +2641,25 @@ textarea::placeholder {
   align-content: start;
 }
 
-.budget-preview-item-main span {
+.budget-preview-item-main > span {
   color: #74695c;
   border-top: 1px dashed rgba(188, 145, 85, 0.14);
   padding-top: 4px;
+}
+
+.budget-preview-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.budget-preview-meta-line {
+  color: #74695c;
+  border-top: 1px dashed rgba(188, 145, 85, 0.14);
+  padding-top: 4px;
+}
+
+.budget-preview-region-summary {
+  overflow-wrap: anywhere;
 }
 
 .budget-preview-item.ghost .budget-preview-item-main,
@@ -3087,10 +3102,10 @@ textarea::placeholder {
 
 .budget-preview-detail-row {
   display: grid;
-  grid-template-columns: auto 40px minmax(0, 1fr) 78px;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) 96px;
+  align-items: start;
   gap: 8px;
-  padding: 4px 0;
+  padding: 8px 0;
   border-top: 1px dashed rgba(188, 145, 85, 0.12);
   min-width: 0;
 }
@@ -3110,8 +3125,22 @@ textarea::placeholder {
   opacity: 0.36;
 }
 
+.budget-preview-detail-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .budget-preview-region-name {
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.budget-preview-detail-copy {
+  color: #74695c;
+  font-size: 0.83rem;
+  overflow-wrap: anywhere;
 }
 
 .budget-preview-faces {
@@ -3145,6 +3174,7 @@ textarea::placeholder {
   padding: 4px 0;
   outline: none;
   font-size: 0.9rem;
+  align-self: start;
 }
 
 .odontograma-component {
@@ -5414,7 +5444,9 @@ textarea::placeholder {
     align-items: start;
   }
 
+  .budget-preview-detail-body,
   .budget-preview-region-name,
+  .budget-preview-detail-copy,
   .budget-preview-faces,
   .budget-preview-value-input {
     grid-column: 2;
