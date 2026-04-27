@@ -1591,7 +1591,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       });
       setProcedimentoSelecionado(null);
       const procedimentosCarregados = detalhe.itens.map((item, index) => ({
-          id: contratoId * 1000 + index + 1,
+          id: index + 1,
           nome: item.procedimento,
           profissional: item.profissional,
           denticao: item.denticao,
@@ -1600,7 +1600,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
           criadoPor: detalhe.criadoPor || CRIADORES_ORCAMENTO[0],
           expandido: true,
           regioes: item.regioes.map((regiao, regiaoIndex) => ({
-            id: contratoId * 100000 + index * 100 + regiaoIndex + 1,
+            id: (index + 1) * 1000 + regiaoIndex + 1,
             nome: regiao.regiao,
             valor: regiao.valor,
             ativo: regiao.ativo,
@@ -3743,7 +3743,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             <label className="budget-preview-check">
                               <input
                                 type="checkbox"
-                                checked={item.regioes.every((regiao) => regiao.ativo)}
+                                checked={item.regioes.length > 0 && item.regioes.every((regiao) => regiao.ativo)}
                                 onChange={() => alternarTodasRegioes(item.id)}
                               />
                             </label>

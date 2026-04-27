@@ -2289,9 +2289,19 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
                     if acumulado + 0.009 >= alvo:
                         break
                 dentes_sem_grupo_por_procedimento[chave] = restantes
+        if not grupo_rows:
+            grupo_rows = [
+                {
+                    "regiao": "Sem região informada",
+                    "dente": None,
+                    "valor": float(proc_row["valor"] or 0),
+                    "status": "ATIVO",
+                    "faces": "",
+                }
+            ]
         regioes = [
             OrcamentoRegiaoPayload(
-                regiao=str(row["regiao"] or row["dente"] or "").strip(),
+                regiao=str(row["regiao"] or row["dente"] or "Sem região informada").strip(),
                 dente=int(row["dente"]) if row["dente"] is not None else None,
                 valor=float(row["valor"] or 0),
                 ativo=normalizar_texto(row["status"]) != "excluido",
