@@ -3114,20 +3114,24 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             continue
         vendas_mes_rows.append(row)
 
-    detalhes_vendas_mes = [
-        DashboardIndicadorDetalheItemResposta(
-            titulo=(pacientes_nome_map.get(int(row["paciente_id"])) or {}).get("nome") or f"Contrato #{int(row['id'])}",
-            subtitulo=f"Fechado em {formatar_data_br(data_ref)}",
-            meta=((pacientes_nome_map.get(int(row["paciente_id"])) or {}).get("prontuario") or f"Contrato #{int(row['id'])}") if row["paciente_id"] is not None else f"Contrato #{int(row['id'])}",
-            valor=formatar_moeda_br(float(row["valor_total"] or 0)),
-            status=str(row["status"] or ""),
+    detalhes_vendas_mes: list[DashboardIndicadorDetalheItemResposta] = []
+    for row in sorted(
+        vendas_mes_rows,
+        key=lambda item: parse_data_contrato(str(item["data_aprovacao"] or "")) or parse_data_contrato(str(item["data_criacao"] or "")) or date.min,
+        reverse=True,
+    ):
+        data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
+        paciente_info = pacientes_nome_map.get(int(row["paciente_id"])) if row["paciente_id"] is not None else None
+        prontuario = (paciente_info or {}).get("prontuario") or ""
+        detalhes_vendas_mes.append(
+            DashboardIndicadorDetalheItemResposta(
+                titulo=(paciente_info or {}).get("nome") or f"Contrato #{int(row['id'])}",
+                subtitulo=f"Venda em {formatar_data_br(data_ref)}",
+                meta=f"Contrato #{int(row['id'])}" + (f" · {prontuario}" if prontuario else ""),
+                valor=formatar_moeda_br(float(row["valor_total"] or 0)),
+                status=str(row["status"] or ""),
+            )
         )
-        for row in sorted(
-            vendas_mes_rows,
-            key=lambda item: parse_data_contrato(str(item["data_aprovacao"] or "")) or parse_data_contrato(str(item["data_criacao"] or "")) or date.min,
-            reverse=True,
-        )
-    ]
 
     vendas_mes_qtd = len(vendas_mes_rows)
     vendas_mes_valor = sum(float(row["valor_total"] or 0) for row in vendas_mes_rows)
@@ -3144,8 +3148,12 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     detalhes_receber_hoje = [
         DashboardIndicadorDetalheItemResposta(
             titulo=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
-            subtitulo=f"Vencimento {formatar_data_br(parse_data_contrato(row['vencimento']))}",
-            meta=f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}" if int(row["total_parcelas"] or 0) > 0 else str(row["forma_pagamento"] or ""),
+            subtitulo=f"Vencimento em {formatar_data_br(parse_data_contrato(row['vencimento']))}",
+            meta=(
+                f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}"
+                if int(row["total_parcelas"] or 0) > 0
+                else (str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento")
+            ),
             valor=formatar_moeda_br(float(row["valor"] or 0)),
             status=str(row["status"] or ""),
         )
@@ -3164,8 +3172,12 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     detalhes_inadimplencia = [
         DashboardIndicadorDetalheItemResposta(
             titulo=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
-            subtitulo=f"Vencimento {formatar_data_br(parse_data_contrato(row['vencimento']))}",
-            meta=f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}" if int(row["total_parcelas"] or 0) > 0 else str(row["forma_pagamento"] or ""),
+            subtitulo=f"Vencido em {formatar_data_br(parse_data_contrato(row['vencimento']))}",
+            meta=(
+                f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}"
+                if int(row["total_parcelas"] or 0) > 0
+                else (str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento")
+            ),
             valor=formatar_moeda_br(float(row["valor"] or 0)),
             status=str(row["status"] or ""),
         )

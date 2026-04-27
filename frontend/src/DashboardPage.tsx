@@ -260,6 +260,11 @@ function IndicadorDetalheModal({
   onFechar: () => void;
 }) {
   const itens = indicador.detalhamentos || [];
+  const rotuloItens = indicador.chave === "inadimplencia"
+    ? "Inadimplentes"
+    : indicador.chave === "a_receber_hoje"
+      ? "Recebíveis do dia"
+      : "Registros";
   return (
     <div className="overlay" role="presentation" onClick={onFechar}>
       <div className="modal-shell dashboard-payment-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
@@ -280,7 +285,7 @@ function IndicadorDetalheModal({
               <strong>{indicador.valor}</strong>
             </div>
             <div className="summary-row">
-              <span>Itens</span>
+              <span>{rotuloItens}</span>
               <strong>{itens.length}</strong>
             </div>
           </div>
@@ -290,11 +295,12 @@ function IndicadorDetalheModal({
                 <article className="dashboard-payment-entry" key={`${indicador.chave}-${indice}-${item.titulo}`}>
                   <div className="dashboard-payment-entry-main">
                     <strong>{item.titulo || "Sem título"}</strong>
-                    <span>{item.subtitulo || item.meta || "Sem detalhe adicional"}</span>
+                    <span>{item.subtitulo || "Sem data informada"}</span>
+                    {item.meta ? <small>{item.meta}</small> : null}
                   </div>
                   <div className="dashboard-payment-entry-meta">
                     <strong>{item.valor || "-"}</strong>
-                    <small>{item.status || item.meta || ""}</small>
+                    <small>{item.status || ""}</small>
                   </div>
                 </article>
               ))
