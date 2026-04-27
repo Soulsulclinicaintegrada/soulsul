@@ -2527,12 +2527,13 @@ textarea::placeholder {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 0;
+  height: 100%;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(188, 145, 85, 0.14);
   background: #fff;
   box-shadow: none;
-  max-height: calc(100vh - 120px);
+  max-height: none;
 }
 
 .budget-preview-header {
@@ -2606,11 +2607,12 @@ textarea::placeholder {
   min-height: 0;
   background: #fbfbfb;
   overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .budget-preview-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, 148px);
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid rgba(188, 145, 85, 0.14);
@@ -2627,6 +2629,7 @@ textarea::placeholder {
   display: grid;
   gap: 4px;
   padding: 14px 16px;
+  min-width: 0;
 }
 
 .budget-preview-item-main span {
@@ -2659,6 +2662,7 @@ textarea::placeholder {
   color: #fff;
   text-align: center;
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.18);
+  min-width: 0;
 }
 
 .budget-preview-item.ghost .budget-preview-value {
@@ -3007,6 +3011,7 @@ textarea::placeholder {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  min-width: 0;
 }
 
 .budget-preview-order-actions {
@@ -3030,6 +3035,15 @@ textarea::placeholder {
   color: inherit;
   cursor: pointer;
   text-align: left;
+  min-width: 0;
+  flex: 1;
+}
+
+.budget-preview-expand strong {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .budget-preview-expand svg {
@@ -3057,6 +3071,9 @@ textarea::placeholder {
   gap: 6px;
   margin-bottom: 4px;
   padding: 6px 0 2px;
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .budget-preview-detail-row {
@@ -3066,6 +3083,7 @@ textarea::placeholder {
   gap: 8px;
   padding: 4px 0;
   border-top: 1px dashed rgba(188, 145, 85, 0.12);
+  min-width: 520px;
 }
 
 .budget-preview-detail-row.muted {
@@ -3089,9 +3107,9 @@ textarea::placeholder {
 
 .budget-preview-faces {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 3px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .budget-face-chip {
