@@ -276,21 +276,6 @@ type ResumoFinanceiroCards = {
   pagos: string;
 };
 
-type GrupoFinanceiroContrato = {
-  chave: string;
-  contratoId: number | null;
-  titulo: string;
-  subtitulo: string;
-  valorTotal: number;
-  valorPago: number;
-  valorAberto: number;
-  valorAtrasado: number;
-  parcelasTotal: number;
-  parcelasPagas: number;
-  parcelasAtrasadas: number;
-  recebiveis: RecebivelResumoApi[];
-};
-
 const FORM_INICIAL: PacienteForm = {
   nome: "",
   apelido: "",
@@ -696,82 +681,6 @@ function resumoFinanceiroCards(ficha?: FichaPacienteApi | null): ResumoFinanceir
   };
 }
 
-function statusFinanceiroNormalizado(status?: string) {
-  return normalizarTextoComparacao(status || "");
-}
-
-function recebivelEstaPago(item: RecebivelResumoApi) {
-  return statusFinanceiroNormalizado(item.status).includes("pago");
-}
-
-function recebivelEstaAtrasado(item: RecebivelResumoApi) {
-  return statusFinanceiroNormalizado(item.status).includes("atras");
-}
-
-function montarGruposFinanceiros(ficha?: FichaPacienteApi | null): GrupoFinanceiroContrato[] {
-  if (!ficha?.recebiveis?.length) return [];
-
-  const contratosPorId = new Map((ficha.contratos || []).map((contrato) => [contrato.id, contrato]));
-  const grupos = new Map<string, GrupoFinanceiroContrato>();
-
-  ficha.recebiveis.forEach((item) => {
-    const contratoId = item.contratoId ?? null;
-    const contrato = contratoId ? contratosPorId.get(contratoId) : null;
-    const chave = contratoId ? `contrato-${contratoId}` : `avulso-${item.id}`;
-    const existente = grupos.get(chave);
-    const valor = parseMoeda(item.valor);
-    const pago = recebivelEstaPago(item);
-    const atrasado = recebivelEstaAtrasado(item);
-    const proximo: GrupoFinanceiroContrato = existente ?? {
-      chave,
-      contratoId,
-      titulo: contratoId ? `Contrato #${contratoId}` : "Lançamento avulso",
-      subtitulo: contrato
-        ? `${contrato.formaPagamento || "Forma não informada"} · ${contrato.procedimentos.join(", ") || "Sem procedimentos"}`
-        : (item.observacao || "Sem contrato vinculado"),
-      valorTotal: 0,
-      valorPago: 0,
-      valorAberto: 0,
-      valorAtrasado: 0,
-      parcelasTotal: 0,
-      parcelasPagas: 0,
-      parcelasAtrasadas: 0,
-      recebiveis: [],
-    };
-
-    proximo.valorTotal += valor;
-    if (pago) {
-      proximo.valorPago += valor;
-      proximo.parcelasPagas += 1;
-    } else {
-      proximo.valorAberto += valor;
-      if (atrasado) {
-        proximo.valorAtrasado += valor;
-        proximo.parcelasAtrasadas += 1;
-      }
-    }
-    proximo.parcelasTotal += 1;
-    proximo.recebiveis.push(item);
-    grupos.set(chave, proximo);
-  });
-
-  return [...grupos.values()]
-    .map((grupo) => ({
-      ...grupo,
-      recebiveis: [...grupo.recebiveis].sort((a, b) => {
-        const parcelaA = Number(a.parcela || 0);
-        const parcelaB = Number(b.parcela || 0);
-        if (parcelaA !== parcelaB) return parcelaA - parcelaB;
-        return (a.vencimento || "").localeCompare(b.vencimento || "");
-      }),
-    }))
-    .sort((a, b) => {
-      if (a.contratoId == null && b.contratoId != null) return 1;
-      if (a.contratoId != null && b.contratoId == null) return -1;
-      return (a.contratoId || 0) - (b.contratoId || 0);
-    });
-}
-
 function dataHojeIso() {
   const hoje = new Date();
   const ano = hoje.getFullYear();
@@ -943,7 +852,6 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [modalRecebivelAberto, setModalRecebivelAberto] = useState(false);
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
   const [salvandoRecebivel, setSalvandoRecebivel] = useState(false);
-  const [contratosFinanceirosAbertos, setContratosFinanceirosAbertos] = useState<string[]>([]);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
   const [fotoErro, setFotoErro] = useState(false);
@@ -957,7 +865,6 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
   const orcamentoBloqueado = orcamentoStatusAtual === "APROVADO";
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
-  const gruposFinanceiros = useMemo(() => montarGruposFinanceiros(ficha), [ficha]);
   const dentesSelecionadosOdontograma = useMemo(
     () =>
       [...new Set(
@@ -988,10 +895,6 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     if (abaClinica !== "Odontograma") return;
     setElementoClinicoAtivo(dentesContratadosClinicos);
   }, [abaClinica, denticaoClinica, dentesContratadosClinicos]);
-
-  useEffect(() => {
-    setContratosFinanceirosAbertos((atual) => atual.filter((chave) => gruposFinanceiros.some((grupo) => grupo.chave === chave)));
-  }, [gruposFinanceiros]);
   const elementosOdontogramaListados = useMemo(
     () => {
       if (!elementoClinicoAtivo.length) return elementosOdontogramaVisiveis;
@@ -1579,12 +1482,6 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     }
   }
 
-  function alternarContratoFinanceiro(chave: string) {
-    setContratosFinanceirosAbertos((atual) =>
-      atual.includes(chave) ? atual.filter((item) => item !== chave) : [...atual, chave]
-    );
-  }
-
   function renderFinanceiroSection() {
     return (
       <div className="finance-shell">
@@ -1607,72 +1504,42 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
           </div>
         </div>
 
-        {gruposFinanceiros.length ? (
-          <div className="finance-contract-list">
-            {gruposFinanceiros.map((grupo) => {
-              const aberto = contratosFinanceirosAbertos.includes(grupo.chave);
-              return (
-                <article key={grupo.chave} className={`finance-contract-card${aberto ? " open" : ""}`}>
-                  <button type="button" className="finance-contract-toggle" onClick={() => alternarContratoFinanceiro(grupo.chave)}>
-                    <div className="finance-contract-main">
-                      <strong>{grupo.titulo}</strong>
-                      <span>{grupo.subtitulo}</span>
-                    </div>
-                    <div className="finance-contract-metrics">
-                      <div>
-                        <span>Total</span>
-                        <strong>{formatarMoeda(grupo.valorTotal)}</strong>
-                      </div>
-                      <div>
-                        <span>Pago</span>
-                        <strong className="ok">{formatarMoeda(grupo.valorPago)}</strong>
-                      </div>
-                      <div>
-                        <span>Em aberto</span>
-                        <strong>{formatarMoeda(grupo.valorAberto)}</strong>
-                      </div>
-                      <div>
-                        <span>Atrasado</span>
-                        <strong className="alert">{formatarMoeda(grupo.valorAtrasado)}</strong>
-                      </div>
-                      <div>
-                        <span>Parcelas</span>
-                        <strong>{`${grupo.parcelasPagas}/${grupo.parcelasTotal}`}</strong>
-                      </div>
-                    </div>
-                  </button>
-
-                  {aberto ? (
-                    <div className="finance-contract-body">
-                      {grupo.recebiveis.map((item) => (
-                        <div className="finance-row finance-row-contract" key={item.id}>
-                          <div className="finance-row-main">
-                            <strong>{item.parcela ? `Parcela ${item.parcela}` : "Recebível avulso"}</strong>
-                            <span>{item.observacao || "Plano de pagamento do paciente"}</span>
-                          </div>
-                          <span>{item.vencimento || "-"}</span>
-                          <span>{item.formaPagamento || "-"}</span>
-                          <strong>{item.valor}</strong>
-                          <span className={`finance-status ${(item.status || "a-vencer").toLowerCase().replace(/\s+/g, "-")}`}>
-                            {item.status || "A vencer"}
-                          </span>
-                          <div className="finance-row-actions">
-                            {recebivelEstaPago(item) ? null : (
-                              <button type="button" className="ghost-action compact" onClick={() => baixarRecebivel(item)} disabled={salvandoRecebivel}>
-                                Baixar
-                              </button>
-                            )}
-                            <button type="button" className="primary-action compact" onClick={() => abrirRecebivel(item)} disabled={salvandoRecebivel}>
-                              Editar
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
+        {ficha?.recebiveis.length ? (
+          <div className="finance-board">
+            <div className="finance-board-header">
+              <span>Parcela</span>
+              <span>Vencimento</span>
+              <span>Forma</span>
+              <span>Valor</span>
+              <span>Status</span>
+              <span>Ações</span>
+            </div>
+            <div className="finance-board-body">
+              {ficha.recebiveis.map((item) => (
+                <div className="finance-row" key={item.id}>
+                  <div className="finance-row-main">
+                    <strong>{item.parcela ? `Parcela ${item.parcela}` : "Recebível avulso"}</strong>
+                    <span>{item.observacao || "Plano de pagamento do paciente"}</span>
+                  </div>
+                  <span>{item.vencimento || "-"}</span>
+                  <span>{item.formaPagamento || "-"}</span>
+                  <strong>{item.valor}</strong>
+                  <span className={`finance-status ${(item.status || "a-vencer").toLowerCase().replace(/\s+/g, "-")}`}>
+                    {item.status || "A vencer"}
+                  </span>
+                  <div className="finance-row-actions">
+                    {(item.status || "").toLowerCase().includes("pago") ? null : (
+                      <button type="button" className="ghost-action compact" onClick={() => baixarRecebivel(item)} disabled={salvandoRecebivel}>
+                        Baixar
+                      </button>
+                    )}
+                    <button type="button" className="primary-action compact" onClick={() => abrirRecebivel(item)} disabled={salvandoRecebivel}>
+                      Editar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : <span className="empty-inline">Sem lançamentos financeiros.</span>}
       </div>
