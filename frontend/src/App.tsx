@@ -229,6 +229,7 @@ function App() {
       return (
         <PacientesPage
           busca={navegacaoPaciente?.pacienteId ? "" : buscaGlobal}
+          onLimparBusca={() => setBuscaGlobal("")}
           navegacao={navegacaoPaciente}
           pacientesAbas={pacientesAbasUsuario}
         />
@@ -280,6 +281,7 @@ function App() {
   const selecionarMenu = (key: MenuKey) => {
     setMenuAtivo(key);
     setSidebarOverlayAberta(false);
+    if (key !== "Pacientes") setBuscaGlobal("");
     if (key !== "Pacientes") setNavegacaoPaciente(null);
   };
 

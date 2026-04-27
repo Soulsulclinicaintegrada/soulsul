@@ -561,6 +561,18 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     );
   }
 
+  function exportarRelatorioAtual() {
+    if (relatorioAberto === "sem-agendamento" && relatorioLetra) {
+      const baixarAtual = window.confirm(`Clique em OK para baixar somente a letra ${relatorioLetra}.\n\nClique em Cancelar para baixar o relatório inteiro.`);
+      exportarRelatorio(
+        baixarAtual ? `${relatorioAtual.nomeExportacao}-${relatorioLetra.toLowerCase()}` : relatorioAtual.nomeExportacao,
+        baixarAtual ? relatorioAtual.itens : relatorioSemAgendamento
+      );
+      return;
+    }
+    exportarRelatorio(relatorioAtual.nomeExportacao, relatorioAtual.itens);
+  }
+
   function exportarCrmPacientes(nomeBase: string, linhas: CrmPacienteItemApi[]) {
     baixarCsv(
       `${nomeBase}.csv`,
@@ -830,7 +842,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <h2>{relatorioAtual.titulo}</h2>
             </div>
             <div className="crm-inline-actions">
-              <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio(relatorioAtual.nomeExportacao, relatorioAtual.itens)}>
+              <button type="button" className="ghost-action compact" onClick={exportarRelatorioAtual}>
                 <Download size={15} />
                 Baixar
               </button>

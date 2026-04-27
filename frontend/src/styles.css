@@ -2490,6 +2490,8 @@ textarea::placeholder {
 .budget-modal-body {
   padding-bottom: 24px;
   background: #f5f2ed;
+  min-height: 0;
+  height: 100%;
 }
 
 .budget-builder-grid {
@@ -2497,12 +2499,17 @@ textarea::placeholder {
   grid-template-columns: minmax(0, 1.85fr) minmax(520px, 0.95fr);
   gap: 24px;
   min-height: 0;
+  height: 100%;
+  align-items: start;
 }
 
 .budget-builder-form {
   min-width: 0;
   display: grid;
   gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
 }
 
 .budget-builder-form .form-block {
@@ -2525,6 +2532,7 @@ textarea::placeholder {
   border: 1px solid rgba(188, 145, 85, 0.14);
   background: #fff;
   box-shadow: none;
+  max-height: calc(100vh - 120px);
 }
 
 .budget-preview-header {
@@ -2597,6 +2605,7 @@ textarea::placeholder {
   gap: 12px;
   min-height: 0;
   background: #fbfbfb;
+  overflow-x: hidden;
 }
 
 .budget-preview-item {
@@ -2991,6 +3000,7 @@ textarea::placeholder {
 
 .budget-preview-item-main-rich {
   gap: 6px;
+  min-width: 0;
 }
 
 .budget-preview-item-top {
@@ -4027,7 +4037,7 @@ textarea::placeholder {
 }
 
 .agenda-day-column-head {
-  height: 38px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4053,6 +4063,23 @@ textarea::placeholder {
   overflow-wrap: anywhere;
   justify-content: center;
   text-align: center;
+}
+
+.agenda-prof-chip-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.agenda-prof-chip-copy strong {
+  font-size: 0.74rem;
+  line-height: 1.05;
+}
+
+.agenda-prof-chip-copy span {
+  font-size: 0.64rem;
+  line-height: 1.05;
+  color: rgba(60, 49, 40, 0.72);
 }
 
 .agenda-prof-dot,

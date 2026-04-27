@@ -67,6 +67,10 @@ export type AgendaApiAgendamento = {
   ordemServicoId?: number | null;
   ordemServicoDocumentoNome?: string;
   elementoArcada?: string;
+  recorrenciaGrupo?: string;
+  recorrenciaIntervaloDias?: number;
+  recorrenciaTotal?: number;
+  recorrenciaIndice?: number;
   historico?: Array<{
     acao: string;
     descricao: string;
@@ -147,6 +151,10 @@ export type AgendaSalvarPayload = {
   ordemServicoId?: number | null;
   ordemServicoDocumentoNome?: string;
   elementoArcada?: string;
+  recorrenciaGrupo?: string;
+  recorrenciaIntervaloDias?: number;
+  recorrenciaTotal?: number;
+  recorrenciaIndice?: number;
   procedimentos: AgendaProcedimentoPayload[];
 };
 
@@ -194,6 +202,7 @@ function normalizarStatusAgenda(valor?: string) {
     scheduled: "Agendado",
     confirmado: "Confirmado",
     confirmed: "Confirmado",
+    aguardando: "Aguardando",
     "em espera": "Em espera",
     pending: "Em espera",
     "em atendimento": "Em atendimento",
@@ -316,12 +325,13 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function buscarDisponibilidadeAgenda(
   profissionalId: number,
-  data: string
+  data: string,
+  excluirAgendamentoId?: number | null
 ): Promise<AgendaDisponibilidadeResponse> {
   if (API_BASE_URL) {
     try {
       return await fetchJson<AgendaDisponibilidadeResponse>(
-        `${API_BASE_URL}/api/agenda/disponibilidade?profissional_id=${profissionalId}&data=${encodeURIComponent(data)}`
+        `${API_BASE_URL}/api/agenda/disponibilidade?profissional_id=${profissionalId}&data=${encodeURIComponent(data)}${excluirAgendamentoId ? `&excluir_agendamento_id=${excluirAgendamentoId}` : ""}`
       );
     } catch {
       if (!podeUsarMockFallback()) throw new Error("Agenda indisponivel no momento.");
@@ -331,7 +341,7 @@ export async function buscarDisponibilidadeAgenda(
   const slots = gerarSlotsQuinzeMinutos();
   const eventos = eventosAgendaDia
     .map(mapearEventoMock)
-    .filter((evento) => evento.profissionalId === profissionalId && evento.data === data);
+    .filter((evento) => evento.profissionalId === profissionalId && evento.data === data && (!excluirAgendamentoId || evento.id !== excluirAgendamentoId));
 
   const ocupados = new Set<string>();
   eventos.forEach((evento) => {
@@ -580,6 +590,21 @@ export async function atualizarAgendamentoAgenda(
     ordemServicoId: payload.ordemServicoId ?? null,
     ordemServicoDocumentoNome: payload.ordemServicoDocumentoNome ?? ""
   };
+}
+
+export async function atualizarSerieAgendamentoAgenda(
+  agendamentoId: number,
+  payload: AgendaSalvarPayload
+): Promise<AgendaDetalheResponse[]> {
+  if (API_BASE_URL) {
+    const resposta = await fetchJson<{ agendamentos: AgendaDetalheResponse[] }>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}/serie`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+    return resposta.agendamentos.map(mapearEventoApi);
+  }
+
+  return [await atualizarAgendamentoAgenda(agendamentoId, payload)];
 }
 
 export async function buscarDetalhesAgendamentoAgenda(

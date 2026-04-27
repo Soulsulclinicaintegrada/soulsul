@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   adicionarMinutos,
   atualizarAgendamentoAgenda,
+  atualizarSerieAgendamentoAgenda,
   buscarConfiguracaoAgendaApi,
   buscarContextoPacienteAgenda,
   buscarDetalhesAgendamentoAgenda,
@@ -119,6 +120,7 @@ const NOMES_MESES = [
   "Novembro",
   "Dezembro"
 ];
+const STATUS_AGENDA_OPCOES = ["Agendado", "Confirmado", "Aguardando", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"] as const;
 const FERIADOS_FIXOS_NACIONAIS = new Map<string, string>([
   ["01-01", "Confraternização Universal"],
   ["04-21", "Tiradentes"],
@@ -536,6 +538,7 @@ function corStatusAgendamento(status: AgendaEventoUI["status"]) {
       return "#94a3b8";
     case "Confirmado":
       return "#0f9d8f";
+    case "Aguardando":
     case "Em espera":
       return "#f4c430";
     case "Em atendimento":
@@ -1087,6 +1090,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     return configProfissionais.find((item) => item.id === profissionalId)?.nomeAgenda || nomeProfissionalPorId(profissionalId);
   }
 
+  function consultorioProfissionalNoDia(profissionalId: number, dataIso: string) {
+    return configuracaoProfissionalNoDia(profissionalId, dataIso)?.consultorio?.trim() || "";
+  }
+
+  function consultorioAgendamento(evento: Pick<AgendaEventoUI, "profissionalId" | "consultorio" | "data">) {
+    return String(evento.consultorio || "").trim() || consultorioProfissionalNoDia(evento.profissionalId, brParaIso(evento.data));
+  }
+
   function corProfissionalPorId(profissionalId: number) {
     return configProfissionais.find((item) => item.id === profissionalId)?.cor ?? "#c7aa78";
   }
@@ -1173,12 +1184,16 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     if (!modalAberto || abaModal !== "Nova Consulta") return;
     let cancelado = false;
     setCarregandoDisponibilidade(true);
-    buscarDisponibilidadeAgenda(form.profissionalId, isoParaBr(form.data))
+    buscarDisponibilidadeAgenda(form.profissionalId, isoParaBr(form.data), agendamentoEditandoId)
       .then((resultado) => {
         if (cancelado) return;
         const maximoPorHorario = configProfissionais.find((item) => item.id === form.profissionalId)?.maxAgendamentosPorHorario ?? 1;
         const locais = eventos
-          .filter((evento) => evento.profissionalId === form.profissionalId && evento.data === isoParaBr(form.data))
+          .filter((evento) =>
+            evento.profissionalId === form.profissionalId
+            && evento.data === isoParaBr(form.data)
+            && (!agendamentoEditandoId || evento.id !== agendamentoEditandoId)
+          )
           .flatMap((evento) =>
             horariosAgenda.filter((slot) => {
               const minuto = paraMinutos(slot);
@@ -1206,7 +1221,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     return () => {
       cancelado = true;
     };
-  }, [abaModal, configProfissionais, eventos, form.data, form.horarioInicio, form.profissionalId, horariosAgenda, modalAberto]);
+  }, [abaModal, agendamentoEditandoId, configProfissionais, eventos, form.data, form.horarioInicio, form.profissionalId, horariosAgenda, modalAberto]);
 
   useEffect(() => {
     if (!modalAberto || abaModal !== "Nova Consulta") return;
@@ -1732,6 +1747,9 @@ function atualizarConfigProfissionalDia(
             Math.max(0, Math.floor(form.repetirIntervaloDias || 0)),
             Math.max(0, Math.floor(form.repetirQuantidade || 0))
           );
+      const recorrenciaGrupo = !agendamentoEditandoId && datasDestino.length > 1
+        ? `serie-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        : "";
 
       const payloadBase = {
         horaInicio: slotsSelecionados[0],
@@ -1776,6 +1794,10 @@ function atualizarConfigProfissionalDia(
             tipoAtendimentoId: ehConsulta ? form.tipoAtendimentoId : 0,
             tipoAtendimentoNome: ehConsulta ? nomeTipoAtendimento(form.tipoAtendimentoId) : abaModal,
             data: isoParaBr(dataIso),
+            recorrenciaGrupo,
+            recorrenciaIntervaloDias: recorrenciaGrupo ? Math.max(0, Math.floor(form.repetirIntervaloDias || 0)) : 0,
+            recorrenciaTotal: recorrenciaGrupo ? datasDestino.length : 0,
+            recorrenciaIndice: recorrenciaGrupo ? datasDestino.indexOf(dataIso) : 0,
             ...payloadBase,
             procedimentos: itensProcedimento
           };
@@ -1809,6 +1831,10 @@ function atualizarConfigProfissionalDia(
           data: isoParaBr(dataIso),
           inicio: slotsSelecionados[0],
           fim: fimSelecao(slotsSelecionados),
+          recorrenciaGrupo: salvo.recorrenciaGrupo || recorrenciaGrupo || "",
+          recorrenciaIntervaloDias: salvo.recorrenciaIntervaloDias ?? (recorrenciaGrupo ? Math.max(0, Math.floor(form.repetirIntervaloDias || 0)) : 0),
+          recorrenciaTotal: salvo.recorrenciaTotal ?? (recorrenciaGrupo ? datasDestino.length : 0),
+          recorrenciaIndice: salvo.recorrenciaIndice ?? (recorrenciaGrupo ? datasDestino.indexOf(dataIso) : 0),
           procedimentos: ehConsulta ? procedimentosSelecionados.map((item) => item.nome) : [nomePrincipal],
           observacoes: form.observacoes,
           agendadoEm: form.agendadoEm,
@@ -1874,9 +1900,34 @@ function atualizarConfigProfissionalDia(
       ordemServicoId: evento.ordemServicoId ?? null,
       ordemServicoDocumentoNome: evento.ordemServicoDocumentoNome || "",
       elementoArcada: evento.elementoArcada || "",
+      recorrenciaGrupo: evento.recorrenciaGrupo || "",
+      recorrenciaIntervaloDias: evento.recorrenciaIntervaloDias || 0,
+      recorrenciaTotal: evento.recorrenciaTotal || 0,
+      recorrenciaIndice: evento.recorrenciaIndice || 0,
       procedimentos: payloadProcedimentosDoEvento(evento),
       ...overrides
     };
+
+    const editarSerie = Boolean(evento.recorrenciaGrupo)
+      && window.confirm("Este agendamento faz parte de uma repetição.\n\nClique em OK para modificar TODOS os agendamentos da série.\nClique em Cancelar para modificar SOMENTE este agendamento.");
+
+    if (editarSerie) {
+      const atualizados = await atualizarSerieAgendamentoAgenda(evento.id, payload);
+      const mapaAtualizados = new Map(atualizados.map((item) => [item.id, item]));
+      setEventos((atual) =>
+        atual.map((item) => {
+          const atualizado = mapaAtualizados.get(item.id);
+          if (!atualizado) return item;
+          return resolverProfissionalEvento({
+            ...item,
+            ...atualizado,
+            ...overridesLocais,
+            procedimentos: atualizado.procedimentos.length ? atualizado.procedimentos : item.procedimentos
+          });
+        })
+      );
+      return atualizados.find((item) => item.id === evento.id) ?? atualizados[0];
+    }
 
     const atualizado = await atualizarAgendamentoAgenda(evento.id, payload);
     setEventos((atual) =>
@@ -2065,26 +2116,44 @@ function atualizarConfigProfissionalDia(
       if (evento.elementoArcada) partes.push(`<div class="agenda-print-meta">Dente / arcada: ${evento.elementoArcada}</div>`);
       return partes.join("");
     };
-    const linhas =
+    const eventosImpressao =
       visao === "Dia"
-        ? eventosDia
-            .sort((a, b) => paraMinutos(a.inicio) - paraMinutos(b.inicio))
-            .map((evento) => `<tr><td>${evento.inicio}</td><td>${evento.fim}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${colunaProcedimentoImpressao(evento)}</td></tr>`)
-            .join("")
+        ? [...eventosDia].sort((a, b) => paraMinutos(a.inicio) - paraMinutos(b.inicio))
         : visao === "Semana"
-          ? eventosDaSemana
-              .sort((a, b) => (a.data + a.inicio).localeCompare(b.data + b.inicio))
-              .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.fim}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${colunaProcedimentoImpressao(evento)}</td></tr>`)
-              .join("")
-          : diasMes
-              .map((diaIso) => {
-                const eventosDiaMes = eventosVisiveis.filter((evento) => evento.data === isoParaBr(diaIso));
-                if (!eventosDiaMes.length) return "";
-                return eventosDiaMes
-                  .map((evento) => `<tr><td>${evento.data}</td><td>${evento.inicio}</td><td>${evento.profissional}</td><td>${evento.paciente}</td><td>${colunaProcedimentoImpressao(evento)}</td></tr>`)
-                  .join("");
-              })
-              .join("");
+          ? [...eventosDaSemana].sort((a, b) => (brParaIso(a.data) + a.inicio).localeCompare(brParaIso(b.data) + b.inicio))
+          : [...eventosFiltradosProfissionais]
+              .filter((evento) => diasMes.map(isoParaBr).includes(evento.data))
+              .sort((a, b) => (brParaIso(a.data) + a.inicio).localeCompare(brParaIso(b.data) + b.inicio));
+    const eventosPorProfissional = profissionaisVisiveis
+      .map((profissional) => ({
+        profissional,
+        eventos: eventosImpressao.filter((evento) => evento.profissionalId === profissional.id)
+      }))
+      .filter((grupo) => grupo.eventos.length > 0);
+    const blocos = eventosPorProfissional.map(({ profissional, eventos }) => {
+      const consultorio = consultorioProfissionalNoDia(profissional.id, dataSelecionada) || consultorioAgendamento(eventos[0]) || "Não definido";
+      const linhas = eventos.map((evento) => `
+        <tr>
+          <td>${visao === "Dia" ? `${evento.inicio} - ${evento.fim}` : `${evento.data} · ${evento.inicio} - ${evento.fim}`}</td>
+          <td><strong>${evento.paciente}</strong>${evento.prontuario ? ` - ${evento.prontuario}` : ""}${evento.telefone ? ` - ${evento.telefone}` : ""}</td>
+          <td>${colunaProcedimentoImpressao(evento)}</td>
+        </tr>
+      `).join("");
+      return `
+        <section class="agenda-print-block">
+          <div class="agenda-print-block-head">
+            <h3>${nomeAgendaProfissional(profissional.id)}</h3>
+            <span>Consultório: ${consultorio}</span>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Horário</th><th>Paciente / Evento</th><th>Detalhes</th></tr>
+            </thead>
+            <tbody>${linhas}</tbody>
+          </table>
+        </section>
+      `;
+    }).join("");
 
     janela.document.write(`
       <html><head><title>Agenda</title>
@@ -2092,6 +2161,11 @@ function atualizarConfigProfissionalDia(
         body{font-family:Arial,sans-serif;padding:24px;color:#222}
         h1{font-size:22px;margin:0 0 6px}
         h2{font-size:14px;font-weight:400;margin:0 0 18px;color:#555}
+        h3{font-size:20px;margin:0}
+        table{width:100%;border-collapse:collapse}
+        .agenda-print-block{margin:0 0 28px}
+        .agenda-print-block-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #dadada}
+        .agenda-print-block-head span{font-size:13px;color:#555;font-weight:600}
         table{width:100%;border-collapse:collapse}
         th,td{border:1px solid #d4d4d4;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top}
         th{background:#efefef}
@@ -2100,12 +2174,7 @@ function atualizarConfigProfissionalDia(
       </style></head><body>
       <h1>Agenda</h1>
       <h2>${dataTitulo} · ${visao}</h2>
-      <table>
-        <thead>
-          <tr>${visao === "Dia" ? "<th>Inicio</th><th>Fim</th>" : "<th>Data</th><th>Inicio</th>"}${visao === "Dia" ? "" : "<th>Fim</th>"}<th>Profissional</th><th>${visao === "Dia" ? "Paciente / Evento" : "Paciente / Evento"}</th><th>Procedimento</th></tr>
-        </thead>
-        <tbody>${linhas || "<tr><td colspan='6'>Sem registros.</td></tr>"}</tbody>
-      </table>
+      ${blocos || "<table><tbody><tr><td>Sem registros.</td></tr></tbody></table>"}
       </body></html>
     `);
     janela.document.close();
@@ -2199,7 +2268,12 @@ function atualizarConfigProfissionalDia(
                 <div className="agenda-day-column-head">
                   <div className="agenda-prof-chip" style={{ background: profissional.corSuave }}>
                     <span className="agenda-prof-dot" style={{ background: profissional.cor }} />
-                    {nomeAgendaProfissional(profissional.id)}
+                    <div className="agenda-prof-chip-copy">
+                      <strong>{nomeAgendaProfissional(profissional.id)}</strong>
+                      {consultorioProfissionalNoDia(profissional.id, dataSelecionada) ? (
+                        <span>{consultorioProfissionalNoDia(profissional.id, dataSelecionada)}</span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 <div className="agenda-day-column-body" style={{ background: profissional.corSuave }}>
@@ -2542,7 +2616,7 @@ function atualizarConfigProfissionalDia(
               <div className="agenda-status-select-row">
                 <span className={`agenda-event-status-dot ${classeStatusAgendamento(detalheAtivo.status)}`} style={{ background: corStatusAgendamento(detalheAtivo.status) }} />
                 <select value={detalheAtivo.status} onChange={(event) => void atualizarStatusAgendamento(detalheAtivo.id, event.target.value as AgendaEventoUI["status"])}>
-                  {["Agendado", "Confirmado", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"].map((status) => (
+                  {STATUS_AGENDA_OPCOES.map((status) => (
                     <option key={status} value={status}>{status}</option>
                   ))}
                 </select>
@@ -2551,7 +2625,7 @@ function atualizarConfigProfissionalDia(
             <div><strong>Agendado por:</strong> {detalheAtivo.agendadoPor || "Sistema"}</div>
             <div><strong>Agendado em:</strong> {detalheAtivo.agendadoEm ?? "Agora"}</div>
             <div><strong>Profissional:</strong> {detalheAtivo.profissional}</div>
-            <div><strong>Sala:</strong> {detalheAtivo.consultorio || "Não definida"}</div>
+            <div><strong>Sala:</strong> {consultorioAgendamento(detalheAtivo) || "Não definida"}</div>
             <div><strong>Prontuário:</strong> {detalheAtivo.paciente} ({detalheAtivo.prontuario})</div>
             <div><strong>Telefone:</strong> {detalheAtivo.telefone}</div>
             <div><strong>Horário:</strong> {detalheAtivo.inicio} - {detalheAtivo.fim}</div>
@@ -2674,7 +2748,7 @@ function atualizarConfigProfissionalDia(
                   <label>
                     <span>Status</span>
                     <select value={form.status} onChange={(event) => setForm((atual) => ({ ...atual, status: event.target.value as AgendaEventoUI["status"] }))}>
-                      {["Agendado", "Confirmado", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"].map((status) => (
+                      {STATUS_AGENDA_OPCOES.map((status) => (
                         <option key={status} value={status}>{status}</option>
                       ))}
                     </select>

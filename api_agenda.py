@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import sqlite3
 from typing import Literal
@@ -36,6 +36,18 @@ def gerar_slots_quinze(inicio: str = "07:00", fim: str = "20:00") -> list[str]:
     return slots
 
 
+def data_br_para_date(data_br: str) -> datetime.date:
+    return datetime.strptime(normalizar_data_agenda(data_br), "%d/%m/%Y").date()
+
+
+def data_date_para_br(data_valor: datetime.date) -> str:
+    return data_valor.strftime("%d/%m/%Y")
+
+
+def adicionar_dias_data_br(data_br: str, dias: int) -> str:
+    return data_date_para_br(data_br_para_date(data_br) + timedelta(days=dias))
+
+
 def colunas_tabela(conn: sqlite3.Connection, nome_tabela: str) -> set[str]:
     return {row["name"] for row in conn.execute(f"PRAGMA table_info({nome_tabela})")}
 
@@ -54,6 +66,10 @@ def garantir_colunas_agenda_api() -> None:
         garantir_coluna(conn, "agendamentos", "status_origem TEXT")
         garantir_coluna(conn, "agendamentos", "status_motivo TEXT")
         garantir_coluna(conn, "agendamentos", "status_usuario TEXT")
+        garantir_coluna(conn, "agendamentos", "recorrencia_grupo TEXT")
+        garantir_coluna(conn, "agendamentos", "recorrencia_intervalo_dias INTEGER")
+        garantir_coluna(conn, "agendamentos", "recorrencia_total INTEGER")
+        garantir_coluna(conn, "agendamentos", "recorrencia_indice INTEGER")
         conn.commit()
     finally:
         conn.close()
@@ -92,6 +108,7 @@ def normalizar_status_agendamento(valor: object) -> str:
         "scheduled": "Agendado",
         "confirmado": "Confirmado",
         "confirmed": "Confirmado",
+        "aguardando": "Aguardando",
         "em espera": "Em espera",
         "pending": "Em espera",
         "em atendimento": "Em atendimento",
@@ -176,6 +193,10 @@ class AgendamentoPayload(BaseModel):
     ordemServicoId: int | None = None
     ordemServicoDocumentoNome: str | None = None
     elementoArcada: str | None = None
+    recorrenciaGrupo: str | None = None
+    recorrenciaIntervaloDias: int | None = None
+    recorrenciaTotal: int | None = None
+    recorrenciaIndice: int | None = None
     procedimentos: list[ProcedimentoPayload] = Field(default_factory=list)
 
 
@@ -216,7 +237,15 @@ class AgendamentoResposta(BaseModel):
     ordemServicoId: int | None = None
     ordemServicoDocumentoNome: str | None = None
     elementoArcada: str | None = None
+    recorrenciaGrupo: str | None = None
+    recorrenciaIntervaloDias: int | None = None
+    recorrenciaTotal: int | None = None
+    recorrenciaIndice: int | None = None
     historico: list[AgendamentoHistoricoItem] = Field(default_factory=list)
+
+
+class AgendamentosSerieResposta(BaseModel):
+    agendamentos: list[AgendamentoResposta]
 
 
 class PacienteBuscaItem(BaseModel):
@@ -709,6 +738,10 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         ordemServicoId=row_val(row, "ordem_servico_id"),
         ordemServicoDocumentoNome=row_val(row, "ordem_servico_documento_nome", "") or "",
         elementoArcada=row_val(row, "elemento_arcada", "") or "",
+        recorrenciaGrupo=row_val(row, "recorrencia_grupo", "") or "",
+        recorrenciaIntervaloDias=row_val(row, "recorrencia_intervalo_dias"),
+        recorrenciaTotal=row_val(row, "recorrencia_total"),
+        recorrenciaIndice=row_val(row, "recorrencia_indice"),
         historico=carregar_historico_agendamento(conn, row["id"]),
     )
 
@@ -803,6 +836,7 @@ def garantir_paciente_minimo(
 def buscar_disponibilidade(
     profissional_id: int = Query(..., alias="profissional_id"),
     data: str = Query(...),
+    excluir_agendamento_id: int | None = Query(None, alias="excluir_agendamento_id"),
 ):
     data_consulta = normalizar_data_agenda(data)
     conn = conectar()
@@ -817,7 +851,12 @@ def buscar_disponibilidade(
             """,
             (profissional_id,),
         ).fetchall()
-        rows_filtrados = [row for row in rows if normalizar_data_agenda(row_val(row, obter_data_coluna_agenda(), "")) == data_consulta]
+        rows_filtrados = [
+            row
+            for row in rows
+            if normalizar_data_agenda(row_val(row, obter_data_coluna_agenda(), "")) == data_consulta
+            and (not excluir_agendamento_id or int(row_val(row, "id", 0) or 0) != int(excluir_agendamento_id))
+        ]
 
         ocupados: list[str] = []
         for row in rows_filtrados:
@@ -1136,6 +1175,10 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             "ordem_servico_id",
             "ordem_servico_documento_nome",
             "elemento_arcada",
+            "recorrencia_grupo",
+            "recorrencia_intervalo_dias",
+            "recorrencia_total",
+            "recorrencia_indice",
             "status",
             "criado_por",
             "criado_em",
@@ -1166,6 +1209,10 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             payload.ordemServicoId,
             str(payload.ordemServicoDocumentoNome or "").strip(),
             str(payload.elementoArcada or "").strip(),
+            str(payload.recorrenciaGrupo or "").strip(),
+            int(payload.recorrenciaIntervaloDias or 0),
+            int(payload.recorrenciaTotal or 0),
+            int(payload.recorrenciaIndice or 0),
             normalizar_status_agendamento(payload.status or "Agendado"),
             usuario,
             momento,
@@ -1241,6 +1288,167 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
         conn.close()
 
 
+@app.put("/api/agenda/agendamentos/{agendamento_id}/serie", response_model=AgendamentosSerieResposta)
+def atualizar_agendamento_serie(agendamento_id: int, payload: AgendamentoPayload, request: Request):
+    data_coluna_agenda = obter_data_coluna_agenda()
+    conn = conectar()
+    try:
+        base = conn.execute("SELECT * FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
+        if not base:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+        grupo = str(row_val(base, "recorrencia_grupo", "") or "").strip()
+        if not grupo:
+            return AgendamentosSerieResposta(agendamentos=[atualizar_agendamento(agendamento_id, payload, request)])
+
+        paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
+        usuario = usuario_request(request)
+        momento = agora_br()
+        primeiro_procedimento = payload.procedimentos[0].nome if payload.procedimentos else ""
+        contrato_id = next((item.contratoId for item in payload.procedimentos if item.contratoId), None)
+        origem_contrato = 1 if contrato_id else 0
+        delta_dias = (data_br_para_date(payload.data) - data_br_para_date(row_val(base, data_coluna_agenda, payload.data))).days
+
+        rows = conn.execute(
+            f"SELECT * FROM agendamentos WHERE COALESCE(recorrencia_grupo, '')=? ORDER BY {data_coluna_agenda}, hora_inicio, id",
+            (grupo,),
+        ).fetchall()
+
+        for row in rows:
+            nova_data = adicionar_dias_data_br(row_val(row, data_coluna_agenda, payload.data), delta_dias)
+            if existe_conflito_excluindo(conn, int(row["id"]), payload.profissionalId, nova_data, payload.horaInicio, payload.horaFim):
+                raise HTTPException(status_code=409, detail=f"Conflito de horário na série para {nova_data}.")
+
+        for row in rows:
+            row_id = int(row["id"])
+            nova_data = adicionar_dias_data_br(row_val(row, data_coluna_agenda, payload.data), delta_dias)
+            consultorio = definir_consultorio_agendamento(
+                conn,
+                payload.profissionalId,
+                nova_data,
+                payload.horaInicio,
+                payload.horaFim,
+                ignorar_agendamento_id=row_id,
+            )
+            procedimentos_atuais = carregar_procedimentos_agendamento(conn, row_id)
+            payload_item = AgendamentoPayload(
+                **{
+                    **payload.model_dump(),
+                    "data": nova_data,
+                    "recorrenciaGrupo": grupo,
+                    "recorrenciaIntervaloDias": int(row_val(row, "recorrencia_intervalo_dias", 0) or 0),
+                    "recorrenciaTotal": int(row_val(row, "recorrencia_total", 0) or 0),
+                    "recorrenciaIndice": int(row_val(row, "recorrencia_indice", 0) or 0),
+                }
+            )
+            descricao_alteracoes = descrever_alteracoes_agendamento(row, payload_item, procedimentos_atuais)
+            if normalizar_consultorio(row_val(row, "consultorio", "")) != consultorio:
+                alteracao_sala = f"sala: {normalizar_consultorio(row_val(row, 'consultorio', '')) or '-'} -> {consultorio or '-'}"
+                descricao_alteracoes = f"{descricao_alteracoes}; {alteracao_sala}" if descricao_alteracoes else alteracao_sala
+
+            conn.execute(
+                f"""
+                UPDATE agendamentos
+                SET paciente_id=?,
+                    paciente_nome=?,
+                    nome_paciente_snapshot=?,
+                    telefone_snapshot=?,
+                    profissional=?,
+                    profissional_id=?,
+                    tipo_atendimento_id=?,
+                    tipo_atendimento_nome_snapshot=?,
+                    procedimento_nome_snapshot=?,
+                    procedimento=?,
+                    contrato_id=?,
+                    origem_contrato=?,
+                    {data_coluna_agenda}=?,
+                    hora_inicio=?,
+                    hora_fim=?,
+                    duracao_minutos=?,
+                    consultorio=?,
+                    observacao=?,
+                    observacoes=?,
+                    trabalho_tipo=?,
+                    ordem_servico_id=?,
+                    ordem_servico_documento_nome=?,
+                    elemento_arcada=?,
+                    status=?,
+                    atualizado_por=?,
+                    atualizado_em=?
+                WHERE id=?
+                """,
+                (
+                    paciente_id_final,
+                    payload.nomePaciente,
+                    payload.nomePaciente,
+                    payload.telefone or "",
+                    payload.profissionalNome,
+                    payload.profissionalId,
+                    payload.tipoAtendimentoId,
+                    payload.tipoAtendimentoNome,
+                    primeiro_procedimento,
+                    primeiro_procedimento,
+                    contrato_id,
+                    origem_contrato,
+                    nova_data,
+                    payload.horaInicio,
+                    payload.horaFim,
+                    payload.duracaoMinutos,
+                    consultorio,
+                    payload.observacoes or "",
+                    payload.observacoes or "",
+                    str(payload.trabalhoTipo or "").strip(),
+                    payload.ordemServicoId,
+                    str(payload.ordemServicoDocumentoNome or "").strip(),
+                    str(payload.elementoArcada or "").strip(),
+                    normalizar_status_agendamento(payload.status or "Agendado"),
+                    usuario,
+                    momento,
+                    row_id,
+                ),
+            )
+            conn.execute("DELETE FROM agendamento_procedimentos WHERE agendamento_id=?", (row_id,))
+            for procedimento in payload.procedimentos:
+                conn.execute(
+                    """
+                    INSERT INTO agendamento_procedimentos (
+                      agendamento_id,
+                      procedimento_id,
+                      procedimento_nome_snapshot,
+                      valor_snapshot,
+                      duracao_snapshot_minutos,
+                      origem_contrato,
+                      contrato_id
+                    )
+                    VALUES (?, ?, ?, 0, ?, ?, ?)
+                    """,
+                    (
+                        row_id,
+                        procedimento.procedimentoId,
+                        procedimento.nome,
+                        procedimento.duracaoMinutos or payload.duracaoMinutos,
+                        1 if procedimento.origem == "contrato" else 0,
+                        procedimento.contratoId,
+                    ),
+                )
+            if descricao_alteracoes:
+                registrar_historico_agendamento(conn, row_id, "MODIFICADO", f"Série atualizada: {descricao_alteracoes}", usuario, momento)
+
+        conn.commit()
+        atualizados = [
+            mapear_agendamento(conn, conn.execute("SELECT * FROM agendamentos WHERE id=?", (int(row["id"]),)).fetchone())
+            for row in rows
+        ]
+        registrar_acao_agendamento(
+            usuario,
+            acao="Edicao",
+            rota=f"/api/agenda/agendamentos/{agendamento_id}/serie",
+            info=f"Série {grupo} atualizada a partir do agendamento {agendamento_id}",
+        )
+        return AgendamentosSerieResposta(agendamentos=atualizados)
+    finally:
+        conn.close()
+
+
 @app.get("/api/agenda/agendamentos/{agendamento_id}", response_model=AgendamentoResposta)
 def detalhar_agendamento(agendamento_id: int):
     conn = conectar()
@@ -1311,6 +1519,10 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 ordem_servico_id=?,
                 ordem_servico_documento_nome=?,
                 elemento_arcada=?,
+                recorrencia_grupo=?,
+                recorrencia_intervalo_dias=?,
+                recorrencia_total=?,
+                recorrencia_indice=?,
                 status=?,
                 atualizado_por=?,
                 atualizado_em=?
@@ -1340,6 +1552,10 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 payload.ordemServicoId,
                 str(payload.ordemServicoDocumentoNome or "").strip(),
                 str(payload.elementoArcada or "").strip(),
+                str(payload.recorrenciaGrupo or row_val(existente, "recorrencia_grupo", "") or "").strip(),
+                int(payload.recorrenciaIntervaloDias or row_val(existente, "recorrencia_intervalo_dias", 0) or 0),
+                int(payload.recorrenciaTotal or row_val(existente, "recorrencia_total", 0) or 0),
+                int(payload.recorrenciaIndice or row_val(existente, "recorrencia_indice", 0) or 0),
                 normalizar_status_agendamento(payload.status or "Agendado"),
                 usuario,
                 momento,

@@ -37,9 +37,21 @@ type AgendaConfigUsuario = {
   configuracaoDias: Record<string, AgendaDiaUsuario>;
 };
 
+type PadraoAcessoCargo = {
+  perfil: "Administrador" | "Usuario";
+  agendaEscopo: AgendaEscopo;
+  modulos: Record<string, NivelPermissao>;
+  pacientesAbas: Record<string, NivelPermissao>;
+};
+
 const MODULOS_BASE = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"] as const;
 const ABAS_PACIENTES = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"] as const;
 const OPCOES_PERMISSAO: NivelPermissao[] = ["Sem acesso", "Visualizacao", "Edicao"];
+const CHAVES_PADRAO_CARGO: Record<CargoUsuario, string> = {
+  Administrador: "soulsul_padrao_administrador",
+  Profissional: "soulsul_padrao_profissional",
+  Recepcionista: "soulsul_padrao_recepcionista"
+};
 function criarConfiguracaoDiasPadrao() {
   return Object.fromEntries(
     [0, 1, 2, 3, 4, 5, 6].map((dia) => [
@@ -133,6 +145,34 @@ function fallbackPermissoesRecepcionista() {
   };
 }
 
+function padraoFallbackPorCargo(cargo: CargoUsuario): PadraoAcessoCargo {
+  if (cargo === "Administrador") {
+    return {
+      perfil: "Administrador" as const,
+      agendaEscopo: "Toda a clinica" as const,
+      modulos: Object.fromEntries(MODULOS_BASE.map((modulo) => [modulo, "Edicao"])) as Record<string, NivelPermissao>,
+      pacientesAbas: Object.fromEntries(ABAS_PACIENTES.map((aba) => [aba, "Edicao"])) as Record<string, NivelPermissao>
+    };
+  }
+  return cargo === "Profissional" ? fallbackPermissoesProfissional() : fallbackPermissoesRecepcionista();
+}
+
+function lerPadraoCargoPersonalizado(cargo: CargoUsuario): PadraoAcessoCargo | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const bruto = window.localStorage.getItem(CHAVES_PADRAO_CARGO[cargo]);
+    if (!bruto) return null;
+    return JSON.parse(bruto) as PadraoAcessoCargo;
+  } catch {
+    return null;
+  }
+}
+
+function salvarPadraoCargoPersonalizado(cargo: CargoUsuario, padrao: PadraoAcessoCargo) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CHAVES_PADRAO_CARGO[cargo], JSON.stringify(padrao));
+}
+
 function mapUsuarioApi(usuario: UsuarioResumoApi): UsuarioPermissao {
   const modulos = Object.fromEntries(
     MODULOS_BASE.map((modulo) => [modulo, (usuario.modulos?.[modulo] as NivelPermissao) || "Sem acesso"])
@@ -160,21 +200,8 @@ function cargoPodeTerAgenda(cargo: CargoUsuario) {
   return cargo === "Profissional" || cargo === "Administrador";
 }
 
-function obterPadraoPorCargo(cargo: CargoUsuario, usuarios: UsuarioPermissao[]) {
-  if (cargo === "Administrador") {
-    return {
-      perfil: "Administrador" as const,
-      agendaEscopo: "Toda a clinica" as const,
-      modulos: Object.fromEntries(MODULOS_BASE.map((modulo) => [modulo, "Edicao"])) as Record<string, NivelPermissao>,
-      pacientesAbas: Object.fromEntries(ABAS_PACIENTES.map((aba) => [aba, "Edicao"])) as Record<string, NivelPermissao>
-    };
-  }
-
-  if (cargo === "Profissional") {
-    return fallbackPermissoesProfissional();
-  }
-
-  return fallbackPermissoesRecepcionista();
+function obterPadraoPorCargo(cargo: CargoUsuario, _usuarios: UsuarioPermissao[]) {
+  return lerPadraoCargoPersonalizado(cargo) || padraoFallbackPorCargo(cargo);
 }
 
 export function UsuariosPage() {
@@ -294,6 +321,17 @@ export function UsuariosPage() {
         ...parcial
       }
     }));
+  }
+
+  function salvarUsuarioSelecionadoComoPadrao(cargo: CargoUsuario) {
+    if (!usuarioSelecionado) return;
+    salvarPadraoCargoPersonalizado(cargo, {
+      perfil: cargo === "Administrador" ? "Administrador" : "Usuario",
+      agendaEscopo: usuarioSelecionado.agendaEscopo,
+      modulos: { ...usuarioSelecionado.modulos },
+      pacientesAbas: { ...usuarioSelecionado.pacientesAbas }
+    });
+    setFeedbackPerfil(`Padrao de ${cargo.toLowerCase()} salvo com sucesso.`);
   }
 
   function aplicarPadraoCargoNoUsuario(usuarioId: number, cargo: CargoUsuario) {
@@ -712,6 +750,15 @@ export function UsuariosPage() {
                   </button>
                   <button type="button" className="ghost-action" onClick={() => aplicarPadraoCargoNoUsuario(usuarioSelecionado.id, "Recepcionista")}>
                     Aplicar padrao recepcionista
+                  </button>
+                  <button type="button" className="ghost-action" onClick={() => salvarUsuarioSelecionadoComoPadrao("Profissional")}>
+                    Salvar como padrao profissional
+                  </button>
+                  <button type="button" className="ghost-action" onClick={() => salvarUsuarioSelecionadoComoPadrao("Recepcionista")}>
+                    Salvar como padrao recepcionista
+                  </button>
+                  <button type="button" className="ghost-action" onClick={() => salvarUsuarioSelecionadoComoPadrao("Administrador")}>
+                    Salvar como padrao adm
                   </button>
                   <button
                     type="button"

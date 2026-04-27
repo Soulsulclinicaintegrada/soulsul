@@ -523,6 +523,10 @@ def inicializar_banco():
             trabalho_tipo TEXT,
             ordem_servico_id INTEGER,
             ordem_servico_documento_nome TEXT,
+            recorrencia_grupo TEXT,
+            recorrencia_intervalo_dias INTEGER,
+            recorrencia_total INTEGER,
+            recorrencia_indice INTEGER,
             criado_por TEXT,
             criado_em TEXT,
             atualizado_em TEXT
@@ -935,6 +939,10 @@ def inicializar_banco():
     garantir_coluna(conn, "agendamentos", "criado_em TEXT")
     garantir_coluna(conn, "agendamentos", "atualizado_em TEXT")
     garantir_coluna(conn, "agendamentos", "atualizado_por TEXT")
+    garantir_coluna(conn, "agendamentos", "recorrencia_grupo TEXT")
+    garantir_coluna(conn, "agendamentos", "recorrencia_intervalo_dias INTEGER")
+    garantir_coluna(conn, "agendamentos", "recorrencia_total INTEGER")
+    garantir_coluna(conn, "agendamentos", "recorrencia_indice INTEGER")
     garantir_coluna(conn, "profissionais", "nome TEXT")
     garantir_coluna(conn, "profissionais", "especialidade TEXT")
     garantir_coluna(conn, "profissionais", "cor TEXT")

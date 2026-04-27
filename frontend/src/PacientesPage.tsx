@@ -44,6 +44,7 @@ import logoSoulSul from "./assets/logo-soul-sul.png";
 
 type PacientesPageProps = {
   busca: string;
+  onLimparBusca?: () => void;
   pacientesAbas?: Record<string, string>;
   navegacao?: {
     pacienteId?: number;
@@ -794,7 +795,7 @@ function mapProcedimentoCatalogoApi(item: ProcedimentoResumoApi): ProcedimentoCa
   };
 }
 
-export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: PacientesPageProps) {
+export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas = {} }: PacientesPageProps) {
   const [pacientes, setPacientes] = useState<PacienteResumoApi[]>([]);
   const [pacienteAtivoId, setPacienteAtivoId] = useState<number | null>(null);
   const [ficha, setFicha] = useState<FichaPacienteApi | null>(null);
@@ -1059,10 +1060,11 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
       setFicha(null);
     } else if (navegacao.pacienteId) {
       setPacienteAtivoId(navegacao.pacienteId);
+      onLimparBusca?.();
     }
     if (navegacao.abrirOrcamento) setAbaPrincipal("Comercial");
     else if (navegacao.abaPrincipal) setAbaPrincipal(navegacao.abaPrincipal);
-  }, [navegacao]);
+  }, [navegacao, onLimparBusca]);
 
   useEffect(() => {
     if (acessoAbaAtual > 0) return;
@@ -2148,7 +2150,10 @@ export function PacientesPage({ busca, navegacao, pacientesAbas = {} }: Paciente
               key={paciente.id}
               type="button"
               className={`patient-list-row patient-list-row-compact${paciente.id === pacienteAtivoId ? " active" : ""}`}
-              onClick={() => setPacienteAtivoId(paciente.id)}
+              onClick={() => {
+                setPacienteAtivoId(paciente.id);
+                onLimparBusca?.();
+              }}
             >
               <div className="patient-list-main">
                 <strong>{paciente.nome}</strong>
