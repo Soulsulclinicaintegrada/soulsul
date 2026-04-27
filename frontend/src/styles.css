@@ -2630,6 +2630,7 @@ textarea::placeholder {
   gap: 4px;
   padding: 14px 16px;
   min-width: 0;
+  align-content: start;
 }
 
 .budget-preview-item-main span {
@@ -3083,7 +3084,7 @@ textarea::placeholder {
   gap: 8px;
   padding: 4px 0;
   border-top: 1px dashed rgba(188, 145, 85, 0.12);
-  min-width: 520px;
+  min-width: 0;
 }
 
 .budget-preview-detail-row.muted {
@@ -5381,6 +5382,39 @@ textarea::placeholder {
   .agenda-detail-popover {
     position: static;
     width: auto;
+  }
+
+  .budget-preview-item {
+    grid-template-columns: 1fr;
+  }
+
+  .budget-preview-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  .budget-preview-value-actions {
+    justify-content: flex-end;
+  }
+
+  .budget-preview-detail-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .budget-preview-region-name,
+  .budget-preview-faces,
+  .budget-preview-value-input {
+    grid-column: 2;
+  }
+
+  .budget-preview-value-input {
+    width: min(100%, 150px);
+    justify-self: end;
   }
 }
 
