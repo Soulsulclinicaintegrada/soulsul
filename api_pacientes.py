@@ -4581,6 +4581,42 @@ def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> Non
     pg_num_type.set(qn("w:start"), str(reiniciar_em))
 
 
+def substituir_total_paginas_por_secao(container) -> None:
+    if qn is None:
+        return
+    for paragrafo in iterar_paragrafos_doc(container):
+        for run in paragrafo.runs:
+            for child in run._element.iter():
+                if child.tag == qn("w:instrText") and child.text and "NUMPAGES" in child.text.upper():
+                    child.text = re.sub(r"NUMPAGES", "SECTIONPAGES", child.text, flags=re.IGNORECASE)
+
+
+def reiniciar_numeracao_paginas_todas_as_secoes(doc, reiniciar_em: int = 1) -> None:
+    if OxmlElement is None or qn is None:
+        return
+    for secao in getattr(doc, "sections", []):
+        secao.different_first_page_header_footer = False
+        sect_pr = getattr(secao, "_sectPr", None)
+        if sect_pr is None:
+            continue
+        pg_num_type = sect_pr.find(qn("w:pgNumType"))
+        if pg_num_type is None:
+            pg_num_type = OxmlElement("w:pgNumType")
+            sect_pr.append(pg_num_type)
+        pg_num_type.set(qn("w:start"), str(reiniciar_em))
+        substituir_total_paginas_por_secao(secao.header)
+        substituir_total_paginas_por_secao(secao.footer)
+
+
+def configurar_numeracao_paginas_contrato(doc) -> None:
+    for marcador in [
+        "DECLARACAO DE CONSENTIMENTO",
+        "TERMO DE CONSENTIMENTO ESCLARECIDO",
+    ]:
+        inserir_secao_antes_titulo(doc, marcador, 1)
+    reiniciar_numeracao_paginas_todas_as_secoes(doc, 1)
+
+
 def atualizar_datas_cidade_contrato(doc, data_referencia: date | None = None) -> None:
     texto_data = f"Campos dos Goytacazes, {formatar_data_extenso_local(data_referencia)}."
     texto_data_avulsa = formatar_data_extenso_local(data_referencia)
@@ -5056,6 +5092,7 @@ def gerar_documento_contrato(
         executar_ajuste_contrato("normalizar_bloco_consentimento", lambda: normalizar_bloco_consentimento(doc, data_documento))
         executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))
         executar_ajuste_contrato("garantir_bloco_final_assinaturas", lambda: garantir_bloco_final_assinaturas(doc, assinatura, data_documento))
+        executar_ajuste_contrato("configurar_numeracao_paginas_contrato", lambda: configurar_numeracao_paginas_contrato(doc))
         executar_ajuste_contrato("aplicar_fonte_times_new_roman", lambda: aplicar_fonte_times_new_roman(doc))
         doc.save(caminho)
         return caminho
