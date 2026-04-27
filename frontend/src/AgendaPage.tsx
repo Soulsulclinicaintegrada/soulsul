@@ -9,7 +9,6 @@
   CircleDollarSign,
   ClipboardList,
   FileText,
-  Pencil,
   Plus,
   Printer,
   RefreshCcw,
@@ -1855,9 +1854,6 @@ function atualizarConfigProfissionalDia(
         const semEditado = agendamentoEditandoId ? atual.filter((item) => item.id !== agendamentoEditandoId) : atual;
         return [...semEditado, ...eventosPersistidos];
       });
-      if (agendamentoEditandoId) {
-        selecionarDataAgenda(form.data);
-      }
       setAgendamentoEditandoId(null);
       setEventoAtivoId(null);
       setDetalhePosicao(null);
@@ -2593,9 +2589,6 @@ function atualizarConfigProfissionalDia(
             <button type="button" className="icon-action" onClick={() => { setEventoAtivoId(null); setDetalhePosicao(null); }}><X size={16} /></button>
           </div>
           <div className="agenda-detail-actions">
-            <button type="button" className="agenda-detail-action" onClick={() => void abrirEdicaoAgendamento(detalheAtivo)} title="Editar agendamento">
-              <Pencil size={16} />
-            </button>
             <button type="button" className="agenda-detail-action" onClick={() => abrirPacientePorDestino("cadastro")} title="Abrir paciente">
               <UserRound size={16} />
             </button>
