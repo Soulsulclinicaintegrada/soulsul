@@ -5,6 +5,7 @@ import {
   painelDashboardApi,
   type ContaPagarResumoApi,
   type DashboardCalendarioPagamentoItemApi,
+  type DashboardIndicadorApi,
   type DashboardPainelApi
 } from "./pacientesApi";
 
@@ -251,6 +252,62 @@ function PagamentoDiaModal({
   );
 }
 
+function IndicadorDetalheModal({
+  indicador,
+  onFechar
+}: {
+  indicador: DashboardIndicadorApi;
+  onFechar: () => void;
+}) {
+  const itens = indicador.detalhamentos || [];
+  return (
+    <div className="overlay" role="presentation" onClick={onFechar}>
+      <div className="modal-shell dashboard-payment-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <span className="panel-kicker">Dashboard</span>
+            <h2>{indicador.titulo}</h2>
+            <span className="panel-meta">{indicador.detalhe || "Detalhamento do indicador"}</span>
+          </div>
+          <button type="button" className="icon-action" onClick={onFechar} aria-label="Fechar detalhamento do indicador">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="modal-body dashboard-payment-modal-body">
+          <div className="dashboard-payment-modal-summary">
+            <div className="summary-row">
+              <span>Valor do card</span>
+              <strong>{indicador.valor}</strong>
+            </div>
+            <div className="summary-row">
+              <span>Itens</span>
+              <strong>{itens.length}</strong>
+            </div>
+          </div>
+          <div className="dashboard-payment-list">
+            {itens.length ? (
+              itens.map((item, indice) => (
+                <article className="dashboard-payment-entry" key={`${indicador.chave}-${indice}-${item.titulo}`}>
+                  <div className="dashboard-payment-entry-main">
+                    <strong>{item.titulo || "Sem título"}</strong>
+                    <span>{item.subtitulo || item.meta || "Sem detalhe adicional"}</span>
+                  </div>
+                  <div className="dashboard-payment-entry-meta">
+                    <strong>{item.valor || "-"}</strong>
+                    <small>{item.status || item.meta || ""}</small>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="dashboard-feedback">Nenhum detalhamento disponível para este indicador.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const [painel, setPainel] = useState<DashboardPainelApi>(DASHBOARD_VAZIO);
   const [carregando, setCarregando] = useState(true);
@@ -258,6 +315,7 @@ export function DashboardPage() {
   const [metaEditavel, setMetaEditavel] = useState("");
   const [salvandoMeta, setSalvandoMeta] = useState(false);
   const [pagamentoDiaAtivo, setPagamentoDiaAtivo] = useState<DashboardCalendarioPagamentoItemApi | null>(null);
+  const [indicadorAtivo, setIndicadorAtivo] = useState<DashboardIndicadorApi | null>(null);
 
   async function carregar() {
     setCarregando(true);
@@ -328,7 +386,7 @@ export function DashboardPage() {
     <>
       <section className="kpi-grid">
         {painel.indicadores.map((card) => (
-          <article className="kpi-card" key={card.chave}>
+          <article className="kpi-card dashboard-kpi-clickable" key={card.chave} onDoubleClick={() => setIndicadorAtivo(card)}>
             <div className="kpi-icon">{iconeIndicador(card.chave)}</div>
             <div className="kpi-title">{card.titulo}</div>
             <div className="kpi-value">{card.valor}</div>
@@ -438,6 +496,7 @@ export function DashboardPage() {
       </section>
 
       {pagamentoDiaAtivo ? <PagamentoDiaModal item={pagamentoDiaAtivo} onFechar={() => setPagamentoDiaAtivo(null)} /> : null}
+      {indicadorAtivo ? <IndicadorDetalheModal indicador={indicadorAtivo} onFechar={() => setIndicadorAtivo(null)} /> : null}
     </>
   );
 }

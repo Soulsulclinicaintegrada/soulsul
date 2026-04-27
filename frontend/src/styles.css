@@ -632,6 +632,14 @@ textarea::placeholder {
   padding: 24px;
 }
 
+.dashboard-kpi-clickable {
+  cursor: pointer;
+}
+
+.dashboard-kpi-clickable:active {
+  transform: scale(0.995);
+}
+
 .kpi-icon {
   width: 42px;
   height: 42px;

@@ -732,6 +732,15 @@ class DashboardIndicadorResposta(BaseModel):
     titulo: str
     valor: str
     detalhe: str = ""
+    detalhamentos: list["DashboardIndicadorDetalheItemResposta"] = Field(default_factory=list)
+
+
+class DashboardIndicadorDetalheItemResposta(BaseModel):
+    titulo: str
+    subtitulo: str = ""
+    meta: str = ""
+    valor: str = ""
+    status: str = ""
 
 
 class DashboardResumoHojeResposta(BaseModel):
@@ -3059,6 +3068,15 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         FROM contratos
         """
     ).fetchall()
+    pacientes_nome_rows = conn.execute("SELECT id, nome, prontuario FROM pacientes").fetchall()
+    pacientes_nome_map = {
+        int(row["id"]): {
+            "nome": str(row["nome"] or "").strip(),
+            "prontuario": str(row["prontuario"] or "").strip(),
+        }
+        for row in pacientes_nome_rows
+        if row["id"] is not None
+    }
     agendamentos_mes_rows = conn.execute(
         """
         SELECT paciente_id, status, data
@@ -3096,14 +3114,46 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             continue
         vendas_mes_rows.append(row)
 
+    detalhes_vendas_mes = [
+        DashboardIndicadorDetalheItemResposta(
+            titulo=(pacientes_nome_map.get(int(row["paciente_id"])) or {}).get("nome") or f"Contrato #{int(row['id'])}",
+            subtitulo=f"Fechado em {formatar_data_br(data_ref)}",
+            meta=((pacientes_nome_map.get(int(row["paciente_id"])) or {}).get("prontuario") or f"Contrato #{int(row['id'])}") if row["paciente_id"] is not None else f"Contrato #{int(row['id'])}",
+            valor=formatar_moeda_br(float(row["valor_total"] or 0)),
+            status=str(row["status"] or ""),
+        )
+        for row in sorted(
+            vendas_mes_rows,
+            key=lambda item: parse_data_contrato(str(item["data_aprovacao"] or "")) or parse_data_contrato(str(item["data_criacao"] or "")) or date.min,
+            reverse=True,
+        )
+    ]
+
     vendas_mes_qtd = len(vendas_mes_rows)
     vendas_mes_valor = sum(float(row["valor_total"] or 0) for row in vendas_mes_rows)
 
-    a_receber_hoje = sum(
-        float(row["valor"] or 0)
+    recebiveis_hoje_rows = [
+        row
         for row in recebiveis_rows
         if str(row["vencimento"] or "") == hoje_iso and normalizar_texto(row["status"]) in {"aberto", "atrasado"}
+    ]
+    a_receber_hoje = sum(
+        float(row["valor"] or 0)
+        for row in recebiveis_hoje_rows
     )
+    detalhes_receber_hoje = [
+        DashboardIndicadorDetalheItemResposta(
+            titulo=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
+            subtitulo=f"Vencimento {formatar_data_br(parse_data_contrato(row['vencimento']))}",
+            meta=f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}" if int(row["total_parcelas"] or 0) > 0 else str(row["forma_pagamento"] or ""),
+            valor=formatar_moeda_br(float(row["valor"] or 0)),
+            status=str(row["status"] or ""),
+        )
+        for row in sorted(
+            recebiveis_hoje_rows,
+            key=lambda item: (str(item["paciente_nome"] or "").lower(), int(item["id"] or 0)),
+        )
+    ]
     inadimplencia_rows = [
         row
         for row in recebiveis_rows
@@ -3111,6 +3161,23 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     ]
     inadimplencia_qtd = len(inadimplencia_rows)
     inadimplencia_valor = sum(float(row["valor"] or 0) for row in inadimplencia_rows)
+    detalhes_inadimplencia = [
+        DashboardIndicadorDetalheItemResposta(
+            titulo=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
+            subtitulo=f"Vencimento {formatar_data_br(parse_data_contrato(row['vencimento']))}",
+            meta=f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}" if int(row["total_parcelas"] or 0) > 0 else str(row["forma_pagamento"] or ""),
+            valor=formatar_moeda_br(float(row["valor"] or 0)),
+            status=str(row["status"] or ""),
+        )
+        for row in sorted(
+            inadimplencia_rows,
+            key=lambda item: (
+                parse_data_contrato(item["vencimento"]) or date.max,
+                str(item["paciente_nome"] or "").lower(),
+                int(item["id"] or 0),
+            ),
+        )
+    ]
 
     ids_leads = {
         int(row["paciente_id"])
@@ -3168,24 +3235,28 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             titulo="Vendas no mês",
             valor=str(vendas_mes_qtd),
             detalhe=f"{meses[mes_atual - 1]} de {ano_atual}",
+            detalhamentos=detalhes_vendas_mes,
         ),
         DashboardIndicadorResposta(
             chave="vendas_mes_valor",
             titulo="Quanto em dinheiro foi vendido",
             valor=formatar_moeda_br(vendas_mes_valor),
             detalhe=f"Total fechado em {meses[mes_atual - 1]}",
+            detalhamentos=detalhes_vendas_mes,
         ),
         DashboardIndicadorResposta(
             chave="a_receber_hoje",
             titulo="A receber no dia",
             valor=formatar_moeda_br(a_receber_hoje),
             detalhe=f"Vencimentos de {formatar_data_br(hoje)}",
+            detalhamentos=detalhes_receber_hoje,
         ),
         DashboardIndicadorResposta(
             chave="inadimplencia",
             titulo="Inadimplências",
             valor=str(inadimplencia_qtd),
             detalhe=formatar_moeda_br(inadimplencia_valor),
+            detalhamentos=detalhes_inadimplencia,
         ),
     ]
 

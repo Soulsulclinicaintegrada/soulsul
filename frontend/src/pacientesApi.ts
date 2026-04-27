@@ -450,6 +450,13 @@ export type DashboardIndicadorApi = {
   titulo: string;
   valor: string;
   detalhe?: string;
+  detalhamentos?: Array<{
+    titulo: string;
+    subtitulo?: string;
+    meta?: string;
+    valor?: string;
+    status?: string;
+  }>;
 };
 
 export type DashboardResumoHojeApi = {
