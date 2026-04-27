@@ -1598,7 +1598,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
           tabela: detalhe.tabela || TABELAS_ORCAMENTO[0],
           clinica: detalhe.clinica || CLINICAS_ORCAMENTO[0],
           criadoPor: detalhe.criadoPor || CRIADORES_ORCAMENTO[0],
-          expandido: false,
+          expandido: true,
           regioes: item.regioes.map((regiao, regiaoIndex) => ({
             id: contratoId * 100000 + index * 100 + regiaoIndex + 1,
             nome: regiao.regiao,
@@ -1992,7 +1992,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         tabela: orcamentoDraft.tabela,
         clinica: orcamentoDraft.clinica,
         criadoPor: orcamentoDraft.criadoPor,
-        expandido: false,
+        expandido: true,
         regioes: regioes.map((regiao, index) => ({
           id: Date.now() + index + 1,
           nome: regiao,
