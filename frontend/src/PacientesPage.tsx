@@ -3738,32 +3738,66 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   <div className="budget-preview-body">
                     {procedimentosOrcamento.length ? procedimentosOrcamento.map((item) => (
                       <article key={item.id} className={`budget-preview-item${item.regioes.every((regiao) => !regiao.ativo) ? " ghost" : ""}`}>
-                        <div className="budget-preview-item-main budget-preview-item-main-rich">
-                          <div className="budget-preview-item-top">
-                            <label className="budget-preview-check">
-                              <input
-                                type="checkbox"
-                                checked={item.regioes.length > 0 && item.regioes.every((regiao) => regiao.ativo)}
-                                onChange={() => alternarTodasRegioes(item.id)}
-                              />
-                            </label>
-                            <button type="button" className="budget-preview-expand" onClick={() => alternarProcedimentoExpandido(item.id)}>
-                              <ChevronDown size={16} className={item.expandido ? "expanded" : ""} />
-                              <strong>{`${item.nome}(x${item.regioes.length})`}</strong>
-                            </button>
-                            {modoReordenarOrcamento ? (
-                              <div className="budget-preview-order-actions">
-                                <button type="button" className="icon-only" onClick={() => moverProcedimentoOrcamento(item.id, "up")}>
-                                  <ArrowUp size={15} />
-                                </button>
-                                <button type="button" className="icon-only" onClick={() => moverProcedimentoOrcamento(item.id, "down")}>
-                                  <ArrowDown size={15} />
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
+                        <div className="budget-preview-item-row">
+                          <div className="budget-preview-item-main budget-preview-item-main-rich">
+                            <div className="budget-preview-item-top">
+                              <label className="budget-preview-check">
+                                <input
+                                  type="checkbox"
+                                  checked={item.regioes.length > 0 && item.regioes.every((regiao) => regiao.ativo)}
+                                  onChange={() => alternarTodasRegioes(item.id)}
+                                />
+                              </label>
+                              <button type="button" className="budget-preview-expand" onClick={() => alternarProcedimentoExpandido(item.id)}>
+                                <ChevronDown size={16} className={item.expandido ? "expanded" : ""} />
+                                <strong>{`${item.nome}(x${item.regioes.length})`}</strong>
+                              </button>
+                              {modoReordenarOrcamento ? (
+                                <div className="budget-preview-order-actions">
+                                  <button type="button" className="icon-only" onClick={() => moverProcedimentoOrcamento(item.id, "up")}>
+                                    <ArrowUp size={15} />
+                                  </button>
+                                  <button type="button" className="icon-only" onClick={() => moverProcedimentoOrcamento(item.id, "down")}>
+                                    <ArrowDown size={15} />
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
 
-                          {item.expandido ? (
+                            <div className="budget-preview-meta">
+                              <span className="budget-preview-meta-line">{item.clinica}</span>
+                              <span className="budget-preview-meta-line">{item.profissional}</span>
+                              <span className="budget-preview-meta-line budget-preview-region-summary">
+                                {item.regioes.map((regiao) => regiao.nome || "Região não informada").join(", ")}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="budget-preview-value">
+                            <strong>{formatarMoeda(subtotalProcedimento(item))}</strong>
+                            <div className="budget-preview-value-actions">
+                              <button
+                                type="button"
+                                className="budget-preview-value-action"
+                                onClick={() => editarProcedimentoOrcamento(item.id)}
+                                disabled={orcamentoBloqueado}
+                              >
+                                <Pencil size={16} />
+                                EDITAR
+                              </button>
+                              <button
+                                type="button"
+                                className="budget-preview-value-action budget-preview-value-action-danger"
+                                onClick={() => excluirProcedimentoOrcamento(item.id)}
+                                disabled={orcamentoBloqueado}
+                              >
+                                <X size={16} />
+                                EXCLUIR
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        {item.expandido ? (
+                          <div className="budget-preview-detail-shell">
                             <div className="budget-preview-detail-list">
                               {item.regioes.map((regiao) => (
                                 <div key={regiao.id} className={`budget-preview-detail-row${regiao.ativo ? "" : " muted"}`}>
@@ -3803,39 +3837,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                                 </div>
                               ))}
                             </div>
-                          ) : null}
-
-                          <div className="budget-preview-meta">
-                            <span className="budget-preview-meta-line">{item.clinica}</span>
-                            <span className="budget-preview-meta-line">{item.profissional}</span>
-                            <span className="budget-preview-meta-line budget-preview-region-summary">
-                              {item.regioes.map((regiao) => regiao.nome || "Região não informada").join(", ")}
-                            </span>
                           </div>
-                        </div>
-                        <div className="budget-preview-value">
-                          <strong>{formatarMoeda(subtotalProcedimento(item))}</strong>
-                          <div className="budget-preview-value-actions">
-                            <button
-                              type="button"
-                              className="budget-preview-value-action"
-                              onClick={() => editarProcedimentoOrcamento(item.id)}
-                              disabled={orcamentoBloqueado}
-                            >
-                              <Pencil size={16} />
-                              EDITAR
-                            </button>
-                            <button
-                              type="button"
-                              className="budget-preview-value-action budget-preview-value-action-danger"
-                              onClick={() => excluirProcedimentoOrcamento(item.id)}
-                              disabled={orcamentoBloqueado}
-                            >
-                              <X size={16} />
-                              EXCLUIR
-                            </button>
-                          </div>
-                        </div>
+                        ) : null}
                       </article>
                     )) : (
                       <div className="budget-preview-empty">

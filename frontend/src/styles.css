@@ -2620,12 +2620,16 @@ textarea::placeholder {
 
 .budget-preview-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(132px, 148px);
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid rgba(188, 145, 85, 0.14);
   box-shadow: 0 8px 22px rgba(53, 35, 13, 0.08), 0 2px 6px rgba(53, 35, 13, 0.05);
   background: #fff;
+}
+
+.budget-preview-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, 148px);
 }
 
 .budget-preview-item.ghost {
@@ -2687,6 +2691,12 @@ textarea::placeholder {
   text-align: center;
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.18);
   min-width: 0;
+}
+
+.budget-preview-detail-shell {
+  border-top: 1px solid rgba(188, 145, 85, 0.12);
+  background: #fffdfa;
+  padding: 12px 16px 14px;
 }
 
 .budget-preview-item.ghost .budget-preview-value {
@@ -3093,10 +3103,10 @@ textarea::placeholder {
 .budget-preview-detail-list {
   display: grid;
   gap: 6px;
-  margin-bottom: 4px;
-  padding: 6px 0 2px;
-  max-height: 320px;
-  overflow: auto;
+  margin-bottom: 0;
+  padding: 0;
+  max-height: none;
+  overflow: visible;
   overscroll-behavior: contain;
 }
 
@@ -5423,6 +5433,10 @@ textarea::placeholder {
   }
 
   .budget-preview-item {
+    grid-template-columns: 1fr;
+  }
+
+  .budget-preview-item-row {
     grid-template-columns: 1fr;
   }
 
