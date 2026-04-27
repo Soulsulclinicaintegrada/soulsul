@@ -1,8 +1,10 @@
 import os
+from typing import Any
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from api_agenda import app as agenda_app
@@ -84,12 +86,55 @@ def root() -> dict[str, str]:
     return {"status": "online", "service": "soulsul"}
 
 
-@app.post("/admin/import-db")
-async def import_db(request: Request) -> dict[str, object]:
+def validar_import_token(request: Request) -> None:
     expected_token = os.getenv("IMPORT_DB_TOKEN", "").strip()
     provided_token = str(request.headers.get("x-import-token") or "").strip()
     if not expected_token or provided_token != expected_token:
         raise HTTPException(status_code=403, detail="Importacao nao autorizada.")
+
+
+def listar_backups_db() -> list[Path]:
+    db_path = Path(DB_PATH)
+    base_dir = db_path.parent if str(db_path.parent) not in {"", "."} else Path(".")
+    pattern = f"{db_path.stem}_backup_*{db_path.suffix}"
+    return sorted(base_dir.glob(pattern), key=lambda item: item.stat().st_mtime, reverse=True)
+
+
+@app.get("/admin/list-db-backups")
+def list_db_backups(request: Request) -> dict[str, list[dict[str, Any]]]:
+    validar_import_token(request)
+    backups = []
+    for path in listar_backups_db():
+        stat = path.stat()
+        backups.append(
+            {
+                "name": path.name,
+                "path": str(path),
+                "bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            }
+        )
+    return {"backups": backups}
+
+
+@app.get("/admin/export-db")
+def export_db(request: Request, name: str | None = None):
+    validar_import_token(request)
+    db_path = Path(DB_PATH)
+    alvo = db_path
+    if name:
+        candidatos = {path.name: path for path in listar_backups_db()}
+        alvo = candidatos.get(name)
+        if alvo is None:
+            raise HTTPException(status_code=404, detail="Backup nao encontrado.")
+    if not alvo.exists():
+        raise HTTPException(status_code=404, detail="Banco nao encontrado.")
+    return FileResponse(str(alvo), filename=alvo.name, media_type="application/octet-stream")
+
+
+@app.post("/admin/import-db")
+async def import_db(request: Request) -> dict[str, object]:
+    validar_import_token(request)
 
     payload = await request.body()
     if not payload:
