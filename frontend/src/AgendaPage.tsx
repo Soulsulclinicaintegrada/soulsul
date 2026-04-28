@@ -1781,6 +1781,89 @@ function atualizarConfigProfissionalDia(
         }))
       );
       const persistidos: Array<{ salvo: AgendaApiAgendamento; dataIso: string; profissionalId: number }> = [];
+      let editarSerieNaEdicao = false;
+
+      if (agendamentoEditandoId) {
+        const eventoBase = eventos.find((item) => item.id === agendamentoEditandoId);
+        let recorrenciaGrupoAtual = eventoBase?.recorrenciaGrupo || "";
+        let recorrenciaIntervaloAtual = eventoBase?.recorrenciaIntervaloDias || 0;
+        let recorrenciaTotalAtual = eventoBase?.recorrenciaTotal || 0;
+        let recorrenciaIndiceAtual = eventoBase?.recorrenciaIndice || 0;
+
+        if (!recorrenciaGrupoAtual) {
+          try {
+            const detalheSerie = await buscarDetalhesAgendamentoAgenda(agendamentoEditandoId);
+            recorrenciaGrupoAtual = detalheSerie.recorrenciaGrupo || "";
+            recorrenciaIntervaloAtual = detalheSerie.recorrenciaIntervaloDias || 0;
+            recorrenciaTotalAtual = detalheSerie.recorrenciaTotal || 0;
+            recorrenciaIndiceAtual = detalheSerie.recorrenciaIndice || 0;
+          } catch {
+            // segue com os dados locais
+          }
+        }
+
+        if (recorrenciaGrupoAtual) {
+          editarSerieNaEdicao = window.confirm(
+            "Este agendamento faz parte de uma repetição.\n\nClique em OK para modificar TODOS os agendamentos da série.\nClique em Cancelar para modificar SOMENTE este agendamento."
+          );
+        }
+
+        if (editarSerieNaEdicao) {
+          const tentativaAtual = tentativas[0];
+          const payloadSerie: AgendaSalvarPayload = {
+            pacienteId: ehConsulta ? pacienteIdAtual : null,
+            nomePaciente: nomePacienteAtual,
+            prontuario: ehConsulta ? prontuarioAtual : "",
+            telefone: ehConsulta ? celularAtual : "",
+            profissionalId: tentativaAtual.profissionalId,
+            profissionalNome: !ehConsulta && eventoTodaEquipe ? "Toda equipe" : nomeAgendaProfissional(tentativaAtual.profissionalId),
+            tipoAtendimentoId: ehConsulta ? form.tipoAtendimentoId : 0,
+            tipoAtendimentoNome: ehConsulta ? nomeTipoAtendimento(form.tipoAtendimentoId) : abaModal,
+            data: isoParaBr(tentativaAtual.dataIso),
+            recorrenciaGrupo: recorrenciaGrupoAtual,
+            recorrenciaIntervaloDias: recorrenciaIntervaloAtual,
+            recorrenciaTotal: recorrenciaTotalAtual,
+            recorrenciaIndice: recorrenciaIndiceAtual,
+            ...payloadBase,
+            procedimentos: itensProcedimento
+          };
+          const atualizados = await atualizarSerieAgendamentoAgenda(agendamentoEditandoId, payloadSerie);
+          const mapaAtualizados = new Map(atualizados.map((item) => [item.id, item]));
+          setEventos((atual) =>
+            atual.map((item) => {
+              const atualizado = mapaAtualizados.get(item.id);
+              if (!atualizado) return item;
+              return resolverProfissionalEvento({
+                ...item,
+                ...atualizado,
+                pacienteId: ehConsulta ? (atualizado.pacienteId ?? pacienteIdAtual ?? null) : null,
+                paciente: nomePacienteAtual,
+                prontuario: ehConsulta ? prontuarioAtual : "",
+                telefone: ehConsulta ? celularAtual : "",
+                profissionalId: atualizado.profissionalId,
+                profissional: atualizado.profissional,
+                tipoAtendimentoId: ehConsulta ? form.tipoAtendimentoId : 0,
+                tipoAtendimento: ehConsulta ? nomeTipoAtendimento(form.tipoAtendimentoId) : abaModal,
+                procedimentos: atualizado.procedimentos.length ? atualizado.procedimentos : (ehConsulta ? procedimentosSelecionados.map((proc) => proc.nome) : [nomePrincipal]),
+                observacoes: form.observacoes,
+                status: atualizado.status || form.status,
+                contratoId: ehConsulta ? procedimentosSelecionados.find((proc) => proc.contratoId)?.contratoId ?? null : null,
+                financeiro: ehConsulta && procedimentosSelecionados.some((proc) => proc.contratoId) ? "Financeiro Ok" : "Sem vínculo",
+                trabalhoTipo: form.trabalhoTipo,
+                ordemServicoId: form.ordemServicoId,
+                ordemServicoDocumentoNome: form.ordemServicoDocumentoNome,
+                elementoArcada: form.elementoArcada,
+                marcadores: item.marcadores || []
+              });
+            })
+          );
+          setAgendamentoEditandoId(null);
+          setEventoAtivoId(null);
+          setDetalhePosicao(null);
+          setModalAberto(false);
+          return;
+        }
+      }
 
       for (const [indice, tentativa] of tentativas.entries()) {
         const { dataIso, profissionalId } = tentativa;
@@ -1879,6 +1962,23 @@ function atualizarConfigProfissionalDia(
     overrides: Partial<AgendaSalvarPayload>,
     overridesLocais?: Partial<AgendaEventoUI>
   ) {
+    let recorrenciaGrupoAtual = evento.recorrenciaGrupo || "";
+    let recorrenciaIntervaloAtual = evento.recorrenciaIntervaloDias || 0;
+    let recorrenciaTotalAtual = evento.recorrenciaTotal || 0;
+    let recorrenciaIndiceAtual = evento.recorrenciaIndice || 0;
+
+    if (!recorrenciaGrupoAtual) {
+      try {
+        const detalheSerie = await buscarDetalhesAgendamentoAgenda(evento.id);
+        recorrenciaGrupoAtual = detalheSerie.recorrenciaGrupo || "";
+        recorrenciaIntervaloAtual = detalheSerie.recorrenciaIntervaloDias || 0;
+        recorrenciaTotalAtual = detalheSerie.recorrenciaTotal || 0;
+        recorrenciaIndiceAtual = detalheSerie.recorrenciaIndice || 0;
+      } catch {
+        // segue com os dados locais quando o detalhe não responder
+      }
+    }
+
     const payload: AgendaSalvarPayload = {
       pacienteId: evento.pacienteId ?? null,
       nomePaciente: evento.paciente,
@@ -1900,15 +2000,15 @@ function atualizarConfigProfissionalDia(
       ordemServicoId: evento.ordemServicoId ?? null,
       ordemServicoDocumentoNome: evento.ordemServicoDocumentoNome || "",
       elementoArcada: evento.elementoArcada || "",
-      recorrenciaGrupo: evento.recorrenciaGrupo || "",
-      recorrenciaIntervaloDias: evento.recorrenciaIntervaloDias || 0,
-      recorrenciaTotal: evento.recorrenciaTotal || 0,
-      recorrenciaIndice: evento.recorrenciaIndice || 0,
+      recorrenciaGrupo: recorrenciaGrupoAtual,
+      recorrenciaIntervaloDias: recorrenciaIntervaloAtual,
+      recorrenciaTotal: recorrenciaTotalAtual,
+      recorrenciaIndice: recorrenciaIndiceAtual,
       procedimentos: payloadProcedimentosDoEvento(evento),
       ...overrides
     };
 
-    const editarSerie = Boolean(evento.recorrenciaGrupo)
+    const editarSerie = Boolean(recorrenciaGrupoAtual)
       && window.confirm("Este agendamento faz parte de uma repetição.\n\nClique em OK para modificar TODOS os agendamentos da série.\nClique em Cancelar para modificar SOMENTE este agendamento.");
 
     if (editarSerie) {
