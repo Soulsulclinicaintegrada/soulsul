@@ -908,28 +908,6 @@ export function FinanceiroPage() {
 
             <article className="panel finance-form-panel">
               <span className="panel-kicker">Baixa de recebível</span>
-              <div className="finance-form-grid">
-                <label>
-                  <span>Data da baixa</span>
-                  <input
-                    type="date"
-                    value={caixaForm.dataMovimento}
-                    onChange={(e) => setCaixaForm((a) => ({ ...a, dataMovimento: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  <span>Forma pagamento</span>
-                  <select value={caixaForm.formaPagamento} onChange={(e) => setCaixaForm((a) => ({ ...a, formaPagamento: e.target.value }))}>
-                    {FORMAS.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>Conta/Banco</span>
-                  <select value={caixaForm.contaCaixa} onChange={(e) => setCaixaForm((a) => ({ ...a, contaCaixa: e.target.value }))}>
-                    {CONTAS_CAIXA.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-              </div>
               <div className="finance-dropdown-shell">
                 <label>
                   <span>Pesquisar paciente</span>
