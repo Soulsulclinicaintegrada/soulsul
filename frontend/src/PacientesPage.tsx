@@ -851,6 +851,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [descontoEditor, setDescontoEditor] = useState<DescontoOrcamento>(DESCONTO_INICIAL);
   const [modalRecebivelAberto, setModalRecebivelAberto] = useState(false);
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
+  const [recebivelModoBaixa, setRecebivelModoBaixa] = useState(false);
   const [salvandoRecebivel, setSalvandoRecebivel] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
@@ -1424,6 +1425,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function abrirRecebivel(item: RecebivelResumoApi) {
+    setRecebivelModoBaixa(false);
     setRecebivelForm(recebivelParaForm(item));
     setModalRecebivelAberto(true);
   }
@@ -1432,6 +1434,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     if (salvandoRecebivel) return;
     setModalRecebivelAberto(false);
     setRecebivelForm(null);
+    setRecebivelModoBaixa(false);
   }
 
   async function salvarRecebivel(payloadOverride?: Partial<RecebivelAtualizacaoPayload>) {
@@ -1439,6 +1442,20 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setSalvandoRecebivel(true);
     setErro(null);
     try {
+      if (recebivelModoBaixa && normalizarTextoComparacao(recebivelForm.status) === "pago") {
+        await baixarRecebivelPacienteApi(pacienteAtivoId, recebivelForm.id, {
+          data_pagamento: recebivelForm.dataPagamento || dataHojeIso(),
+          forma_pagamento: recebivelForm.formaPagamento || "PIX",
+          conta_caixa: recebivelForm.formaPagamento || "PIX",
+          observacao: recebivelForm.observacao || ""
+        });
+        setFeedback("Parcela baixada com sucesso.");
+        await carregarFicha(pacienteAtivoId);
+        setModalRecebivelAberto(false);
+        setRecebivelForm(null);
+        setRecebivelModoBaixa(false);
+        return;
+      }
       const payload: RecebivelAtualizacaoPayload = {
         paciente_nome: ficha?.paciente.nome || "",
         prontuario: ficha?.paciente.prontuario || "",
@@ -1463,23 +1480,14 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   async function baixarRecebivel(item: RecebivelResumoApi) {
-    if (!pacienteAtivoId) return;
-    setSalvandoRecebivel(true);
-    setErro(null);
-    try {
-      await baixarRecebivelPacienteApi(pacienteAtivoId, item.id, {
-        data_pagamento: dataHojeIso(),
-        forma_pagamento: item.formaPagamento || "PIX",
-        conta_caixa: item.formaPagamento || "PIX",
-        observacao: item.observacao || ""
-      });
-      setFeedback("Parcela baixada com sucesso.");
-      await carregarFicha(pacienteAtivoId);
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao baixar recebível.");
-    } finally {
-      setSalvandoRecebivel(false);
-    }
+    const form = recebivelParaForm(item);
+    setRecebivelModoBaixa(true);
+    setRecebivelForm({
+      ...form,
+      status: "Pago",
+      dataPagamento: form.dataPagamento || dataHojeIso()
+    });
+    setModalRecebivelAberto(true);
   }
 
   function renderFinanceiroSection() {
