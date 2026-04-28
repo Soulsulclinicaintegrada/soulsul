@@ -3750,7 +3750,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                               </label>
                               <button type="button" className="budget-preview-expand" onClick={() => alternarProcedimentoExpandido(item.id)}>
                                 <ChevronDown size={16} className={item.expandido ? "expanded" : ""} />
-                                <strong>{`${item.nome}(x${item.regioes.length})`}</strong>
+                                <div className="budget-preview-expand-copy">
+                                  <strong>{`${item.nome}(x${item.regioes.length})`}</strong>
+                                  <span className="budget-preview-inline-summary">
+                                    {`Dentes/Regiões: ${item.regioes.map((regiao) => regiao.nome || "Não informada").join(", ")}`}
+                                  </span>
+                                </div>
                               </button>
                               {modoReordenarOrcamento ? (
                                 <div className="budget-preview-order-actions">
@@ -3768,7 +3773,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                               <span className="budget-preview-meta-line">{item.clinica}</span>
                               <span className="budget-preview-meta-line">{item.profissional}</span>
                               <span className="budget-preview-meta-line budget-preview-region-summary">
-                                {item.regioes.map((regiao) => regiao.nome || "Região não informada").join(", ")}
+                                {`Dentes/Regiões: ${item.regioes.map((regiao) => regiao.nome || "Região não informada").join(", ")}`}
                               </span>
                             </div>
                           </div>
