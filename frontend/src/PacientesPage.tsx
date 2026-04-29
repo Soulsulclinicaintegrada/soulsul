@@ -191,6 +191,13 @@ type ProcedimentoCatalogo = {
   materiaisPadrao?: string[];
 };
 
+type ProcedimentoOrdemServicoOpcao = {
+  value: string;
+  id: number | null;
+  nome: string;
+  etapasPadrao: string[];
+};
+
 type OrdemServicoForm = {
   procedimentoId: string;
   cor: string;
@@ -205,6 +212,7 @@ type OrdemServicoForm = {
 type RegiaoOrcamento = {
   id: number;
   nome: string;
+  dente?: number | null;
   valor: number;
   ativo: boolean;
   faces: string[];
@@ -875,6 +883,28 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       )],
     [orcamentoDraft.regioesSelecionadas]
   );
+  const dentesContratoOrcamentoPermanente = useMemo(
+    () =>
+      [...new Set(
+        procedimentosOrcamento
+          .filter((item) => item.denticao !== "Decidua")
+          .flatMap((item) => item.regioes)
+          .filter((regiao) => regiao.ativo && regiao.dente != null && regiao.dente < 50)
+          .map((regiao) => Number(regiao.dente))
+      )],
+    [procedimentosOrcamento]
+  );
+  const dentesContratoOrcamentoDecidua = useMemo(
+    () =>
+      [...new Set(
+        procedimentosOrcamento
+          .filter((item) => item.denticao === "Decidua")
+          .flatMap((item) => item.regioes)
+          .filter((regiao) => regiao.ativo && regiao.dente != null && regiao.dente >= 51 && regiao.dente <= 85)
+          .map((regiao) => Number(regiao.dente))
+      )],
+    [procedimentosOrcamento]
+  );
   const elementosOdontogramaVisiveis = useMemo(
     () =>
       odontogramaElementos.filter((item) => {
@@ -1181,22 +1211,30 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     () => Math.max(0, Math.round((totalOrcamento - totalDesconto) * 100) / 100),
     [totalDesconto, totalOrcamento]
   );
-  const procedimentoOrdemServicoSelecionado = useMemo(
-    () => procedimentosCatalogo.find((item) => item.id === Number(ordemServicoForm.procedimentoId)) || null,
-    [ordemServicoForm.procedimentoId, procedimentosCatalogo]
-  );
   const procedimentosContratadosPaciente = useMemo(() => {
-    const nomesContratados = new Set(
+    const nomesContratados = Array.from(new Set(
       (ficha?.contratos || [])
         .filter((contrato) => (contrato.status || "").toUpperCase() === "APROVADO")
         .flatMap((contrato) => contrato.procedimentos || [])
-        .map((nome) => normalizarTextoComparacao(nome))
+        .map((nome) => String(nome || "").trim())
         .filter(Boolean)
-    );
-    return procedimentosCatalogo.filter((item) =>
-      item.ativo !== false && nomesContratados.has(normalizarTextoComparacao(item.nome))
-    );
+    ));
+    return nomesContratados.map<ProcedimentoOrdemServicoOpcao>((nomeContratado) => {
+      const catalogo = procedimentosCatalogo.find((item) =>
+        item.ativo !== false && normalizarTextoComparacao(item.nome) === normalizarTextoComparacao(nomeContratado)
+      );
+      return {
+        value: catalogo ? String(catalogo.id) : `nome::${nomeContratado}`,
+        id: catalogo?.id ?? null,
+        nome: catalogo?.nome ?? nomeContratado,
+        etapasPadrao: catalogo?.etapasPadrao || []
+      };
+    });
   }, [ficha?.contratos, procedimentosCatalogo]);
+  const procedimentoOrdemServicoSelecionado = useMemo(
+    () => procedimentosContratadosPaciente.find((item) => item.value === ordemServicoForm.procedimentoId) || null,
+    [ordemServicoForm.procedimentoId, procedimentosContratadosPaciente]
+  );
 
   useEffect(() => {
     setPlanoPagamento((atual) => normalizarPlanoPagamento(atual, totalOrcamentoFinal, orcamentoDraft.data));
@@ -1916,7 +1954,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setErro(null);
     try {
       const ordem = await criarOrdemServicoPacienteApi(pacienteAtivoId, {
-        procedimento_id: procedimentoOrdemServicoSelecionado.id,
+        procedimento_id: procedimentoOrdemServicoSelecionado.id ?? 0,
+        procedimento_nome: procedimentoOrdemServicoSelecionado.nome,
         material: "",
         material_outro: "",
         cor: ordemServicoForm.cor,
@@ -3112,11 +3151,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
               disabled={!procedimentosContratadosPaciente.length}
             >
               <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Nenhum procedimento contratado"}</option>
-              {procedimentosContratadosPaciente.map((item) => (
-                <option key={item.id} value={item.id}>{item.nome}</option>
-              ))}
-            </select>
-          </label>
+                {procedimentosContratadosPaciente.map((item) => (
+                  <option key={item.value} value={item.value}>{item.nome}</option>
+                ))}
+              </select>
+            </label>
 
           <label>
             <span>Elemento ou arcada</span>
@@ -3736,6 +3775,34 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   </header>
 
                   <div className="budget-preview-body">
+                    {dentesContratoOrcamentoPermanente.length || dentesContratoOrcamentoDecidua.length ? (
+                      <section className="budget-preview-odontograma-shell">
+                        <header className="budget-preview-odontograma-header">
+                          <strong>Odontograma do contrato</strong>
+                          <span>Quadrados preenchidos indicam os elementos contratados.</span>
+                        </header>
+                        {dentesContratoOrcamentoPermanente.length ? (
+                          <Odontograma
+                            denticao="Permanente"
+                            dentesContratados={dentesContratoOrcamentoPermanente}
+                            dentesSelecionados={[]}
+                            onSelectTooth={() => {}}
+                            interativo={false}
+                            mostrarLegenda={false}
+                          />
+                        ) : null}
+                        {dentesContratoOrcamentoDecidua.length ? (
+                          <Odontograma
+                            denticao="Decidua"
+                            dentesContratados={dentesContratoOrcamentoDecidua}
+                            dentesSelecionados={[]}
+                            onSelectTooth={() => {}}
+                            interativo={false}
+                            mostrarLegenda={false}
+                          />
+                        ) : null}
+                      </section>
+                    ) : null}
                     {procedimentosOrcamento.length ? procedimentosOrcamento.map((item) => (
                       <article key={item.id} className={`budget-preview-item${item.regioes.every((regiao) => !regiao.ativo) ? " ghost" : ""}`}>
                         <div className="budget-preview-item-row">
@@ -3772,9 +3839,6 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             <div className="budget-preview-meta">
                               <span className="budget-preview-meta-line">{item.clinica}</span>
                               <span className="budget-preview-meta-line">{item.profissional}</span>
-                              <span className="budget-preview-meta-line budget-preview-region-summary">
-                                {`Dentes/Regiões: ${item.regioes.map((regiao) => regiao.nome || "Região não informada").join(", ")}`}
-                              </span>
                             </div>
                           </div>
                           <div className="budget-preview-value">

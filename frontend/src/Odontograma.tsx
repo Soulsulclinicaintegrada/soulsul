@@ -11,6 +11,8 @@ type OdontogramaProps = {
   dentesContratados: number[];
   dentesSelecionados: number[];
   onSelectTooth: (toothId: number) => void;
+  interativo?: boolean;
+  mostrarLegenda?: boolean;
 };
 
 function classeCaixaDente(contratado: boolean, selecionado: boolean) {
@@ -25,13 +27,15 @@ function LinhaOdontograma({
   dentes,
   dentesContratados,
   dentesSelecionados,
-  onSelectTooth
+  onSelectTooth,
+  interativo
 }: {
   titulo: string;
   dentes: number[];
   dentesContratados: number[];
   dentesSelecionados: number[];
   onSelectTooth: (toothId: number) => void;
+  interativo: boolean;
 }) {
   return (
     <section className="odontograma-section">
@@ -44,8 +48,9 @@ function LinhaOdontograma({
             <button
               key={dente}
               type="button"
-              className={classeCaixaDente(contratado, selecionado)}
+              className={`${classeCaixaDente(contratado, selecionado)}${interativo ? "" : " readonly"}`}
               onClick={() => onSelectTooth(dente)}
+              disabled={!interativo}
             >
               <span className="odontograma-box-label">{dente}</span>
             </button>
@@ -56,22 +61,32 @@ function LinhaOdontograma({
   );
 }
 
-export function Odontograma({ denticao, dentesContratados, dentesSelecionados, onSelectTooth }: OdontogramaProps) {
+export function Odontograma({
+  denticao,
+  dentesContratados,
+  dentesSelecionados,
+  onSelectTooth,
+  interativo = true,
+  mostrarLegenda = true
+}: OdontogramaProps) {
   const superior = denticao === "Permanente" ? FILEIRA_SUPERIOR_PERMANENTE : FILEIRA_SUPERIOR_DECIDUA;
   const inferior = denticao === "Permanente" ? FILEIRA_INFERIOR_PERMANENTE : FILEIRA_INFERIOR_DECIDUA;
 
   return (
     <div className={`odontograma-component odontograma-boxes ${denticao === "Decidua" ? "decidua" : "permanente"}`}>
-      <div className="odontograma-legend">
-        <span className="odontograma-legend-item"><i className="odontograma-legend-swatch contracted" />No contrato</span>
-        <span className="odontograma-legend-item"><i className="odontograma-legend-swatch selected" />Selecionado</span>
-      </div>
+      {mostrarLegenda ? (
+        <div className="odontograma-legend">
+          <span className="odontograma-legend-item"><i className="odontograma-legend-swatch contracted" />No contrato</span>
+          <span className="odontograma-legend-item"><i className="odontograma-legend-swatch selected" />Selecionado</span>
+        </div>
+      ) : null}
       <LinhaOdontograma
         titulo="Arcada superior"
         dentes={superior}
         dentesContratados={dentesContratados}
         dentesSelecionados={dentesSelecionados}
         onSelectTooth={onSelectTooth}
+        interativo={interativo}
       />
       <div className="odontograma-divider" />
       <LinhaOdontograma
@@ -80,6 +95,7 @@ export function Odontograma({ denticao, dentesContratados, dentesSelecionados, o
         dentesContratados={dentesContratados}
         dentesSelecionados={dentesSelecionados}
         onSelectTooth={onSelectTooth}
+        interativo={interativo}
       />
     </div>
   );

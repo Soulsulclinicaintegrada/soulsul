@@ -81,8 +81,55 @@ export type AgendaApiAgendamento = {
 
 export type AgendaDisponibilidadeResponse = {
   ocupados: string[];
+  ocupadosConsultorio: string[];
+  consultorioProfissional?: string | null;
   agendamentos: AgendaApiAgendamento[];
 };
+
+async function fetchJsonComDetalheErro<T>(url: string, init?: RequestInit): Promise<T> {
+  const usuario = nomeUsuarioCabecalho();
+  const headers = new Headers(init?.headers);
+  if (usuario && !headers.has("x-usuario")) {
+    headers.set("x-usuario", usuario);
+  }
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const requestInit: RequestInit = {
+    headers,
+    ...init
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(url, requestInit);
+  } catch (error) {
+    const podeTentarLocal =
+      typeof window !== "undefined" &&
+      API_BASE_URL !== API_BASE_FALLBACK_URL &&
+      ["localhost", "127.0.0.1"].includes(window.location.hostname) &&
+      url.startsWith(API_BASE_URL);
+
+    if (!podeTentarLocal) {
+      throw error;
+    }
+
+    response = await fetch(url.replace(API_BASE_URL, API_BASE_FALLBACK_URL), requestInit);
+  }
+
+  if (!response.ok) {
+    let mensagem = `Falha na requisição: ${response.status}`;
+    try {
+      const erro = await response.json() as { detail?: string };
+      if (erro?.detail) mensagem = erro.detail;
+    } catch {
+      // mantém mensagem padrão
+    }
+    throw new Error(mensagem);
+  }
+
+  return response.json() as Promise<T>;
+}
 
 export type AgendaListaResponse = {
   agendamentos: AgendaApiAgendamento[];
@@ -330,7 +377,7 @@ export async function buscarDisponibilidadeAgenda(
 ): Promise<AgendaDisponibilidadeResponse> {
   if (API_BASE_URL) {
     try {
-      return await fetchJson<AgendaDisponibilidadeResponse>(
+      return await fetchJsonComDetalheErro<AgendaDisponibilidadeResponse>(
         `${API_BASE_URL}/api/agenda/disponibilidade?profissional_id=${profissionalId}&data=${encodeURIComponent(data)}${excluirAgendamentoId ? `&excluir_agendamento_id=${excluirAgendamentoId}` : ""}`
       );
     } catch {
@@ -357,6 +404,8 @@ export async function buscarDisponibilidadeAgenda(
 
   return {
     ocupados: Array.from(ocupados),
+    ocupadosConsultorio: [],
+    consultorioProfissional: null,
     agendamentos: eventos
   };
 }
@@ -525,7 +574,7 @@ export async function salvarAgendamentoAgenda(
   payload: AgendaSalvarPayload
 ): Promise<AgendaDetalheResponse> {
   if (API_BASE_URL) {
-    return mapearEventoApi(await fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos`, {
+    return mapearEventoApi(await fetchJsonComDetalheErro<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos`, {
       method: "POST",
       body: JSON.stringify(payload)
     }));
@@ -561,7 +610,7 @@ export async function atualizarAgendamentoAgenda(
   payload: AgendaSalvarPayload
 ): Promise<AgendaDetalheResponse> {
   if (API_BASE_URL) {
-    return mapearEventoApi(await fetchJson<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}`, {
+    return mapearEventoApi(await fetchJsonComDetalheErro<AgendaDetalheResponse>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}`, {
       method: "PUT",
       body: JSON.stringify(payload)
     }));
@@ -597,7 +646,7 @@ export async function atualizarSerieAgendamentoAgenda(
   payload: AgendaSalvarPayload
 ): Promise<AgendaDetalheResponse[]> {
   if (API_BASE_URL) {
-    const resposta = await fetchJson<{ agendamentos: AgendaDetalheResponse[] }>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}/serie`, {
+    const resposta = await fetchJsonComDetalheErro<{ agendamentos: AgendaDetalheResponse[] }>(`${API_BASE_URL}/api/agenda/agendamentos/${agendamentoId}/serie`, {
       method: "PUT",
       body: JSON.stringify(payload)
     });

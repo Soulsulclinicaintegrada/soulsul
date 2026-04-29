@@ -172,6 +172,7 @@ export type OrdemServicoResumoApi = {
 
 export type OrdemServicoPayload = {
   procedimento_id: number;
+  procedimento_nome?: string;
   material: string;
   material_outro: string;
   cor: string;

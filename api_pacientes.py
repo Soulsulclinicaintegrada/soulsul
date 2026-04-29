@@ -992,7 +992,8 @@ class OrdemServicoEtapaPayload(BaseModel):
 
 
 class OrdemServicoPayload(BaseModel):
-    procedimento_id: int
+    procedimento_id: int = 0
+    procedimento_nome: str = ""
     material: str = ""
     material_outro: str = ""
     cor: str = ""
@@ -1985,9 +1986,12 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         paciente = conn.execute("SELECT id, nome, prontuario FROM pacientes WHERE id=?", (int(paciente_id),)).fetchone()
         if paciente is None:
             raise HTTPException(status_code=404, detail="Paciente nao encontrado.")
-        procedimento = conn.execute("SELECT * FROM procedimentos WHERE id=? AND COALESCE(ativo,1)=1", (int(payload.procedimento_id),)).fetchone()
-        if procedimento is None:
-            raise HTTPException(status_code=404, detail="Procedimento nao encontrado.")
+        procedimento = None
+        if int(payload.procedimento_id or 0) > 0:
+            procedimento = conn.execute(
+                "SELECT * FROM procedimentos WHERE id=? AND COALESCE(ativo,1)=1",
+                (int(payload.procedimento_id),),
+            ).fetchone()
         procedimentos_contratados_rows = conn.execute(
             """
             SELECT pc.procedimento
@@ -2004,7 +2008,12 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         }
         if not procedimentos_contratados:
             raise HTTPException(status_code=400, detail="Este paciente nao possui procedimentos contratados para ordem de servico.")
-        if normalizar_texto(str(procedimento["nome"] or "")) not in procedimentos_contratados:
+        procedimento_nome = corrigir_texto_importado(str(payload.procedimento_nome or "").strip())
+        if procedimento is not None:
+            procedimento_nome = corrigir_texto_importado(str(procedimento["nome"] or "").strip())
+        if not procedimento_nome:
+            raise HTTPException(status_code=400, detail="Selecione um procedimento contratado para este paciente.")
+        if normalizar_texto(procedimento_nome) not in procedimentos_contratados:
             raise HTTPException(status_code=400, detail="Selecione apenas um procedimento contratado para este paciente.")
         material = corrigir_texto_importado(str(payload.material or "").strip())
         material_outro = corrigir_texto_importado(str(payload.material_outro or "").strip())
@@ -2017,7 +2026,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             raise HTTPException(status_code=400, detail="Informe o elemento ou arcada.")
         if not retorno_solicitado:
             raise HTTPException(status_code=400, detail="Informe a data de retorno solicitada.")
-        etapas_validas = mapear_procedimento_resumo(procedimento).etapasPadrao
+        etapas_validas = mapear_procedimento_resumo(procedimento).etapasPadrao if procedimento is not None else []
         etapas_limpas: list[tuple[str, str]] = []
         for item in payload.etapas:
             etapa = corrigir_texto_importado(str(item.etapa or "").strip())
@@ -2041,8 +2050,8 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             """,
             (
                 int(paciente_id),
-                int(payload.procedimento_id),
-                str(procedimento["nome"] or ""),
+                int(procedimento["id"]) if procedimento is not None else None,
+                procedimento_nome,
                 material,
                 material_outro,
                 cor,
@@ -2069,7 +2078,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         documento_nome = gerar_documento_ordem_servico(
             paciente_row=paciente,
             ordem_id=ordem_id,
-            procedimento_nome=corrigir_texto_importado(str(procedimento["nome"] or "")),
+            procedimento_nome=procedimento_nome,
             material=material,
             material_outro=material_outro,
             elemento_arcada=elemento_arcada,
@@ -2091,7 +2100,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         usuario_request(request),
         acao="Criacao",
         tipo="Ordem de Servico",
-        info=str(procedimento["nome"] or ""),
+        info=procedimento_nome,
         metodo_http="POST",
         rota=f"/api/pacientes/{paciente_id}/ordens-servico",
     )
@@ -2418,7 +2427,7 @@ def salvar_orcamento_paciente(
                 paciente_id,
                 valor_total,
                 data_base,
-                "OrÃ§amento",
+                forma_pagamento,
                 data_base,
                 payload.observacoes.strip(),
                 payload.clinica.strip(),
@@ -2445,7 +2454,7 @@ def salvar_orcamento_paciente(
             (
                 valor_total,
                 data_base,
-                "OrÃ§amento",
+                forma_pagamento,
                 data_base,
                 payload.observacoes.strip(),
                 payload.clinica.strip(),
@@ -4321,6 +4330,97 @@ def preencher_tabela_contrato_docx(tabela, procedimentos: list[sqlite3.Row]) -> 
     return False
 
 
+def aplicar_fundo_celula_docx(celula, cor_hex: str) -> None:
+    if OxmlElement is None or qn is None:
+        return
+    tc_pr = celula._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:fill"), cor_hex)
+
+
+def inserir_bloco_apos_docx(ancora_xml, novo_xml) -> None:
+    if ancora_xml is None or novo_xml is None:
+        return
+    ancora_xml.addnext(novo_xml)
+
+
+def montar_tabela_odontograma_docx(doc, dentes: list[int]):
+    tabela = doc.add_table(rows=1, cols=len(dentes))
+    for indice, dente in enumerate(dentes):
+        celula = tabela.rows[0].cells[indice]
+        celula.text = str(dente)
+        aplicar_fundo_celula_docx(celula, "E4C7A2")
+        for paragrafo in celula.paragraphs:
+            paragrafo.alignment = 1
+            for run in paragrafo.runs:
+                run.font.bold = True
+                if Pt is not None:
+                    run.font.size = Pt(9)
+    return tabela
+
+
+def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_ancora=None) -> None:
+    if Document is None or Paragraph is None:
+        return
+    dentes_permanentes = sorted(
+        {
+            int(regiao)
+            for item in procedimentos
+            for regiao in item.get("regioes", [])
+            if str(regiao).isdigit() and int(regiao) < 50
+        }
+    )
+    dentes_deciduos = sorted(
+        {
+            int(regiao)
+            for item in procedimentos
+            for regiao in item.get("regioes", [])
+            if str(regiao).isdigit() and 50 < int(regiao) < 90
+        }
+    )
+    if not dentes_permanentes and not dentes_deciduos:
+        return
+
+    ancora_xml = tabela_ancora._tbl if tabela_ancora is not None else None
+    titulo = doc.add_paragraph("ODONTOGRAMA DO CONTRATO")
+    if titulo.runs:
+        titulo.runs[0].bold = True
+        if Pt is not None:
+            titulo.runs[0].font.size = Pt(11)
+    if ancora_xml is not None:
+        inserir_bloco_apos_docx(ancora_xml, titulo._p)
+        ancora_xml = titulo._p
+
+    def inserir_linha(titulo_linha: str, dentes_linha: list[int]) -> None:
+        nonlocal ancora_xml
+        if not dentes_linha:
+            return
+        subtitulo = doc.add_paragraph(titulo_linha)
+        if subtitulo.runs:
+            subtitulo.runs[0].bold = True
+            if Pt is not None:
+                subtitulo.runs[0].font.size = Pt(9)
+        tabela = montar_tabela_odontograma_docx(doc, dentes_linha)
+        if ancora_xml is not None:
+            inserir_bloco_apos_docx(ancora_xml, subtitulo._p)
+            ancora_xml = subtitulo._p
+            inserir_bloco_apos_docx(ancora_xml, tabela._tbl)
+            ancora_xml = tabela._tbl
+
+    inserir_linha("Arcada permanente", dentes_permanentes)
+    inserir_linha("Arcada decídua", dentes_deciduos)
+
+    legenda = doc.add_paragraph("Quadrados preenchidos indicam os elementos contratados.")
+    if legenda.runs and Pt is not None:
+        legenda.runs[0].font.size = Pt(8)
+    if ancora_xml is not None:
+        inserir_bloco_apos_docx(ancora_xml, legenda._p)
+
+
 def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato_id: int) -> list[dict]:
     procedimentos = conn.execute(
         "SELECT id, procedimento, valor, profissional_snapshot, denticao_snapshot FROM procedimentos_contrato WHERE contrato_id=? ORDER BY id",
@@ -4353,8 +4453,10 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
         regioes = regioes_por_procedimento.get(chave, [])
         sufixo = ""
         if regioes:
-            rotulo = "Elemento" if len(regioes) == 1 and regioes[0].isdigit() else "Elementos"
-            sufixo = f" - {rotulo}: {', '.join(regioes)}"
+            somente_dentes = all(regiao.isdigit() for regiao in regioes)
+            if not somente_dentes:
+                rotulo = "Elemento" if len(regioes) == 1 and regioes[0].isdigit() else "Elementos"
+                sufixo = f" - {rotulo}: {', '.join(regioes)}"
         itens.append(
             {
                 "procedimento": f"{procedimento}{sufixo}",
@@ -4711,6 +4813,7 @@ def reiniciar_numeracao_paginas_todas_as_secoes(doc, reiniciar_em: int = 1) -> N
 
 def configurar_numeracao_paginas_contrato(doc) -> None:
     for marcador in [
+        "CLÁUSULA 01 - DO OBJETO DO CONTRATO",
         "DECLARACAO DE CONSENTIMENTO",
         "TERMO DE CONSENTIMENTO ESCLARECIDO",
     ]:
@@ -5071,6 +5174,8 @@ def gerar_docx_contrato_fallback(
         cells[3].text = formatar_moeda_br(row.get("valor", 0))
 
     doc.add_paragraph("")
+    inserir_odontograma_contrato_docx(doc, procedimentos)
+    doc.add_paragraph("")
     doc.add_paragraph("Plano de pagamento")
     tabela_pag = doc.add_table(rows=1, cols=4)
     header_pag = tabela_pag.rows[0].cells
@@ -5155,6 +5260,7 @@ def gerar_documento_contrato(
 
         checklist_preenchido = False
         tabela_contrato_preenchida = False
+        tabela_contrato_referencia = None
         for tabela in doc.tables:
             preenchido_checklist = False
             if not checklist_preenchido:
@@ -5175,6 +5281,7 @@ def gerar_documento_contrato(
                     print(traceback.format_exc(), flush=True)
             if not tabela_contrato_preenchida and preenchido_tabela:
                 tabela_contrato_preenchida = True
+                tabela_contrato_referencia = tabela
 
         if bool(assinatura["assinatura_menor"]):
             executar_ajuste_contrato("ajustar_assinaturas_menor", lambda: ajustar_assinaturas_menor(doc, nome_paciente, cpf_paciente, assinatura))
@@ -5189,6 +5296,7 @@ def gerar_documento_contrato(
         executar_ajuste_contrato("atualizar_datas_cidade_contrato", lambda: atualizar_datas_cidade_contrato(doc, data_documento))
         executar_ajuste_contrato("remover_datas_duplicadas_consecutivas", lambda: remover_datas_duplicadas_consecutivas(doc, data_documento))
         executar_ajuste_contrato("normalizar_quebra_antes_titulo_termo", lambda: normalizar_quebra_antes_titulo(doc, "TERMO DE CONSENTIMENTO ESCLARECIDO"))
+        executar_ajuste_contrato("inserir_odontograma_contrato_docx", lambda: inserir_odontograma_contrato_docx(doc, procedimentos, tabela_contrato_referencia))
         executar_ajuste_contrato("compactar_linhas_declaracao", lambda: compactar_linhas_declaracao(doc))
         executar_ajuste_contrato("normalizar_bloco_consentimento", lambda: normalizar_bloco_consentimento(doc, data_documento))
         executar_ajuste_contrato("compactar_bloco_final", lambda: compactar_bloco_final(doc))

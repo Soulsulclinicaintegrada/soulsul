@@ -286,6 +286,8 @@ class PacienteContextoResposta(BaseModel):
 
 class DisponibilidadeResposta(BaseModel):
     ocupados: list[str]
+    ocupadosConsultorio: list[str] = Field(default_factory=list)
+    consultorioProfissional: str | None = None
     agendamentos: list[AgendamentoResposta]
 
 
@@ -416,6 +418,28 @@ def obter_consultorio_profissional_configurado(
     return normalizar_consultorio(configuracao_dia.get("consultorio"))
 
 
+def obter_max_agendamentos_profissional(
+    conn: sqlite3.Connection,
+    profissional_id: int,
+) -> int:
+    row = conn.execute("SELECT config_profissionais_json FROM agenda_configuracao WHERE id=1").fetchone()
+    if not row:
+        return 1
+    try:
+        bruto = json.loads(str(row["config_profissionais_json"] or "{}"))
+    except Exception:
+        return 1
+    if not isinstance(bruto, dict):
+        return 1
+    profissional = bruto.get(str(int(profissional_id)))
+    if not isinstance(profissional, dict):
+        return 1
+    try:
+        return max(1, int(profissional.get("maxAgendamentosPorHorario", 1) or 1))
+    except Exception:
+        return 1
+
+
 def listar_salas_configuradas(row: sqlite3.Row | None) -> list[str]:
     if not row:
         return SALAS_PADRAO.copy()
@@ -465,6 +489,41 @@ def listar_salas_ocupadas(
     return ocupadas
 
 
+def listar_slots_consultorio_ocupado(
+    conn: sqlite3.Connection,
+    consultorio: str,
+    data: str,
+    *,
+    ignorar_agendamento_id: int | None = None,
+) -> list[str]:
+    sala_normalizada = normalizar_consultorio(consultorio)
+    if not sala_normalizada:
+        return []
+    data_coluna_agenda = obter_data_coluna_agenda()
+    sql = f"""
+        SELECT id, hora_inicio, hora_fim
+        FROM agendamentos
+        WHERE {data_coluna_agenda}=?
+          AND COALESCE(status, 'Agendado') NOT IN ('Cancelado', 'Desmarcado')
+          AND upper(trim(COALESCE(consultorio, ''))) = ?
+    """
+    params: list[object] = [data, sala_normalizada]
+    if ignorar_agendamento_id is not None:
+        sql += " AND id <> ?"
+        params.append(int(ignorar_agendamento_id))
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    ocupados: set[str] = set()
+    for row in rows:
+        inicio = str(row_val(row, "hora_inicio", "") or "")
+        fim = str(row_val(row, "hora_fim", "") or "")
+        ocupados.update(
+            slot
+            for slot in gerar_slots_quinze()
+            if para_minutos(slot) >= para_minutos(inicio) and para_minutos(slot) < para_minutos(fim)
+        )
+    return sorted(ocupados, key=para_minutos)
+
+
 def definir_consultorio_agendamento(
     conn: sqlite3.Connection,
     profissional_id: int,
@@ -485,7 +544,7 @@ def definir_consultorio_agendamento(
         if consultorio_configurado in ocupadas:
             raise HTTPException(
                 status_code=409,
-                detail=f"{consultorio_configurado} já está ocupado neste horário.",
+                detail=f"Consultório {consultorio_configurado} não está disponível neste horário.",
             )
         return consultorio_configurado
     for sala in salas_normalizadas:
@@ -746,21 +805,36 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
     )
 
 
-def existe_conflito(conn: sqlite3.Connection, profissional_id: int, data: str, inicio: str, fim: str) -> bool:
+def contar_conflitos_horario(
+    conn: sqlite3.Connection,
+    profissional_id: int,
+    data: str,
+    inicio: str,
+    fim: str,
+    *,
+    ignorar_agendamento_id: int | None = None,
+) -> int:
     data_coluna_agenda = obter_data_coluna_agenda()
-    row = conn.execute(
-        f"""
-        SELECT 1
+    sql = f"""
+        SELECT COUNT(1) AS total
         FROM agendamentos
         WHERE profissional_id=?
           AND {data_coluna_agenda}=?
           AND lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
           AND NOT (hora_fim <= ? OR hora_inicio >= ?)
-        LIMIT 1
-        """,
-        (profissional_id, data, inicio, fim),
-    ).fetchone()
-    return row is not None
+    """
+    params: list[object] = [profissional_id, data, inicio, fim]
+    if ignorar_agendamento_id is not None:
+        sql += " AND id <> ?"
+        params.append(ignorar_agendamento_id)
+    row = conn.execute(sql, tuple(params)).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def existe_conflito(conn: sqlite3.Connection, profissional_id: int, data: str, inicio: str, fim: str) -> bool:
+    limite = obter_max_agendamentos_profissional(conn, profissional_id)
+    total = contar_conflitos_horario(conn, profissional_id, data, inicio, fim)
+    return total >= limite
 
 
 def existe_conflito_excluindo(
@@ -771,21 +845,16 @@ def existe_conflito_excluindo(
     inicio: str,
     fim: str,
 ) -> bool:
-    data_coluna_agenda = obter_data_coluna_agenda()
-    row = conn.execute(
-        f"""
-        SELECT 1
-        FROM agendamentos
-        WHERE id <> ?
-          AND profissional_id=?
-          AND {data_coluna_agenda}=?
-          AND lower(trim(COALESCE(status, 'Agendado'))) NOT IN ('cancelado', 'canceled', 'cancelled', 'desmarcado')
-          AND NOT (hora_fim <= ? OR hora_inicio >= ?)
-        LIMIT 1
-        """,
-        (agendamento_id, profissional_id, data, inicio, fim),
-    ).fetchone()
-    return row is not None
+    limite = obter_max_agendamentos_profissional(conn, profissional_id)
+    total = contar_conflitos_horario(
+        conn,
+        profissional_id,
+        data,
+        inicio,
+        fim,
+        ignorar_agendamento_id=agendamento_id,
+    )
+    return total >= limite
 
 
 def garantir_paciente_minimo(
@@ -841,6 +910,7 @@ def buscar_disponibilidade(
     data_consulta = normalizar_data_agenda(data)
     conn = conectar()
     try:
+        consultorio_profissional = obter_consultorio_profissional_configurado(conn, profissional_id, data_consulta)
         rows = conn.execute(
             """
             SELECT *
@@ -868,8 +938,17 @@ def buscar_disponibilidade(
                 if para_minutos(slot) >= inicio and para_minutos(slot) < fim
             )
 
+        ocupados_consultorio = listar_slots_consultorio_ocupado(
+            conn,
+            consultorio_profissional,
+            data_consulta,
+            ignorar_agendamento_id=excluir_agendamento_id,
+        )
+
         return DisponibilidadeResposta(
             ocupados=sorted(set(ocupados), key=para_minutos),
+            ocupadosConsultorio=ocupados_consultorio,
+            consultorioProfissional=consultorio_profissional or None,
             agendamentos=[mapear_agendamento(conn, row) for row in rows_filtrados],
         )
     finally:

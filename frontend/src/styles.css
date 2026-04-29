@@ -2701,6 +2701,30 @@ textarea::placeholder {
   overflow: auto;
 }
 
+.budget-preview-odontograma-shell {
+  display: grid;
+  gap: 14px;
+  padding: 12px 16px 16px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(188, 145, 85, 0.14);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 253, 250, 0.96), rgba(255, 255, 255, 1));
+}
+
+.budget-preview-odontograma-header {
+  display: grid;
+  gap: 4px;
+}
+
+.budget-preview-odontograma-header strong {
+  font-size: 0.98rem;
+}
+
+.budget-preview-odontograma-header span {
+  color: #74695c;
+  font-size: 0.88rem;
+}
+
 .budget-preview-item.ghost .budget-preview-value {
   background: #cfcfcf;
   color: #f3fff0;
@@ -3290,6 +3314,20 @@ textarea::placeholder {
   background: #f7f7f8;
 }
 
+.odontograma-box.readonly {
+  cursor: default;
+}
+
+.odontograma-box.readonly:hover {
+  border-color: rgba(127, 138, 153, 0.95);
+  background: #ffffff;
+}
+
+.odontograma-box.contracted.readonly:hover {
+  background: rgba(188, 145, 85, 0.18);
+  border-color: rgba(188, 145, 85, 0.5);
+}
+
 .odontograma-box.contracted {
   background: rgba(188, 145, 85, 0.18);
   border-color: rgba(188, 145, 85, 0.5);
@@ -3640,7 +3678,7 @@ textarea::placeholder {
 }
 
 .agenda-column-header {
-  height: 48px;
+  height: 44px;
   font-weight: 800;
   font-size: 1rem;
 }
@@ -4183,7 +4221,6 @@ textarea::placeholder {
 
 .agenda-day-column-body {
   position: relative;
-  height: 1272px;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(199, 170, 120, 0.16);
@@ -4219,6 +4256,10 @@ textarea::placeholder {
   border-right: 1px solid rgba(199, 170, 120, 0.08);
   background: transparent;
   cursor: pointer;
+}
+
+.agenda-slot.consultorio-ocupado {
+  background: rgba(220, 38, 38, 0.14);
 }
 
 .agenda-event-card {
@@ -4378,7 +4419,6 @@ textarea::placeholder {
 
 .agenda-week-day-column {
   position: relative;
-  min-height: calc(24px * 53);
   background: #fff;
 }
 
@@ -4838,6 +4878,11 @@ textarea::placeholder {
 
 .timeline-slot.ocupado {
   background: #f4a1a8;
+}
+
+.timeline-slot.consultorio-ocupado {
+  background: #f6b2b7;
+  border-color: rgba(220, 38, 38, 0.26);
 }
 
 .timeline-slot.selecionado {
