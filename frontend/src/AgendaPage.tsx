@@ -1219,7 +1219,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         if (cancelado) return;
         setConsultorioProfissionalModal(String(resultado.consultorioProfissional || consultorioProfissionalNoDia(form.profissionalId, form.data) || ""));
         const maximoPorHorario = configProfissionais.find((item) => item.id === form.profissionalId)?.maxAgendamentosPorHorario ?? 1;
-        const locais = eventos
+        const agendamentosDisponibilidade = resultado.agendamentos
           .filter((evento) =>
             evento.profissionalId === form.profissionalId
             && evento.data === isoParaBr(form.data)
@@ -1231,7 +1231,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
               return minuto >= paraMinutos(evento.inicio) && minuto < paraMinutos(evento.fim);
             })
           );
-        const contagemSlots = [...resultado.ocupados, ...locais].reduce<Record<string, number>>((acc, slot) => {
+        const contagemSlots = agendamentosDisponibilidade.reduce<Record<string, number>>((acc, slot) => {
           acc[slot] = (acc[slot] ?? 0) + 1;
           return acc;
         }, {});

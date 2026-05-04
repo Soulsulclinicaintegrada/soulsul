@@ -279,6 +279,8 @@ type RecebivelForm = {
   observacao: string;
 };
 
+type RecebivelModalModo = "edicao" | "baixa";
+
 type ResumoFinanceiroCards = {
   total: string;
   emAberto: string;
@@ -862,6 +864,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [descontoEditor, setDescontoEditor] = useState<DescontoOrcamento>(DESCONTO_INICIAL);
   const [modalRecebivelAberto, setModalRecebivelAberto] = useState(false);
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
+  const [recebivelModalModo, setRecebivelModalModo] = useState<RecebivelModalModo>("edicao");
   const [salvandoRecebivel, setSalvandoRecebivel] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
@@ -1482,7 +1485,19 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function abrirRecebivel(item: RecebivelResumoApi) {
+    setRecebivelModalModo("edicao");
     setRecebivelForm(recebivelParaForm(item));
+    setModalRecebivelAberto(true);
+  }
+
+  function abrirRecebivelParaBaixa(item: RecebivelResumoApi) {
+    setRecebivelModalModo("baixa");
+    setRecebivelForm({
+      ...recebivelParaForm(item),
+      status: "Pago",
+      dataPagamento: dataBrParaIso(item.dataPagamento) || dataHojeIso(),
+      formaPagamento: item.formaPagamento || "PIX"
+    });
     setModalRecebivelAberto(true);
   }
 
@@ -1490,6 +1505,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     if (salvandoRecebivel) return;
     setModalRecebivelAberto(false);
     setRecebivelForm(null);
+    setRecebivelModalModo("edicao");
   }
 
   async function salvarRecebivel(payloadOverride?: Partial<RecebivelAtualizacaoPayload>) {
@@ -1497,6 +1513,20 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setSalvandoRecebivel(true);
     setErro(null);
     try {
+      if (recebivelModalModo === "baixa") {
+        await baixarRecebivelPacienteApi(pacienteAtivoId, recebivelForm.id, {
+          data_pagamento: recebivelForm.dataPagamento || dataHojeIso(),
+          forma_pagamento: recebivelForm.formaPagamento || "PIX",
+          conta_caixa: recebivelForm.formaPagamento || "PIX",
+          observacao: recebivelForm.observacao || ""
+        });
+        setFeedback("Parcela baixada com sucesso.");
+        await carregarFicha(pacienteAtivoId);
+        setModalRecebivelAberto(false);
+        setRecebivelForm(null);
+        setRecebivelModalModo("edicao");
+        return;
+      }
       const payload: RecebivelAtualizacaoPayload = {
         paciente_nome: ficha?.paciente.nome || "",
         prontuario: ficha?.paciente.prontuario || "",
@@ -1521,23 +1551,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   async function baixarRecebivel(item: RecebivelResumoApi) {
-    if (!pacienteAtivoId) return;
-    setSalvandoRecebivel(true);
-    setErro(null);
-    try {
-      await baixarRecebivelPacienteApi(pacienteAtivoId, item.id, {
-        data_pagamento: dataHojeIso(),
-        forma_pagamento: item.formaPagamento || "PIX",
-        conta_caixa: item.formaPagamento || "PIX",
-        observacao: item.observacao || ""
-      });
-      setFeedback("Parcela baixada com sucesso.");
-      await carregarFicha(pacienteAtivoId);
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao baixar recebível.");
-    } finally {
-      setSalvandoRecebivel(false);
-    }
+    abrirRecebivelParaBaixa(item);
   }
 
   function renderFinanceiroSection() {
@@ -3161,6 +3175,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   function renderOrdemServico() {
     const etapasPadrao = procedimentoOrdemServicoSelecionado?.etapasPadrao || [];
     const opcoesEtapa = [...etapasPadrao, "Outro"];
+    const procedimentoManualPreenchido = ordemServicoForm.procedimentoNomeManual.trim().length > 0;
     return (
       <div className="clinical-panel">
         <div className="clinical-panel-header">
@@ -3239,7 +3254,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             <span>Carga imediata</span>
           </label>
 
-          {procedimentoOrdemServicoSelecionado ? (
+          {(procedimentoOrdemServicoSelecionado || !procedimentosContratadosPaciente.length || procedimentoManualPreenchido) ? (
             <div className="procedures-form-wide os-steps-box">
               <div className="clinical-panel-header compact">
                 <div>
@@ -3284,7 +3299,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         </div>
 
         <div className="users-template-actions">
-          <button type="button" className="primary-action" onClick={salvarOrdemServicoPaciente} disabled={!procedimentoOrdemServicoSelecionado || salvandoOrdemServico}>
+          <button type="button" className="primary-action" onClick={salvarOrdemServicoPaciente} disabled={salvandoOrdemServico}>
             Salvar ordem de serviço
           </button>
         </div>
@@ -3350,7 +3365,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             <header className="modal-header">
               <div>
                 <span className="panel-kicker">Financeiro</span>
-                <h2>Editar parcela</h2>
+                <h2>{recebivelModalModo === "baixa" ? "Baixar parcela" : "Editar parcela"}</h2>
               </div>
               <button type="button" className="icon-only" onClick={fecharRecebivel}>×</button>
             </header>
@@ -3423,7 +3438,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             <footer className="modal-footer">
               <button type="button" className="ghost-action" onClick={fecharRecebivel}>Fechar</button>
               <button type="button" className="primary-action" onClick={() => salvarRecebivel()} disabled={salvandoRecebivel}>
-                {salvandoRecebivel ? "Salvando..." : "Salvar parcela"}
+                {salvandoRecebivel ? "Salvando..." : (recebivelModalModo === "baixa" ? "Confirmar baixa" : "Salvar parcela")}
               </button>
             </footer>
           </article>

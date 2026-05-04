@@ -14,6 +14,7 @@ import {
 
 type OrdemServicoForm = {
   procedimentoId: string;
+  procedimentoNomeManual: string;
   cor: string;
   escala: string;
   elementoArcada: string;
@@ -32,6 +33,7 @@ type ProcedimentoCatalogo = {
 
 const ORDEM_SERVICO_INICIAL: OrdemServicoForm = {
   procedimentoId: "",
+  procedimentoNomeManual: "",
   cor: "",
   escala: "",
   elementoArcada: "",
@@ -61,6 +63,7 @@ function mapProcedimentoCatalogoApi(item: ProcedimentoResumoApi): ProcedimentoCa
 function redefinirFormulario(procedimentoId = ""): OrdemServicoForm {
   return {
     procedimentoId,
+    procedimentoNomeManual: "",
     cor: "",
     escala: "",
     elementoArcada: "",
@@ -196,7 +199,14 @@ export function GuiasPage() {
   }
 
   async function salvarGuia() {
-    if (!pacienteSelecionadoId || !procedimentoSelecionado) return;
+    if (!pacienteSelecionadoId) return;
+    const procedimentoNome =
+      procedimentoSelecionado?.nome?.trim()
+      || ordemServicoForm.procedimentoNomeManual.trim();
+    if (!procedimentoNome) {
+      setErro("Informe o procedimento da ordem de serviço.");
+      return;
+    }
     const etapas = ordemServicoForm.etapas
       .map((item) => ({
         etapa: item.etapa.trim(),
@@ -225,7 +235,8 @@ export function GuiasPage() {
     setErro(null);
     try {
       const ordem = await criarOrdemServicoPacienteApi(pacienteSelecionadoId, {
-        procedimento_id: procedimentoSelecionado.id,
+        procedimento_id: procedimentoSelecionado?.id ?? 0,
+        procedimento_nome: procedimentoNome,
         material: "",
         material_outro: "",
         cor: ordemServicoForm.cor,
@@ -248,6 +259,7 @@ export function GuiasPage() {
 
   const etapasPadrao = procedimentoSelecionado?.etapasPadrao || [];
   const opcoesEtapa = [...etapasPadrao, "Outro"];
+  const procedimentoManualPreenchido = ordemServicoForm.procedimentoNomeManual.trim().length > 0;
 
   return (
     <section className="guides-shell">
@@ -330,14 +342,24 @@ export function GuiasPage() {
                   <select
                     value={ordemServicoForm.procedimentoId}
                     onChange={(event) => setOrdemServicoForm(redefinirFormulario(event.target.value))}
-                    disabled={!procedimentosContratadosPaciente.length}
                   >
-                    <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Nenhum procedimento contratado"}</option>
+                    <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Informar manualmente"}</option>
                     {procedimentosContratadosPaciente.map((item) => (
                       <option key={item.id} value={item.id}>{item.nome}</option>
                     ))}
                   </select>
                 </label>
+
+                {!procedimentosContratadosPaciente.length ? (
+                  <label className="procedures-form-wide">
+                    <span>Procedimento manual</span>
+                    <input
+                      value={ordemServicoForm.procedimentoNomeManual}
+                      onChange={(event) => setOrdemServicoForm((atual) => ({ ...atual, procedimentoNomeManual: event.target.value }))}
+                      placeholder="Digite o procedimento da guia"
+                    />
+                  </label>
+                ) : null}
 
                 <label>
                   <span>Elemento ou arcada</span>
@@ -384,7 +406,7 @@ export function GuiasPage() {
                   <span>Carga imediata</span>
                 </label>
 
-                {procedimentoSelecionado ? (
+                {(procedimentoSelecionado || !procedimentosContratadosPaciente.length || procedimentoManualPreenchido) ? (
                   <div className="procedures-form-wide os-steps-box">
                     <div className="clinical-panel-header compact">
                       <div>
@@ -429,9 +451,9 @@ export function GuiasPage() {
               </div>
 
               <div className="users-template-actions">
-                <button type="button" className="primary-action" onClick={salvarGuia} disabled={!procedimentoSelecionado || salvando}>
-                  Salvar ordem de serviço
-                </button>
+                  <button type="button" className="primary-action" onClick={salvarGuia} disabled={salvando}>
+                    Salvar ordem de serviço
+                  </button>
               </div>
             </div>
 
