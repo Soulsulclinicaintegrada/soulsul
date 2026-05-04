@@ -850,6 +850,10 @@ export async function criarPacienteApi(payload: PacienteApiPayload) {
   });
 }
 
+export async function buscarProximoProntuarioApi() {
+  return fetchJson<{ prontuario: string }>(`${API_BASE_URL}/api/pacientes/proximo-prontuario`);
+}
+
 export async function atualizarPacienteApi(pacienteId: number, payload: PacienteApiPayload) {
   return fetchJson<PacienteDetalheApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}`, {
     method: "PUT",

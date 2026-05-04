@@ -18,6 +18,7 @@ import {
   listarProcedimentosApi,
   listarOrdensServicoPacienteApi,
   criarOrdemServicoPacienteApi,
+  buscarProximoProntuarioApi,
   odontogramaPacienteApi,
   atualizarRecebivelPacienteApi,
   urlDocumentoPaciente,
@@ -200,6 +201,7 @@ type ProcedimentoOrdemServicoOpcao = {
 
 type OrdemServicoForm = {
   procedimentoId: string;
+  procedimentoNomeManual: string;
   cor: string;
   escala: string;
   elementoArcada: string;
@@ -339,6 +341,7 @@ const DESCONTO_INICIAL: DescontoOrcamento = {
 
 const ORDEM_SERVICO_INICIAL: OrdemServicoForm = {
   procedimentoId: "",
+  procedimentoNomeManual: "",
   cor: "",
   escala: "",
   elementoArcada: "",
@@ -1237,6 +1240,23 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   );
 
   useEffect(() => {
+    if (!modalNovoAberto) return;
+    if (novoForm.prontuario.trim()) return;
+    let cancelado = false;
+    buscarProximoProntuarioApi()
+      .then((resultado) => {
+        if (cancelado) return;
+        setNovoForm((atual) => atual.prontuario.trim() ? atual : { ...atual, prontuario: resultado.prontuario || "" });
+      })
+      .catch(() => {
+        // mantém o preenchimento manual atual se a API não responder
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [modalNovoAberto, novoForm.prontuario]);
+
+  useEffect(() => {
     setPlanoPagamento((atual) => normalizarPlanoPagamento(atual, totalOrcamentoFinal, orcamentoDraft.data));
   }, [totalOrcamentoFinal, orcamentoDraft.data]);
 
@@ -1891,6 +1911,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   function redefinirOrdemServicoForm(procedimentoId = "") {
     setOrdemServicoForm({
       procedimentoId,
+      procedimentoNomeManual: "",
       cor: "",
       escala: "",
       elementoArcada: "",
@@ -1927,7 +1948,14 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   async function salvarOrdemServicoPaciente() {
-    if (!pacienteAtivoId || !procedimentoOrdemServicoSelecionado) return;
+    if (!pacienteAtivoId) return;
+    const procedimentoNomeOrdem =
+      procedimentoOrdemServicoSelecionado?.nome?.trim()
+      || ordemServicoForm.procedimentoNomeManual.trim();
+    if (!procedimentoNomeOrdem) {
+      setErro("Informe o procedimento da ordem de serviço.");
+      return;
+    }
     const etapas = ordemServicoForm.etapas
       .map((item) => ({
         etapa: item.etapa.trim(),
@@ -1954,8 +1982,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setErro(null);
     try {
       const ordem = await criarOrdemServicoPacienteApi(pacienteAtivoId, {
-        procedimento_id: procedimentoOrdemServicoSelecionado.id ?? 0,
-        procedimento_nome: procedimentoOrdemServicoSelecionado.nome,
+        procedimento_id: procedimentoOrdemServicoSelecionado?.id ?? 0,
+        procedimento_nome: procedimentoNomeOrdem,
         material: "",
         material_outro: "",
         cor: ordemServicoForm.cor,
@@ -3148,14 +3176,23 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             <select
               value={ordemServicoForm.procedimentoId}
               onChange={(event) => redefinirOrdemServicoForm(event.target.value)}
-              disabled={!procedimentosContratadosPaciente.length}
             >
-              <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Nenhum procedimento contratado"}</option>
+              <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Informar manualmente"}</option>
                 {procedimentosContratadosPaciente.map((item) => (
                   <option key={item.value} value={item.value}>{item.nome}</option>
                 ))}
               </select>
             </label>
+          {!procedimentosContratadosPaciente.length ? (
+            <label className="procedures-form-wide">
+              <span>Procedimento manual</span>
+              <input
+                value={ordemServicoForm.procedimentoNomeManual}
+                onChange={(event) => setOrdemServicoForm((atual) => ({ ...atual, procedimentoNomeManual: event.target.value }))}
+                placeholder="Digite o procedimento para pacientes antigos"
+              />
+            </label>
+          ) : null}
 
           <label>
             <span>Elemento ou arcada</span>
@@ -3444,7 +3481,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                 <div className="form-block">
                   <h3>Documentos</h3>
                   <div className="form-grid two">
-                    <label><span>Prontuário</span><input value={novoForm.prontuario} onChange={(e) => setNovoForm({ ...novoForm, prontuario: e.target.value })} /></label>
+                    <label><span>Prontuário</span><input value={novoForm.prontuario} readOnly placeholder="Gerado automaticamente" /></label>
                     <label><span>CPF</span><input value={novoForm.cpf} onChange={(e) => setNovoForm({ ...novoForm, cpf: e.target.value })} /></label>
                     <label><span>RG</span><input value={novoForm.rg} onChange={(e) => setNovoForm({ ...novoForm, rg: e.target.value })} /></label>
                   </div>

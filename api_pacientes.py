@@ -388,6 +388,8 @@ def proximo_prontuario(conn: sqlite3.Connection) -> str:
     return str(maior + 1 if maior else 1)
 
 
+
+
 def slug_paciente_arquivos(paciente_row: sqlite3.Row | dict) -> str:
     prontuario = formatar_prontuario_valor(paciente_row.get("prontuario") if isinstance(paciente_row, dict) else paciente_row["prontuario"])
     nome = limpar_nome(paciente_row.get("nome", "PACIENTE") if isinstance(paciente_row, dict) else paciente_row["nome"])
@@ -477,6 +479,10 @@ class PacienteDetalhe(BaseModel):
     responsavel: str = ""
     cpfResponsavel: str = ""
     fotoUrl: str = ""
+
+
+class ProximoProntuarioResposta(BaseModel):
+    prontuario: str
 
 
 class ContratoResumo(BaseModel):
@@ -2006,14 +2012,12 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             for item in procedimentos_contratados_rows
             if str(item["procedimento"] or "").strip()
         }
-        if not procedimentos_contratados:
-            raise HTTPException(status_code=400, detail="Este paciente nao possui procedimentos contratados para ordem de servico.")
         procedimento_nome = corrigir_texto_importado(str(payload.procedimento_nome or "").strip())
         if procedimento is not None:
             procedimento_nome = corrigir_texto_importado(str(procedimento["nome"] or "").strip())
         if not procedimento_nome:
-            raise HTTPException(status_code=400, detail="Selecione um procedimento contratado para este paciente.")
-        if normalizar_texto(procedimento_nome) not in procedimentos_contratados:
+            raise HTTPException(status_code=400, detail="Informe o procedimento da ordem de serviço.")
+        if procedimentos_contratados and normalizar_texto(procedimento_nome) not in procedimentos_contratados:
             raise HTTPException(status_code=400, detail="Selecione apenas um procedimento contratado para este paciente.")
         material = corrigir_texto_importado(str(payload.material or "").strip())
         material_outro = corrigir_texto_importado(str(payload.material_outro or "").strip())
@@ -5721,6 +5725,15 @@ def listar_pacientes(
         rows = conn.execute("SELECT * FROM pacientes ORDER BY nome").fetchall()
         filtrados = filtrar_pacientes(rows, q)
         return [mapear_paciente_resumo(row) for row in filtrados[:limit]]
+    finally:
+        conn.close()
+
+
+@app.get("/api/pacientes/proximo-prontuario", response_model=ProximoProntuarioResposta)
+def obter_proximo_prontuario():
+    conn = conectar()
+    try:
+        return ProximoProntuarioResposta(prontuario=proximo_prontuario(conn))
     finally:
         conn.close()
 
