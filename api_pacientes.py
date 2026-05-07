@@ -2423,20 +2423,24 @@ def salvar_orcamento_paciente(
             """
             INSERT INTO contratos (
                 paciente_id, valor_total, entrada, parcelas, primeiro_vencimento, data_pagamento_entrada,
-                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, desconto_percentual, desconto_valor, validade_orcamento
+                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento
             )
-            VALUES (?, ?, 0, 1, ?, NULL, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paciente_id,
                 valor_total,
-                data_base,
+                entrada_valor,
+                quantidade_parcelas,
+                primeiro_vencimento,
+                data_pagamento_entrada,
                 forma_pagamento,
                 data_base,
                 payload.observacoes.strip(),
                 payload.clinica.strip(),
                 payload.criado_por.strip(),
                 payload.tabela.strip(),
+                plano_pagamento_json,
                 desconto_percentual,
                 desconto_valor,
                 payload.validade_orcamento.strip(),
@@ -2452,18 +2456,22 @@ def salvar_orcamento_paciente(
         conn.execute(
             """
             UPDATE contratos
-            SET valor_total=?, primeiro_vencimento=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?
+            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?
             WHERE id=? AND paciente_id=?
             """,
             (
                 valor_total,
-                data_base,
+                entrada_valor,
+                quantidade_parcelas,
+                primeiro_vencimento,
+                data_pagamento_entrada,
                 forma_pagamento,
                 data_base,
                 payload.observacoes.strip(),
                 payload.clinica.strip(),
                 payload.criado_por.strip(),
                 payload.tabela.strip(),
+                plano_pagamento_json,
                 desconto_percentual,
                 desconto_valor,
                 payload.validade_orcamento.strip(),
@@ -4252,6 +4260,10 @@ def texto_elemento(elemento) -> str:
 
 
 LINHA_PREENCHIMENTO_CONTRATO = "______________________________________________________________"
+FILEIRA_SUPERIOR_PERMANENTE_DOCX = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28]
+FILEIRA_INFERIOR_PERMANENTE_DOCX = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
+FILEIRA_SUPERIOR_DECIDUA_DOCX = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65]
+FILEIRA_INFERIOR_DECIDUA_DOCX = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75]
 
 
 def remover_elemento(elemento) -> None:
@@ -4352,14 +4364,23 @@ def inserir_bloco_apos_docx(ancora_xml, novo_xml) -> None:
     ancora_xml.addnext(novo_xml)
 
 
-def montar_tabela_odontograma_docx(doc, dentes: list[int]):
-    tabela = doc.add_table(rows=1, cols=len(dentes))
-    for indice, dente in enumerate(dentes):
+def montar_tabela_odontograma_docx(doc, dentes_marcados: set[int], fileira: list[int]):
+    tabela = doc.add_table(rows=1, cols=len(fileira))
+    try:
+        tabela.autofit = False
+    except Exception:
+        pass
+    for indice, dente in enumerate(fileira):
         celula = tabela.rows[0].cells[indice]
         celula.text = str(dente)
-        aplicar_fundo_celula_docx(celula, "E4C7A2")
+        selecionado = dente in dentes_marcados
+        aplicar_fundo_celula_docx(celula, "E4C7A2" if selecionado else "FFFFFF")
         for paragrafo in celula.paragraphs:
             paragrafo.alignment = 1
+            formato = paragrafo.paragraph_format
+            if Pt is not None:
+                formato.space_before = Pt(0)
+                formato.space_after = Pt(0)
             for run in paragrafo.runs:
                 run.font.bold = True
                 if Pt is not None:
@@ -4367,29 +4388,34 @@ def montar_tabela_odontograma_docx(doc, dentes: list[int]):
     return tabela
 
 
+def encontrar_ancora_odontograma_capa(doc):
+    if Paragraph is None:
+        return None
+    marcadores = ["PRONTUÁRIO Nº", "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICOS", "PLANO DE TRATAMENTO"]
+    for marcador in marcadores:
+        marcador_norm = normalizar_texto_maiusculo(marcador)
+        for paragrafo in doc.paragraphs:
+            if marcador_norm in normalizar_texto_maiusculo(paragrafo.text):
+                return paragrafo
+    return None
+
+
 def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_ancora=None) -> None:
     if Document is None or Paragraph is None:
         return
-    dentes_permanentes = sorted(
-        {
-            int(regiao)
-            for item in procedimentos
-            for regiao in item.get("regioes", [])
-            if str(regiao).isdigit() and int(regiao) < 50
-        }
-    )
-    dentes_deciduos = sorted(
-        {
-            int(regiao)
-            for item in procedimentos
-            for regiao in item.get("regioes", [])
-            if str(regiao).isdigit() and 50 < int(regiao) < 90
-        }
-    )
+    dentes_marcados = {
+        int(regiao)
+        for item in procedimentos
+        for regiao in item.get("regioes", [])
+        if str(regiao).isdigit()
+    }
+    dentes_permanentes = {dente for dente in dentes_marcados if dente < 50}
+    dentes_deciduos = {dente for dente in dentes_marcados if 50 < dente < 90}
     if not dentes_permanentes and not dentes_deciduos:
         return
 
-    ancora_xml = tabela_ancora._tbl if tabela_ancora is not None else None
+    ancora_paragrafo = encontrar_ancora_odontograma_capa(doc)
+    ancora_xml = ancora_paragrafo._p if ancora_paragrafo is not None else (tabela_ancora._tbl if tabela_ancora is not None else None)
     titulo = doc.add_paragraph("ODONTOGRAMA DO CONTRATO")
     if titulo.runs:
         titulo.runs[0].bold = True
@@ -4399,7 +4425,7 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
         inserir_bloco_apos_docx(ancora_xml, titulo._p)
         ancora_xml = titulo._p
 
-    def inserir_linha(titulo_linha: str, dentes_linha: list[int]) -> None:
+    def inserir_linha(titulo_linha: str, fileira: list[int], dentes_linha: set[int]) -> None:
         nonlocal ancora_xml
         if not dentes_linha:
             return
@@ -4408,17 +4434,21 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
             subtitulo.runs[0].bold = True
             if Pt is not None:
                 subtitulo.runs[0].font.size = Pt(9)
-        tabela = montar_tabela_odontograma_docx(doc, dentes_linha)
+        tabela = montar_tabela_odontograma_docx(doc, dentes_linha, fileira)
         if ancora_xml is not None:
             inserir_bloco_apos_docx(ancora_xml, subtitulo._p)
             ancora_xml = subtitulo._p
             inserir_bloco_apos_docx(ancora_xml, tabela._tbl)
             ancora_xml = tabela._tbl
 
-    inserir_linha("Arcada permanente", dentes_permanentes)
-    inserir_linha("Arcada decídua", dentes_deciduos)
+    if dentes_permanentes:
+        inserir_linha("Arcada superior", FILEIRA_SUPERIOR_PERMANENTE_DOCX, dentes_permanentes)
+        inserir_linha("Arcada inferior", FILEIRA_INFERIOR_PERMANENTE_DOCX, dentes_permanentes)
+    if dentes_deciduos:
+        inserir_linha("Arcada superior decídua", FILEIRA_SUPERIOR_DECIDUA_DOCX, dentes_deciduos)
+        inserir_linha("Arcada inferior decídua", FILEIRA_INFERIOR_DECIDUA_DOCX, dentes_deciduos)
 
-    legenda = doc.add_paragraph("Quadrados preenchidos indicam os elementos contratados.")
+    legenda = doc.add_paragraph("Os elementos destacados correspondem aos dentes selecionados no sistema.")
     if legenda.runs and Pt is not None:
         legenda.runs[0].font.size = Pt(8)
     if ancora_xml is not None:
@@ -4684,7 +4714,7 @@ def reescrever_bloco_final_termo(doc, assinatura: dict[str, str | bool]) -> None
             f"{assinatura['cpf_assinatura']}\n\n"
             f"{LINHA_PREENCHIMENTO_CONTRATO}\n"
             "SOUL SUL CLINICA INTEGRADA\n\n"
-            "TESTEMUNHAS:\n\n"
+            "TESTEMUNHAS:\n\n\n"
             f"{LINHA_PREENCHIMENTO_CONTRATO}    {LINHA_PREENCHIMENTO_CONTRATO}\n"
             "NOME:                                                          NOME:\n"
             "CPF:                                                             CPF:"
@@ -4763,15 +4793,16 @@ def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> Non
 
     paragrafo_anterior = paragrafos[indice_titulo - 1]
     remover_quebras_de_pagina_paragrafo(paragrafo_anterior)
+    remover_quebras_de_pagina_paragrafo(paragrafos[indice_titulo])
 
     p_pr = paragrafo_anterior._p.get_or_add_pPr()
     sect_existente = p_pr.find(qn("w:sectPr"))
+    sect_pr_body = doc._element.body.sectPr
+    if sect_pr_body is None:
+        return
     if sect_existente is not None:
         sect_pr = sect_existente
     else:
-        sect_pr_body = doc._element.body.sectPr
-        if sect_pr_body is None:
-            return
         sect_pr = deepcopy(sect_pr_body)
         p_pr.append(sect_pr)
 
@@ -4781,10 +4812,14 @@ def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> Non
         sect_pr.insert(0, type_el)
     type_el.set(qn("w:val"), "nextPage")
 
-    pg_num_type = sect_pr.find(qn("w:pgNumType"))
+    pg_num_anterior = sect_pr.find(qn("w:pgNumType"))
+    if pg_num_anterior is not None:
+        sect_pr.remove(pg_num_anterior)
+
+    pg_num_type = sect_pr_body.find(qn("w:pgNumType"))
     if pg_num_type is None:
         pg_num_type = OxmlElement("w:pgNumType")
-        sect_pr.append(pg_num_type)
+        sect_pr_body.append(pg_num_type)
     pg_num_type.set(qn("w:start"), str(reiniciar_em))
 
 
@@ -4798,31 +4833,25 @@ def substituir_total_paginas_por_secao(container) -> None:
                     child.text = re.sub(r"NUMPAGES", "SECTIONPAGES", child.text, flags=re.IGNORECASE)
 
 
-def reiniciar_numeracao_paginas_todas_as_secoes(doc, reiniciar_em: int = 1) -> None:
-    if OxmlElement is None or qn is None:
+def limpar_reinicio_numeracao_secoes_adicionais(doc) -> None:
+    if qn is None:
         return
-    for secao in getattr(doc, "sections", []):
-        secao.different_first_page_header_footer = False
+    for secao in list(getattr(doc, "sections", []))[1:]:
         sect_pr = getattr(secao, "_sectPr", None)
         if sect_pr is None:
             continue
         pg_num_type = sect_pr.find(qn("w:pgNumType"))
-        if pg_num_type is None:
-            pg_num_type = OxmlElement("w:pgNumType")
-            sect_pr.append(pg_num_type)
-        pg_num_type.set(qn("w:start"), str(reiniciar_em))
-        substituir_total_paginas_por_secao(secao.header)
-        substituir_total_paginas_por_secao(secao.footer)
+        if pg_num_type is not None:
+            sect_pr.remove(pg_num_type)
 
 
 def configurar_numeracao_paginas_contrato(doc) -> None:
-    for marcador in [
-        "CLÁUSULA 01 - DO OBJETO DO CONTRATO",
-        "DECLARACAO DE CONSENTIMENTO",
-        "TERMO DE CONSENTIMENTO ESCLARECIDO",
-    ]:
-        inserir_secao_antes_titulo(doc, marcador, 1)
-    reiniciar_numeracao_paginas_todas_as_secoes(doc, 1)
+    inserir_secao_antes_titulo(doc, "CLÁUSULA 01 - DO OBJETO DO CONTRATO", 1)
+    limpar_reinicio_numeracao_secoes_adicionais(doc)
+    substituir_total_paginas_por_secao(doc)
+    for secao in getattr(doc, "sections", []):
+        substituir_total_paginas_por_secao(secao.header)
+        substituir_total_paginas_por_secao(secao.footer)
 
 
 def atualizar_datas_cidade_contrato(doc, data_referencia: date | None = None) -> None:
@@ -5004,6 +5033,7 @@ def garantir_bloco_final_assinaturas(doc, assinatura: dict[str, str | bool], dat
         ("SOUL SUL CLINICA INTEGRADA", 1),
         ("", 1),
         ("TESTEMUNHAS:", 0),
+        ("", 0),
         (f"{LINHA_PREENCHIMENTO_CONTRATO}    {LINHA_PREENCHIMENTO_CONTRATO}", 0),
         ("NOME:                                                          NOME:", 0),
         ("CPF:                                                             CPF:", 0),
@@ -5020,6 +5050,19 @@ def executar_ajuste_contrato(nome: str, func) -> None:
     except Exception as exc:
         print(f"[contrato] ajuste ignorado {nome}: {exc}", flush=True)
         print(traceback.format_exc(), flush=True)
+
+
+def quantidade_parcelas_contrato_pagamento(itens: list[dict], forma_padrao: str) -> int:
+    if not itens:
+        return 0
+    primeira = itens[0]
+    forma = str(primeira.get("forma", forma_padrao)).replace("_", " ").upper()
+    if "CARTAO" in normalizar_texto(forma).upper():
+        try:
+            return max(1, int(primeira.get("parcelas_cartao", 1) or 1))
+        except (TypeError, ValueError):
+            return 1
+    return len(itens)
 
 
 def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) -> str:
@@ -5042,6 +5085,7 @@ def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) ->
     primeira = posteriores[0]
     valor_parcela = float(primeira.get("valor", 0) or 0)
     forma_primeira = str(primeira.get("forma", forma)).replace("_", " ").upper()
+    quantidade_parcelas = quantidade_parcelas_contrato_pagamento(posteriores, forma)
     sufixo_primeira = (
         f"NO DIA {formatar_data_br_valor(primeira.get('data'))}."
         if forma_primeira in formas_no_dia
@@ -5052,13 +5096,13 @@ def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) ->
         return (
             f"VALOR TOTAL {formatar_moeda_br(valor_total)}. "
             f"ENTRADA {formatar_moeda_br(entrada_valor)} PAGA NO {forma_entrada} NO DIA {formatar_data_br_valor(entrada.get('data'))}. "
-            f"RESTANTE {formatar_moeda_br(valor_restante)} EM {len(posteriores)} PARCELAS DE {formatar_moeda_br(valor_parcela)} NO {forma_primeira} "
+            f"RESTANTE {formatar_moeda_br(valor_restante)} EM {quantidade_parcelas} PARCELAS DE {formatar_moeda_br(valor_parcela)} NO {forma_primeira} "
             f"{sufixo_primeira}"
         )
 
     return (
         f"VALOR TOTAL {formatar_moeda_br(valor_total)}. "
-        f"PAGO EM {len(posteriores)} PARCELAS DE {formatar_moeda_br(valor_parcela)} NO {forma_primeira} "
+        f"PAGO EM {quantidade_parcelas} PARCELAS DE {formatar_moeda_br(valor_parcela)} NO {forma_primeira} "
         f"{sufixo_primeira}"
     )
 

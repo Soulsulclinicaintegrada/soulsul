@@ -512,6 +512,9 @@ function planoPagamentoDaApi(
       parcelasCartao: Math.max(1, linha.parcelas_cartao || 1)
     }))
   };
+  if (base.linhas.length) {
+    return base;
+  }
   return normalizarPlanoPagamento(base, valorTotal, dataBase);
 }
 
@@ -538,9 +541,9 @@ function mapPacienteParaForm(paciente?: PacienteDetalheApi | null): PacienteForm
     apelido: paciente.apelido || "",
     sexo: paciente.sexo || "",
     prontuario: paciente.prontuario || "",
-    cpf: paciente.cpf || "",
-    rg: paciente.rg || "",
-    dataNascimento: paciente.dataNascimento || "",
+    cpf: formatarCpfInput(paciente.cpf || ""),
+    rg: formatarRgInput(paciente.rg || ""),
+    dataNascimento: formatarDataNascimentoInput(paciente.dataNascimento || ""),
     telefone: paciente.telefone || "",
     email: paciente.email || "",
     cep: paciente.cep || "",
@@ -556,7 +559,7 @@ function mapPacienteParaForm(paciente?: PacienteDetalheApi | null): PacienteForm
     observacoes: paciente.observacoes || "",
     menorIdade: Boolean(paciente.menorIdade),
     responsavel: paciente.responsavel || "",
-    cpfResponsavel: paciente.cpfResponsavel || ""
+    cpfResponsavel: formatarCpfInput(paciente.cpfResponsavel || "")
   };
 }
 
@@ -647,6 +650,36 @@ function dataBrParaIso(valor?: string) {
   const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!match) return "";
   return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function apenasDigitos(texto: string) {
+  return texto.replace(/\D/g, "");
+}
+
+function formatarDataNascimentoInput(valor: string) {
+  const digitos = apenasDigitos(valor).slice(0, 8);
+  if (!digitos) return "";
+  if (digitos.length <= 2) return digitos;
+  if (digitos.length <= 4) return `${digitos.slice(0, 2)}/${digitos.slice(2)}`;
+  return `${digitos.slice(0, 2)}/${digitos.slice(2, 4)}/${digitos.slice(4)}`;
+}
+
+function formatarCpfInput(valor: string) {
+  const digitos = apenasDigitos(valor).slice(0, 11);
+  if (!digitos) return "";
+  if (digitos.length <= 3) return digitos;
+  if (digitos.length <= 6) return `${digitos.slice(0, 3)}.${digitos.slice(3)}`;
+  if (digitos.length <= 9) return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6)}`;
+  return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9)}`;
+}
+
+function formatarRgInput(valor: string) {
+  const texto = valor.replace(/[^0-9a-z]/gi, "").toUpperCase().slice(0, 9);
+  if (!texto) return "";
+  if (texto.length <= 2) return texto;
+  if (texto.length <= 5) return `${texto.slice(0, 2)}.${texto.slice(2)}`;
+  if (texto.length <= 8) return `${texto.slice(0, 2)}.${texto.slice(2, 5)}.${texto.slice(5)}`;
+  return `${texto.slice(0, 2)}.${texto.slice(2, 5)}.${texto.slice(5, 8)}-${texto.slice(8)}`;
 }
 
 function recebivelParaForm(item: RecebivelResumoApi): RecebivelForm {
@@ -2366,7 +2399,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                           ))}
                         </select>
                       </label>
-                      <label><span>Nascimento</span><input value={editForm.dataNascimento} onChange={(e) => setEditForm({ ...editForm, dataNascimento: e.target.value })} /></label>
+                      <label><span>Nascimento</span><input value={editForm.dataNascimento} onChange={(e) => setEditForm({ ...editForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })} /></label>
                       <label><span>Menor de idade</span><input type="checkbox" checked={editForm.menorIdade} onChange={(e) => setEditForm(e.target.checked ? { ...editForm, menorIdade: true } : limparCamposResponsavel({ ...editForm, menorIdade: false }))} /></label>
                     </div>
                   </div>
@@ -2389,8 +2422,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                     <h3>Documentos</h3>
                     <div className="form-grid two">
                       <label><span>Prontuário</span><input value={editForm.prontuario} onChange={(e) => setEditForm({ ...editForm, prontuario: e.target.value })} /></label>
-                      <label><span>CPF</span><input value={editForm.cpf} onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })} /></label>
-                      <label><span>RG</span><input value={editForm.rg} onChange={(e) => setEditForm({ ...editForm, rg: e.target.value })} /></label>
+                      <label><span>CPF</span><input value={editForm.cpf} onChange={(e) => setEditForm({ ...editForm, cpf: formatarCpfInput(e.target.value) })} /></label>
+                      <label><span>RG</span><input value={editForm.rg} onChange={(e) => setEditForm({ ...editForm, rg: formatarRgInput(e.target.value) })} /></label>
                       <label><span>Estado civil</span><input value={editForm.estadoCivil} onChange={(e) => setEditForm({ ...editForm, estadoCivil: e.target.value })} /></label>
                     </div>
                   </div>
@@ -2399,7 +2432,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                     <h3>Complementar</h3>
                     <div className="form-grid two">
                       <label><span>Responsável</span><input value={editForm.responsavel} onChange={(e) => setEditForm({ ...editForm, responsavel: e.target.value })} disabled={!editForm.menorIdade} /></label>
-                      <label><span>CPF do responsável</span><input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: e.target.value })} disabled={!editForm.menorIdade} /></label>
+                      <label><span>CPF do responsável</span><input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: formatarCpfInput(e.target.value) })} disabled={!editForm.menorIdade} /></label>
                       <label className="full"><span>Observações</span><textarea rows={5} value={editForm.observacoes} onChange={(e) => setEditForm({ ...editForm, observacoes: e.target.value })} /></label>
                     </div>
                   </div>
@@ -2724,7 +2757,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                           <span>Data de Nascimento</span>
                           <input
                             value={editForm.dataNascimento}
-                            onChange={(e) => setEditForm({ ...editForm, dataNascimento: e.target.value })}
+                            onChange={(e) => setEditForm({ ...editForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })}
                             placeholder="DD/MM/AAAA"
                           />
                         </label>
@@ -2751,11 +2784,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                       </div>
                       <label className="patient-line-field">
                         <span>CPF</span>
-                        <input value={editForm.cpf} onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })} />
+                        <input value={editForm.cpf} onChange={(e) => setEditForm({ ...editForm, cpf: formatarCpfInput(e.target.value) })} />
                       </label>
                       <label className="patient-line-field">
                         <span>RG</span>
-                        <input value={editForm.rg} onChange={(e) => setEditForm({ ...editForm, rg: e.target.value })} />
+                        <input value={editForm.rg} onChange={(e) => setEditForm({ ...editForm, rg: formatarRgInput(e.target.value) })} />
                       </label>
                       <label className="patient-line-field">
                         <span>Estado Civil</span>
@@ -2849,7 +2882,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                       </label>
                       <label className="patient-line-field">
                         <span>CPF do Representante Legal</span>
-                        <input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: e.target.value })} disabled={!editForm.menorIdade} />
+                        <input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: formatarCpfInput(e.target.value) })} disabled={!editForm.menorIdade} />
                       </label>
                     </div>
                   </div>
@@ -3474,7 +3507,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                         ))}
                       </select>
                     </label>
-                    <label><span>Nascimento</span><input value={novoForm.dataNascimento} onChange={(e) => setNovoForm({ ...novoForm, dataNascimento: e.target.value })} /></label>
+                    <label><span>Nascimento</span><input value={novoForm.dataNascimento} onChange={(e) => setNovoForm({ ...novoForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })} /></label>
                     <label><span>Menor de idade</span><input type="checkbox" checked={novoForm.menorIdade} onChange={(e) => setNovoForm(e.target.checked ? { ...novoForm, menorIdade: true } : limparCamposResponsavel({ ...novoForm, menorIdade: false }))} /></label>
                   </div>
                 </div>
@@ -3497,8 +3530,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   <h3>Documentos</h3>
                   <div className="form-grid two">
                     <label><span>Prontuário</span><input value={novoForm.prontuario} readOnly placeholder="Gerado automaticamente" /></label>
-                    <label><span>CPF</span><input value={novoForm.cpf} onChange={(e) => setNovoForm({ ...novoForm, cpf: e.target.value })} /></label>
-                    <label><span>RG</span><input value={novoForm.rg} onChange={(e) => setNovoForm({ ...novoForm, rg: e.target.value })} /></label>
+                    <label><span>CPF</span><input value={novoForm.cpf} onChange={(e) => setNovoForm({ ...novoForm, cpf: formatarCpfInput(e.target.value) })} /></label>
+                    <label><span>RG</span><input value={novoForm.rg} onChange={(e) => setNovoForm({ ...novoForm, rg: formatarRgInput(e.target.value) })} /></label>
                   </div>
                 </div>
 
@@ -3507,7 +3540,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   <div className="form-grid two">
                     <label><span>Estado civil</span><input value={novoForm.estadoCivil} onChange={(e) => setNovoForm({ ...novoForm, estadoCivil: e.target.value })} /></label>
                     <label><span>Responsável</span><input value={novoForm.responsavel} onChange={(e) => setNovoForm({ ...novoForm, responsavel: e.target.value })} disabled={!novoForm.menorIdade} /></label>
-                    <label><span>CPF do responsável</span><input value={novoForm.cpfResponsavel} onChange={(e) => setNovoForm({ ...novoForm, cpfResponsavel: e.target.value })} disabled={!novoForm.menorIdade} /></label>
+                    <label><span>CPF do responsável</span><input value={novoForm.cpfResponsavel} onChange={(e) => setNovoForm({ ...novoForm, cpfResponsavel: formatarCpfInput(e.target.value) })} disabled={!novoForm.menorIdade} /></label>
                     <label className="full"><span>Observações</span><textarea rows={5} value={novoForm.observacoes} onChange={(e) => setNovoForm({ ...novoForm, observacoes: e.target.value })} /></label>
                   </div>
                 </div>
