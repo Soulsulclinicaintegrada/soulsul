@@ -750,6 +750,51 @@ def find_tipo_atendimento_id(name: str, mapping: dict[str, int]) -> int:
     return 0
 
 
+def load_consultorios_profissionais(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    row = conn.execute("SELECT config_profissionais_json FROM agenda_configuracao WHERE id=1").fetchone()
+    if not row:
+        return {}
+    try:
+        bruto = json.loads(str(row[0] or "{}"))
+    except Exception:
+        return {}
+    if not isinstance(bruto, dict):
+        return {}
+
+    resultado: dict[str, dict[str, str]] = {}
+    for profissional_id, configuracao in bruto.items():
+        if not isinstance(configuracao, dict):
+            continue
+        dias = configuracao.get("configuracaoDias") or {}
+        if not isinstance(dias, dict):
+            continue
+        mapa_dias: dict[str, str] = {}
+        for dia_semana, valor in dias.items():
+            if not isinstance(valor, dict):
+                continue
+            consultorio = clean_str(valor.get("consultorio"))
+            if consultorio:
+                mapa_dias[str(dia_semana)] = consultorio
+        if mapa_dias:
+            resultado[str(profissional_id)] = mapa_dias
+    return resultado
+
+
+def consultorio_profissional_no_dia(
+    consultorios_por_profissional: dict[str, dict[str, str]],
+    profissional_id: int,
+    data_br: str,
+) -> str:
+    if not profissional_id or not data_br:
+        return ""
+    try:
+        dia_semana = datetime.strptime(data_br, "%d/%m/%Y").weekday()
+    except ValueError:
+        return ""
+    chave_domingo_zero = str((dia_semana + 1) % 7)
+    return clean_str(consultorios_por_profissional.get(str(profissional_id), {}).get(chave_domingo_zero))
+
+
 def import_agendamentos(
     conn: sqlite3.Connection,
     appointments_df: pd.DataFrame,
@@ -757,6 +802,7 @@ def import_agendamentos(
 ) -> int:
     profissionais_by_name, profissionais_by_login = load_profissionais_mapping(conn)
     tipos_mapping = load_tipo_atendimento_mapping(conn)
+    consultorios_por_profissional = load_consultorios_profissionais(conn)
     imported = 0
 
     for _, row in appointments_df.iterrows():
@@ -784,6 +830,7 @@ def import_agendamentos(
         tipo_id = find_tipo_atendimento_id(tipo_nome, tipos_mapping)
         procedimento = clean_str(row.get("Procedures"))
         observacoes = clean_str(row.get("Notes"))
+        consultorio = consultorio_profissional_no_dia(consultorios_por_profissional, profissional_id, data)
         if parse_bool_x(row.get("Canceled")):
             reason = clean_str(row.get("CancelReason"))
             by = title_case(row.get("CancelBy"))
@@ -808,9 +855,9 @@ def import_agendamentos(
                 procedimento, status, observacao, data_criacao, nome_paciente_snapshot,
                 telefone_snapshot, email_snapshot, profissional_id, tipo_atendimento_id,
                 procedimento_id, procedimento_nome_snapshot, contrato_id, origem_contrato,
-                data_agendamento, duracao_minutos, observacoes, criado_por, criado_em,
+                data_agendamento, duracao_minutos, consultorio, observacoes, criado_por, criado_em,
                 atualizado_em, prontuario_snapshot, tipo_atendimento_nome_snapshot
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 appointment_id,
@@ -835,6 +882,7 @@ def import_agendamentos(
                 0,
                 data,
                 duracao,
+                consultorio,
                 observacoes,
                 "IMPORTACAO",
                 criado_em,

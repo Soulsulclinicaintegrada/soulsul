@@ -6,6 +6,7 @@ import {
   listarOrdensServicoPacienteApi,
   listarPacientesApi,
   listarProcedimentosApi,
+  urlDocumentoPaciente,
   type FichaPacienteApi,
   type OrdemServicoResumoApi,
   type PacienteResumoApi,
@@ -72,6 +73,10 @@ function redefinirFormulario(procedimentoId = ""): OrdemServicoForm {
     observacao: "",
     etapas: [{ id: Date.now(), etapa: "", descricaoOutro: "" }]
   };
+}
+
+function abrirArquivo(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function GuiasPage() {
@@ -475,6 +480,17 @@ export function GuiasPage() {
                       <span key={`${item.id}-${indice}`}>{etapa.etapa === "Outro" ? etapa.descricao_outro || "Outro" : etapa.etapa}</span>
                     ))}
                   </div>
+                  {item.documentoNome && pacienteSelecionadoId ? (
+                    <div className="clinical-element-actions">
+                      <button
+                        type="button"
+                        className="ghost-action"
+                        onClick={() => abrirArquivo(urlDocumentoPaciente(pacienteSelecionadoId, item.documentoNome || "", true))}
+                      >
+                        Abrir / imprimir
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               )) : <span className="empty-inline">Nenhuma guia emitida para este paciente.</span>}
             </div>

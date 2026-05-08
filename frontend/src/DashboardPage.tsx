@@ -5,6 +5,7 @@ import {
   painelDashboardApi,
   type ContaPagarResumoApi,
   type DashboardCalendarioPagamentoItemApi,
+  type DashboardDevedorResumoItemApi,
   type DashboardIndicadorApi,
   type DashboardPainelApi
 } from "./pacientesApi";
@@ -38,6 +39,7 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
   },
   agendaHoje: [],
   calendarioPagamentos: [],
+  devedoresResumo: [],
   alertas: [],
   atividades: []
 };
@@ -314,6 +316,37 @@ function IndicadorDetalheModal({
   );
 }
 
+function DevedoresResumoCard({ itens }: { itens: DashboardDevedorResumoItemApi[] }) {
+  return (
+    <article className="panel summary-panel">
+      <div className="section-title-row">
+        <div>
+          <span className="panel-kicker">Financeiro</span>
+          <h2>Devedores</h2>
+        </div>
+        <span className="panel-meta">{`${itens.length} registro(s)`}</span>
+      </div>
+      <div className="module-sublist">
+        {itens.length ? (
+          itens.map((item) => (
+            <div className="module-subitem finance-module-subitem" key={`dashboard-devedor-${item.recebivelId}`}>
+              <div>
+                <strong>{item.nome || "Paciente"}</strong>
+                <span>{`Vencimento ${item.vencimento || "-"}${item.status ? ` · ${item.status}` : ""}`}</span>
+              </div>
+              <div className="module-subitem-right">
+                <strong>{item.valor || "R$ 0,00"}</strong>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="dashboard-feedback">Nenhum devedor em aberto no momento.</div>
+        )}
+      </div>
+    </article>
+  );
+}
+
 export function DashboardPage() {
   const [painel, setPainel] = useState<DashboardPainelApi>(DASHBOARD_VAZIO);
   const [carregando, setCarregando] = useState(true);
@@ -460,6 +493,7 @@ export function DashboardPage() {
         </article>
 
         <div className="side-column">
+          <DevedoresResumoCard itens={painel.devedoresResumo || []} />
           <article className="panel summary-panel">
             <div className="section-title-row">
               <div>

@@ -2536,12 +2536,12 @@ textarea::placeholder {
   grid-template-rows: auto 1fr auto;
   min-height: 0;
   height: 100%;
+  max-height: 100%;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(188, 145, 85, 0.14);
   background: #fff;
   box-shadow: none;
-  max-height: none;
 }
 
 .budget-preview-header {
@@ -2613,6 +2613,7 @@ textarea::placeholder {
   align-content: start;
   gap: 12px;
   min-height: 0;
+  height: 100%;
   background: #fbfbfb;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -2625,11 +2626,13 @@ textarea::placeholder {
   border: 1px solid rgba(188, 145, 85, 0.14);
   box-shadow: 0 8px 22px rgba(53, 35, 13, 0.08), 0 2px 6px rgba(53, 35, 13, 0.05);
   background: #fff;
+  flex-shrink: 0;
 }
 
 .budget-preview-item-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(132px, 148px);
+  align-items: stretch;
 }
 
 .budget-preview-item.ghost {
@@ -2643,6 +2646,7 @@ textarea::placeholder {
   padding: 14px 16px;
   min-width: 0;
   align-content: start;
+  min-height: 160px;
 }
 
 .budget-preview-item-main > span {
@@ -2691,6 +2695,7 @@ textarea::placeholder {
   text-align: center;
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.18);
   min-width: 0;
+  min-height: 160px;
 }
 
 .budget-preview-detail-shell {
@@ -4612,7 +4617,8 @@ textarea::placeholder {
   color: #2b77bb;
 }
 
-.agenda-status-pill.em-espera {
+.agenda-status-pill.em-espera,
+.agenda-status-pill.aguardando {
   background: rgba(244, 196, 48, 0.2);
   color: #9c6a00;
 }

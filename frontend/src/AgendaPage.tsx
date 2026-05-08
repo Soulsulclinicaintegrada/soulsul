@@ -120,7 +120,7 @@ const NOMES_MESES = [
   "Novembro",
   "Dezembro"
 ];
-const STATUS_AGENDA_OPCOES = ["Agendado", "Confirmado", "Aguardando", "Em espera", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"] as const;
+const STATUS_AGENDA_OPCOES = ["Agendado", "Confirmado", "Aguardando", "Em atendimento", "Atendido", "Atrasado", "Faltou", "Desmarcado", "Cancelado"] as const;
 const FERIADOS_FIXOS_NACIONAIS = new Map<string, string>([
   ["01-01", "Confraternização Universal"],
   ["04-21", "Tiradentes"],
@@ -542,7 +542,6 @@ function corStatusAgendamento(status: AgendaEventoUI["status"]) {
     case "Confirmado":
       return "#0f9d8f";
     case "Aguardando":
-    case "Em espera":
       return "#f4c430";
     case "Em atendimento":
       return "#2f80ed";
@@ -769,6 +768,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [erroAgendaModal, setErroAgendaModal] = useState<string | null>(null);
   const [modoNovoPacienteRapido, setModoNovoPacienteRapido] = useState(false);
   const [eventoTodaEquipe, setEventoTodaEquipe] = useState(false);
+  const [slotsComAgendamento, setSlotsComAgendamento] = useState<string[]>([]);
   const [slotsOcupados, setSlotsOcupados] = useState<string[]>([]);
   const [slotsOcupadosConsultorio, setSlotsOcupadosConsultorio] = useState<string[]>([]);
   const [consultorioProfissionalModal, setConsultorioProfissionalModal] = useState("");
@@ -1092,8 +1092,12 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     return configuracaoProfissionalNoDia(profissionalId, dataIso)?.consultorio?.trim() || "";
   }
 
+  function consultorioSalvoAgendamento(evento: Pick<AgendaEventoUI, "consultorio">) {
+    return String(evento.consultorio || "").trim();
+  }
+
   function consultorioAgendamento(evento: Pick<AgendaEventoUI, "profissionalId" | "consultorio" | "data">) {
-    return String(evento.consultorio || "").trim() || consultorioProfissionalNoDia(evento.profissionalId, brParaIso(evento.data));
+    return consultorioSalvoAgendamento(evento) || consultorioProfissionalNoDia(evento.profissionalId, brParaIso(evento.data));
   }
 
   function slotOcupadoNoConsultorio(profissionalId: number, dataIso: string, slot: string, ignorarAgendamentoId?: number | null) {
@@ -1104,7 +1108,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     return eventos.some((evento) => {
       if (ignorarAgendamentoId && evento.id === ignorarAgendamentoId) return false;
       if (evento.data !== isoParaBr(dataIso)) return false;
-      if (consultorioAgendamento(evento).trim() !== consultorio) return false;
+      if (evento.profissionalId === profissionalId) return false;
+      if (consultorioSalvoAgendamento(evento) !== consultorio) return false;
       return inicioSlot < paraMinutos(evento.fim) && fimSlot > paraMinutos(evento.inicio);
     });
   }
@@ -1235,12 +1240,13 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
           acc[slot] = (acc[slot] ?? 0) + 1;
           return acc;
         }, {});
+        const slotsComAgendamentoAtual = Object.keys(contagemSlots);
         const ocupadosUnicos = Object.entries(contagemSlots)
           .filter(([, total]) => total >= maximoPorHorario)
           .map(([slot]) => slot);
+        setSlotsComAgendamento(slotsComAgendamentoAtual);
         setSlotsOcupados(ocupadosUnicos);
-        const ocupadosConsultorioLocais = slotsConsultorioOcupadoNoDia(form.profissionalId, form.data, agendamentoEditandoId);
-        const ocupadosConsultorio = Array.from(new Set([...(resultado.ocupadosConsultorio || []), ...ocupadosConsultorioLocais]));
+        const ocupadosConsultorio = slotsConsultorioOcupadoNoDia(form.profissionalId, form.data, agendamentoEditandoId);
         setSlotsOcupadosConsultorio(ocupadosConsultorio);
         setSlotsSelecionados((atual) => {
           const horariosPermitidos = horariosAgenda.filter((slot) => slotDisponivelNaAgenda(form.profissionalId, form.data, slot));
@@ -2422,12 +2428,11 @@ function atualizarConfigProfissionalDia(
                   ) : null}
                   {horariosAgenda.map((slot) => {
                     const slotDisponivel = slotDisponivelNaAgenda(profissional.id, dataSelecionada, slot);
-                    const consultorioOcupado = slotOcupadoNoConsultorio(profissional.id, dataSelecionada, slot);
                     return (
                       <button
                         key={`${profissional.id}-${slot}`}
                         type="button"
-                        className={`agenda-slot${slotDisponivel ? "" : " unavailable"}${consultorioOcupado ? " consultorio-ocupado" : ""}`}
+                        className={`agenda-slot${slotDisponivel ? "" : " unavailable"}`}
                         disabled={!slotDisponivel}
                         onDoubleClick={() => abrirNovoAgendamento({ data: dataSelecionada, hora: slot, profissionalId: profissional.id })}
                       />
@@ -2930,7 +2935,7 @@ function atualizarConfigProfissionalDia(
                   <div className="agenda-horarios-block agenda-horarios-block-tight">
                     <div className="agenda-horarios-title-wrap">
                       <strong>Horários</strong>
-                      <span>{carregandoDisponibilidade ? "Atualizando disponibilidade..." : "Vermelho = profissional ou consultório ocupado · Branco = livre · Azul = seleção"}</span>
+                      <span>{carregandoDisponibilidade ? "Atualizando disponibilidade..." : "Vermelho = já existe agendamento · Rosa = conflito de consultório · Azul = seleção"}</span>
                     </div>
                     {consultorioProfissionalModal ? (
                       <div className="agenda-inline-hint">{`Consultório do profissional: ${consultorioProfissionalModal}`}</div>
@@ -2938,15 +2943,16 @@ function atualizarConfigProfissionalDia(
                     <div className="agenda-timeline-picker compact">
                       {horariosAgenda.map((slot) => {
                         const foraDisponibilidade = !slotDisponivelNaAgenda(form.profissionalId, form.data, slot);
-                        const ocupado = slotsOcupados.includes(slot) && !slotsSelecionados.includes(slot);
+                        const ocupado = slotsComAgendamento.includes(slot) && !slotsSelecionados.includes(slot);
                         const ocupadoConsultorio = slotsOcupadosConsultorio.includes(slot) && !slotsSelecionados.includes(slot);
                         const selecionado = slotsSelecionados.includes(slot);
+                        const bloqueado = slotsOcupados.includes(slot) && !slotsSelecionados.includes(slot);
                         return (
                           <button
                             key={slot}
                             type="button"
                             disabled={foraDisponibilidade}
-                            className={`timeline-slot${ocupado ? " ocupado" : ""}${ocupadoConsultorio ? " consultorio-ocupado" : ""}${selecionado ? " selecionado" : ""}${foraDisponibilidade ? " unavailable" : ""}`}
+                            className={`timeline-slot${ocupado ? " ocupado" : ""}${ocupadoConsultorio ? " consultorio-ocupado" : ""}${bloqueado ? " bloqueado" : ""}${selecionado ? " selecionado" : ""}${foraDisponibilidade ? " unavailable" : ""}`}
                             onClick={() => selecionarSlot(slot)}
                           >
                             <span>{slot}</span>

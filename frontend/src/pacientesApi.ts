@@ -479,6 +479,16 @@ export type DashboardCalendarioPagamentoItemApi = {
   pagamentos?: ContaPagarResumoApi[];
 };
 
+export type DashboardDevedorResumoItemApi = {
+  recebivelId: number;
+  pacienteId?: number | null;
+  nome: string;
+  vencimento?: string;
+  valor?: string;
+  observacao?: string;
+  status?: string;
+};
+
 export type DashboardFunilApi = {
   leads: number;
   agendou: number;
@@ -517,6 +527,7 @@ export type DashboardPainelApi = {
   funilReal?: DashboardFunilApi;
   agendaHoje: DashboardAgendaHojeItemApi[];
   calendarioPagamentos?: DashboardCalendarioPagamentoItemApi[];
+  devedoresResumo?: DashboardDevedorResumoItemApi[];
   alertas: DashboardAlertaApi[];
   atividades: DashboardAtividadeApi[];
 };

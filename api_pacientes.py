@@ -768,6 +768,16 @@ class DashboardCalendarioPagamentoItemResposta(BaseModel):
     pagamentos: list[ContaPagarResumo] = Field(default_factory=list)
 
 
+class DashboardDevedorResumoItemResposta(BaseModel):
+    recebivelId: int
+    pacienteId: int | None = None
+    nome: str
+    vencimento: str = ""
+    valor: str = ""
+    observacao: str = ""
+    status: str = ""
+
+
 class DashboardAlertaItemResposta(BaseModel):
     titulo: str
     detalhe: str
@@ -808,6 +818,7 @@ class DashboardPainelResposta(BaseModel):
     funilReal: DashboardFunilResposta = Field(default_factory=DashboardFunilResposta)
     agendaHoje: list[DashboardAgendaHojeItemResposta]
     calendarioPagamentos: list[DashboardCalendarioPagamentoItemResposta] = []
+    devedoresResumo: list[DashboardDevedorResumoItemResposta] = Field(default_factory=list)
     alertas: list[DashboardAlertaItemResposta]
     atividades: list[DashboardAtividadeItemResposta]
 
@@ -3211,6 +3222,30 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             ),
         )
     ]
+    devedores_resumo_rows = [
+        row
+        for row in recebiveis_rows
+        if normalizar_texto(row["status"]) in {"aberto", "atrasado"}
+    ]
+    devedores_resumo = [
+        DashboardDevedorResumoItemResposta(
+            recebivelId=int(row["id"] or 0),
+            pacienteId=int(row["paciente_id"]) if row["paciente_id"] is not None else None,
+            nome=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
+            vencimento=formatar_data_br(parse_data_contrato(row["vencimento"])),
+            valor=formatar_moeda_br(float(row["valor"] or 0)),
+            observacao=str(row["observacao"] or "").strip(),
+            status=str(row["status"] or "").strip(),
+        )
+        for row in sorted(
+            devedores_resumo_rows,
+            key=lambda item: (
+                str(item["paciente_nome"] or "").strip().lower(),
+                parse_data_contrato(item["vencimento"]) or date.max,
+                int(item["id"] or 0),
+            ),
+        )
+    ]
 
     ids_leads = {
         int(row["paciente_id"])
@@ -3347,6 +3382,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             )
             for data_ref, valores in sorted(calendario_pagamentos_map.items())
         ],
+        devedoresResumo=devedores_resumo,
         alertas=[],
         atividades=[],
     )
