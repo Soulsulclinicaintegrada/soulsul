@@ -4532,6 +4532,30 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
         inserir_bloco_apos_docx(ancora_xml, legenda._p)
 
 
+def expandir_regiao_para_dentes_docx(regiao: str, denticao_snapshot: str | None = None) -> list[str]:
+    regiao_limpa = str(regiao or "").strip()
+    if not regiao_limpa:
+        return []
+    if regiao_limpa.isdigit():
+        return [regiao_limpa]
+
+    denticao_norm = normalizar_texto_maiusculo(denticao_snapshot or "")
+    usar_decidua = "DECID" in denticao_norm
+    fileiras = {
+        "superior": FILEIRA_SUPERIOR_DECIDUA_DOCX if usar_decidua else FILEIRA_SUPERIOR_PERMANENTE_DOCX,
+        "inferior": FILEIRA_INFERIOR_DECIDUA_DOCX if usar_decidua else FILEIRA_INFERIOR_PERMANENTE_DOCX,
+    }
+
+    regiao_norm = normalizar_texto_maiusculo(regiao_limpa)
+    if regiao_norm in {"ARCADA SUPERIOR", "SUPERIOR"}:
+        return [str(item) for item in fileiras["superior"]]
+    if regiao_norm in {"ARCADA INFERIOR", "INFERIOR"}:
+        return [str(item) for item in fileiras["inferior"]]
+    if regiao_norm in {"ARCADAS SUPERIOR E INFERIOR", "ARCADA COMPLETA", "BOCA TODA"}:
+        return [str(item) for item in [*fileiras["superior"], *fileiras["inferior"]]]
+    return []
+
+
 def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato_id: int) -> list[dict]:
     procedimentos = conn.execute(
         "SELECT id, procedimento, valor, profissional_snapshot, denticao_snapshot FROM procedimentos_contrato WHERE contrato_id=? ORDER BY id",
@@ -4548,12 +4572,22 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
     ).fetchall()
 
     regioes_por_procedimento: dict[str, list[str]] = {}
+    denticao_por_procedimento: dict[str, str] = {
+        normalizar_texto(str(row["procedimento"] or "").strip()): str(row["denticao_snapshot"] or "")
+        for row in procedimentos
+    }
     for row in dentes:
         chave = normalizar_texto(row["procedimento"])
         valor = str(row["dente"]) if row["dente"] is not None else str(row["regiao"] or "").strip()
         if not valor:
             continue
         regioes_por_procedimento.setdefault(chave, [])
+        valores_expandidos = expandir_regiao_para_dentes_docx(valor, denticao_por_procedimento.get(chave))
+        if valores_expandidos:
+            for item in valores_expandidos:
+                if item not in regioes_por_procedimento[chave]:
+                    regioes_por_procedimento[chave].append(item)
+            continue
         if valor not in regioes_por_procedimento[chave]:
             regioes_por_procedimento[chave].append(valor)
 
@@ -4834,6 +4868,18 @@ def remover_quebras_de_pagina_paragrafo(paragrafo) -> None:
                 run._element.remove(child)
 
 
+def limpar_formatacao_quebra_paragrafo(paragrafo) -> None:
+    if qn is None:
+        return
+    p_pr = getattr(paragrafo._p, "pPr", None)
+    if p_pr is None:
+        return
+    for tag in ("w:pageBreakBefore", "w:keepNext", "w:keepLines"):
+        elemento = p_pr.find(qn(tag))
+        if elemento is not None:
+            p_pr.remove(elemento)
+
+
 def remover_quebra_proxima_marcador(doc, marcador: str) -> None:
     marcador_norm = normalizar_texto_maiusculo(marcador)
     paragrafos = doc.paragraphs
@@ -4841,10 +4887,13 @@ def remover_quebra_proxima_marcador(doc, marcador: str) -> None:
         if marcador_norm not in normalizar_texto_maiusculo(paragrafo.text):
             continue
         remover_quebras_de_pagina_paragrafo(paragrafo)
+        limpar_formatacao_quebra_paragrafo(paragrafo)
         if indice > 0:
             remover_quebras_de_pagina_paragrafo(paragrafos[indice - 1])
+            limpar_formatacao_quebra_paragrafo(paragrafos[indice - 1])
         if indice + 1 < len(paragrafos):
             remover_quebras_de_pagina_paragrafo(paragrafos[indice + 1])
+            limpar_formatacao_quebra_paragrafo(paragrafos[indice + 1])
         return
 
 
