@@ -402,10 +402,34 @@ function dataParcelaPagamento(dataBase: string, indice: number, entrada: boolean
 }
 
 function resumoFormaPagamento(plano: PlanoPagamento) {
-  const formasAtivas = [...new Set(plano.linhas.map((linha) => linha.forma))];
-  if (!formasAtivas.length) return "A Definir";
-  if (formasAtivas.length === 1) return FORMAS_PAGAMENTO.find((item) => item.value === formasAtivas[0])?.label || "A Definir";
-  return "Multiplas";
+  const linhasAtivas = plano.linhas.filter((linha) => Number(linha.valor || 0) > 0);
+  if (!linhasAtivas.length) return "A Definir";
+  const formasAtivas = [...new Set(linhasAtivas.map((linha) => linha.forma))];
+  if (formasAtivas.length === 1) {
+    const unica = formasAtivas[0];
+    const primeira = linhasAtivas[0];
+    const label = FORMAS_PAGAMENTO.find((item) => item.value === unica)?.label || "A Definir";
+    if (unica === "CARTAO_CREDITO") {
+      return `${label} ${Math.max(1, primeira?.parcelasCartao || 1)}x`;
+    }
+    if (linhasAtivas.length > 1 && unica === "BOLETO") {
+      return `${label} ${linhasAtivas.length}x`;
+    }
+    return label;
+  }
+  const entrada = linhasAtivas.find((linha) => linha.descricao.trim().toLowerCase() === "entrada");
+  const posteriores = linhasAtivas.filter((linha) => linha.descricao.trim().toLowerCase() !== "entrada");
+  if (entrada && posteriores.length === 1) {
+    const formaEntrada = FORMAS_PAGAMENTO.find((item) => item.value === entrada.forma)?.label || entrada.forma;
+    const formaPosterior = FORMAS_PAGAMENTO.find((item) => item.value === posteriores[0].forma)?.label || posteriores[0].forma;
+    const sufixoPosterior = posteriores[0].forma === "CARTAO_CREDITO"
+      ? ` ${Math.max(1, posteriores[0].parcelasCartao || 1)}x`
+      : posteriores.length > 1 && posteriores[0].forma === "BOLETO"
+        ? ` ${posteriores.length}x`
+        : "";
+    return `Entrada ${formaEntrada} + ${formaPosterior}${sufixoPosterior}`;
+  }
+  return "Pagamento misto";
 }
 
 function normalizarPlanoPagamento(
@@ -910,7 +934,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const fotoPacienteSrc = pacienteDetalhe?.fotoUrl ? `${urlFotoPaciente(pacienteDetalhe.id)}?v=${fotoVersao}` : "";
   const buscaAtiva = busca.trim().length > 0;
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
-  const orcamentoBloqueado = orcamentoStatusAtual === "APROVADO";
+  const orcamentoBloqueado = false;
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
   const dentesSelecionadosOdontograma = useMemo(
     () =>

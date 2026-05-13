@@ -5,6 +5,7 @@ import re
 import sqlite3
 import traceback
 import unicodedata
+import math
 from copy import deepcopy
 from io import BytesIO
 from urllib import error as urllib_error
@@ -2462,8 +2463,6 @@ def salvar_orcamento_paciente(
         contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
         if contrato is None:
             raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
-        if normalizar_texto(contrato["status"]) == "aprovado":
-            raise HTTPException(status_code=400, detail="Orcamento aprovado nao pode ser editado.")
         conn.execute(
             """
             UPDATE contratos
@@ -2598,8 +2597,6 @@ def salvar_orcamento_paciente_com_pagamento(
         contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
         if contrato is None:
             raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
-        if normalizar_texto(contrato["status"]) == "aprovado":
-            raise HTTPException(status_code=400, detail="Orcamento aprovado nao pode ser editado.")
         conn.execute(
             """
             UPDATE contratos
@@ -2660,6 +2657,17 @@ def salvar_orcamento_paciente_com_pagamento(
                     data_base,
                 ),
             )
+
+    contrato_atualizado = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
+    if contrato_atualizado is not None and normalizar_texto(contrato_atualizado["status"]) == "aprovado":
+        paciente_row = carregar_paciente_por_id(conn, paciente_id)
+        sincronizar_recebiveis_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
+        sincronizar_financeiro_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
+        try:
+            limpar_documento_contrato(paciente_row, contrato_id)
+            gerar_documento_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
+        except Exception as exc:
+            print(f"[orcamento] falha ao regenerar documento do contrato {contrato_id}: {exc}", flush=True)
 
     return contrato_id
 
@@ -4424,6 +4432,39 @@ def montar_tabela_odontograma_docx(doc, dentes_marcados: set[int], fileira: list
     return tabela
 
 
+def montar_tabela_elementos_selecionados_docx(doc, dentes: list[int], *, colunas: int = 6):
+    if not dentes:
+        return None
+    colunas = max(1, min(colunas, 8))
+    linhas = max(1, math.ceil(len(dentes) / colunas))
+    tabela = doc.add_table(rows=linhas, cols=colunas)
+    try:
+        tabela.autofit = False
+    except Exception:
+        pass
+    for linha_indice in range(linhas):
+        for coluna_indice in range(colunas):
+            indice = linha_indice * colunas + coluna_indice
+            celula = tabela.rows[linha_indice].cells[coluna_indice]
+            if indice >= len(dentes):
+                celula.text = ""
+                aplicar_fundo_celula_docx(celula, "FFFFFF")
+                continue
+            celula.text = str(dentes[indice])
+            aplicar_fundo_celula_docx(celula, "D8EFD2")
+            for paragrafo in celula.paragraphs:
+                paragrafo.alignment = 1
+                formato = paragrafo.paragraph_format
+                if Pt is not None:
+                    formato.space_before = Pt(0)
+                    formato.space_after = Pt(0)
+                for run in paragrafo.runs:
+                    run.font.bold = True
+                    if Pt is not None:
+                        run.font.size = Pt(10)
+    return tabela
+
+
 def encontrar_ancora_odontograma_capa(doc):
     if Paragraph is None:
         return None
@@ -4461,7 +4502,7 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
         inserir_bloco_apos_docx(ancora_xml, titulo._p)
         ancora_xml = titulo._p
 
-    def inserir_linha(titulo_linha: str, fileira: list[int], dentes_linha: set[int]) -> None:
+    def inserir_linha_resumo(titulo_linha: str, dentes_linha: set[int]) -> None:
         nonlocal ancora_xml
         if not dentes_linha:
             return
@@ -4470,7 +4511,9 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
             subtitulo.runs[0].bold = True
             if Pt is not None:
                 subtitulo.runs[0].font.size = Pt(9)
-        tabela = montar_tabela_odontograma_docx(doc, dentes_linha, fileira)
+        tabela = montar_tabela_elementos_selecionados_docx(doc, sorted(dentes_linha))
+        if tabela is None:
+            return
         if ancora_xml is not None:
             inserir_bloco_apos_docx(ancora_xml, subtitulo._p)
             ancora_xml = subtitulo._p
@@ -4478,13 +4521,11 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
             ancora_xml = tabela._tbl
 
     if dentes_permanentes:
-        inserir_linha("Arcada superior", FILEIRA_SUPERIOR_PERMANENTE_DOCX, dentes_permanentes)
-        inserir_linha("Arcada inferior", FILEIRA_INFERIOR_PERMANENTE_DOCX, dentes_permanentes)
+        inserir_linha_resumo("Dentição permanente", dentes_permanentes)
     if dentes_deciduos:
-        inserir_linha("Arcada superior decídua", FILEIRA_SUPERIOR_DECIDUA_DOCX, dentes_deciduos)
-        inserir_linha("Arcada inferior decídua", FILEIRA_INFERIOR_DECIDUA_DOCX, dentes_deciduos)
+        inserir_linha_resumo("Dentição decídua", dentes_deciduos)
 
-    legenda = doc.add_paragraph("Os elementos destacados correspondem aos dentes selecionados no sistema.")
+    legenda = doc.add_paragraph("Somente os elementos selecionados no sistema são exibidos abaixo.")
     if legenda.runs and Pt is not None:
         legenda.runs[0].font.size = Pt(8)
     if ancora_xml is not None:
@@ -4793,6 +4834,20 @@ def remover_quebras_de_pagina_paragrafo(paragrafo) -> None:
                 run._element.remove(child)
 
 
+def remover_quebra_proxima_marcador(doc, marcador: str) -> None:
+    marcador_norm = normalizar_texto_maiusculo(marcador)
+    paragrafos = doc.paragraphs
+    for indice, paragrafo in enumerate(paragrafos):
+        if marcador_norm not in normalizar_texto_maiusculo(paragrafo.text):
+            continue
+        remover_quebras_de_pagina_paragrafo(paragrafo)
+        if indice > 0:
+            remover_quebras_de_pagina_paragrafo(paragrafos[indice - 1])
+        if indice + 1 < len(paragrafos):
+            remover_quebras_de_pagina_paragrafo(paragrafos[indice + 1])
+        return
+
+
 def iterar_paragrafos_doc(container):
     for paragrafo in getattr(container, "paragraphs", []):
         yield paragrafo
@@ -4883,6 +4938,8 @@ def limpar_reinicio_numeracao_secoes_adicionais(doc) -> None:
 
 def configurar_numeracao_paginas_contrato(doc) -> None:
     inserir_secao_antes_titulo(doc, "CLÁUSULA 01 - DO OBJETO DO CONTRATO", 1)
+    remover_quebra_proxima_marcador(doc, "PRONTUÁRIO")
+    remover_quebra_proxima_marcador(doc, "PRONTUÁRIO Nº")
     limpar_reinicio_numeracao_secoes_adicionais(doc)
     substituir_total_paginas_por_secao(doc)
     for secao in getattr(doc, "sections", []):
