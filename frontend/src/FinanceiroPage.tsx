@@ -98,6 +98,8 @@ type RecebivelBaixaSelecionado = {
   desconto: string;
 };
 
+type RecebivelGridMap = Record<number, RecebivelForm>;
+
 type ReciboManualForm = {
   valor: string;
   pagador: string;
@@ -327,6 +329,7 @@ export function FinanceiroPage() {
   const [recebivelSelecionadoId, setRecebivelSelecionadoId] = useState<number>(0);
   const [recebiveisBaixaSelecionados, setRecebiveisBaixaSelecionados] = useState<RecebivelBaixaSelecionado[]>([]);
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
+  const [recebiveisGrid, setRecebiveisGrid] = useState<RecebivelGridMap>({});
   const [loteContratoId, setLoteContratoId] = useState<number>(0);
   const [contaForm, setContaForm] = useState<ContaPagarForm>(CONTA_PAGAR_INICIAL);
   const [buscaRecebivel, setBuscaRecebivel] = useState("");
@@ -451,6 +454,10 @@ export function FinanceiroPage() {
         filtroVencimentoRecebivelFim
       );
       return buscaOk && statusOk && formaOk && vencimentoOk;
+    }).sort((a, b) => {
+      const nome = String(a.pacienteNome || "").localeCompare(String(b.pacienteNome || ""), "pt-BR");
+      if (nome !== 0) return nome;
+      return String(a.vencimento || "").localeCompare(String(b.vencimento || ""), "pt-BR");
     });
   }, [recebiveis, buscaRecebivel, filtroStatusRecebivel, filtroFormaRecebivel, filtroVencimentoRecebivelInicio, filtroVencimentoRecebivelFim]);
 
@@ -515,6 +522,14 @@ export function FinanceiroPage() {
     const item = recebiveis.find((row) => row.id === recebivelSelecionadoId);
     if (item) setRecebivelForm(recebivelParaForm(item));
   }, [recebivelSelecionadoId, recebiveis]);
+
+  useEffect(() => {
+    const proximo: RecebivelGridMap = {};
+    recebiveis.forEach((item) => {
+      proximo[item.id] = recebivelParaForm(item);
+    });
+    setRecebiveisGrid(proximo);
+  }, [recebiveis]);
 
   useEffect(() => {
     const primeiroSelecionado = recebiveisBaixaSelecionados[0]?.id || 0;
@@ -592,7 +607,7 @@ export function FinanceiroPage() {
       setDropdownBaixaAberto(false);
       await carregarPainel();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao baixar recebÃ­vel.");
+      setErro(error instanceof Error ? error.message : "Falha ao baixar recebível.");
     } finally {
       setSalvando(false);
     }
@@ -626,7 +641,7 @@ export function FinanceiroPage() {
 
   function exportarRecebiveisFiltrados() {
     const linhas = [
-      ["Paciente", "Prontuario", "Parcela", "Vencimento", "Valor", "Status", "Forma pagamento", "Observacao"],
+      ["Paciente", "Prontuário", "Parcela", "Vencimento", "Valor", "Status", "Forma pagamento", "Data da baixa", "Observação"],
       ...recebiveisFiltrados.map((item) => [
         item.pacienteNome || "",
         item.prontuario || "",
@@ -635,10 +650,11 @@ export function FinanceiroPage() {
         item.valor || "",
         item.status || "",
         item.formaPagamento || "",
+        item.dataPagamento || "",
         item.observacao || ""
       ])
     ];
-    const conteudo = linhas.map((colunas) => colunas.map(escaparCsv).join(";")).join("\r\n");
+    const conteudo = `\uFEFF${linhas.map((colunas) => colunas.map(escaparCsv).join(";")).join("\r\n")}`;
     const blob = new Blob([conteudo], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -668,10 +684,56 @@ export function FinanceiroPage() {
       await atualizarRecebivelPacienteApi(item.pacienteId, item.id, payload);
       await carregarPainel();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao salvar recebÃ­vel.");
+      setErro(error instanceof Error ? error.message : "Falha ao salvar recebível.");
     } finally {
       setSalvando(false);
     }
+  }
+
+  function atualizarRecebivelGrid(recebivelId: number, campo: keyof RecebivelForm, valor: string) {
+    setRecebiveisGrid((atual) => {
+      const base = atual[recebivelId] || recebivelParaForm(recebiveis.find((item) => item.id === recebivelId) || { id: recebivelId, valor: "0,00" });
+      return {
+        ...atual,
+        [recebivelId]: {
+          ...base,
+          [campo]: valor
+        }
+      };
+    });
+  }
+
+  async function salvarRecebivelLinha(recebivelId: number) {
+    const atual = recebiveis.find((row) => row.id === recebivelId);
+    const formLinha = recebiveisGrid[recebivelId];
+    if (!atual?.pacienteId || !formLinha) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      await atualizarRecebivelPacienteApi(atual.pacienteId, recebivelId, {
+        paciente_nome: formLinha.pacienteNome,
+        prontuario: formLinha.prontuario,
+        vencimento: formLinha.vencimento,
+        valor: moedaParaNumero(formLinha.valor),
+        forma_pagamento: formLinha.formaPagamento,
+        status: formLinha.status,
+        data_pagamento: formLinha.dataPagamento,
+        observacao: formLinha.observacao
+      });
+      await carregarPainel();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar recebível.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function limparFiltrosRecebiveis() {
+    setBuscaRecebivel("");
+    setFiltroStatusRecebivel("");
+    setFiltroFormaRecebivel("");
+    setFiltroVencimentoRecebivelInicio("");
+    setFiltroVencimentoRecebivelFim("");
   }
 
   async function salvarRecebiveisLote() {
@@ -689,7 +751,7 @@ export function FinanceiroPage() {
       });
       await carregarPainel();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao salvar lote de recebÃ­veis.");
+      setErro(error instanceof Error ? error.message : "Falha ao salvar lote de recebíveis.");
     } finally {
       setSalvando(false);
     }
@@ -768,7 +830,7 @@ export function FinanceiroPage() {
   }
 
   async function excluirMovimentoCaixa(movimentoId: number) {
-    if (!window.confirm("Excluir esta movimentaÃ§Ã£o de caixa?")) return;
+    if (!window.confirm("Excluir esta movimentação de caixa?")) return;
     setErro("");
     setSalvando(true);
     try {
@@ -867,26 +929,26 @@ export function FinanceiroPage() {
     <section className="module-shell finance-module-shell">
       <section className="module-kpis">
         <article className="panel module-kpi-card">
-          <span className="panel-kicker">RecebÃ­veis</span>
+          <span className="panel-kicker">Recebíveis</span>
           <strong>{painel?.resumo.emAberto || "R$ 0,00"}</strong>
           <span>em aberto</span>
         </article>
         <article className="panel module-kpi-card">
           <span className="panel-kicker">Atrasado</span>
           <strong>{painel?.resumo.atrasado || "R$ 0,00"}</strong>
-          <span>inadimplÃªncia</span>
+          <span>inadimplência</span>
         </article>
         <article className="panel module-kpi-card">
           <span className="panel-kicker">Pagos</span>
           <strong>{painel?.resumo.pagos || "R$ 0,00"}</strong>
-          <span>jÃ¡ entraram no caixa</span>
+          <span>já entraram no caixa</span>
         </article>
       </section>
 
       <section className="panel finance-main-panel">
         <div className="finance-tabs">
           <button type="button" className={aba === "caixa" ? "active" : ""} onClick={() => setAba("caixa")}>Caixa</button>
-          <button type="button" className={aba === "recebiveis" ? "active" : ""} onClick={() => setAba("recebiveis")}>RecebÃ­veis</button>
+          <button type="button" className={aba === "recebiveis" ? "active" : ""} onClick={() => setAba("recebiveis")}>Recebíveis</button>
           <button type="button" className={aba === "individual" ? "active" : ""} onClick={() => setAba("individual")}>Editar individual</button>
           <button type="button" className={aba === "lote" ? "active" : ""} onClick={() => setAba("lote")}>Editar lote</button>
           <button type="button" className={aba === "pagar" ? "active" : ""} onClick={() => setAba("pagar")}>Contas a pagar</button>
@@ -904,14 +966,14 @@ export function FinanceiroPage() {
             <article className="panel finance-form-panel">
               <span className="panel-kicker">Saldos do dia anterior</span>
               <div className="finance-form-grid">
-                <label className="finance-span-2"><span>Data de referÃªncia</span><input type="date" value={saldoForm.data} onChange={(e) => setSaldoForm((a) => ({ ...a, data: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Data de referência</span><input type="date" value={saldoForm.data} onChange={(e) => setSaldoForm((a) => ({ ...a, data: e.target.value }))} /></label>
                 {CONTAS_CAIXA.map((conta) => (
                   <label key={conta}>
                     <span>Saldo {conta}</span>
                     <input type="text" value={saldoForm.contas[conta] || ""} onChange={(e) => setSaldoForm((a) => ({ ...a, contas: { ...a.contas, [conta]: e.target.value } }))} />
                   </label>
                 ))}
-                <label className="finance-span-2"><span>ObservaÃ§Ã£o</span><textarea rows={3} value={saldoForm.observacao} onChange={(e) => setSaldoForm((a) => ({ ...a, observacao: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={saldoForm.observacao} onChange={(e) => setSaldoForm((a) => ({ ...a, observacao: e.target.value }))} /></label>
               </div>
               <div className="finance-form-actions">
                 <button type="button" className="primary-action" disabled={salvando} onClick={() => void registrarSaldosDiaAnterior()}>Registrar saldos</button>
@@ -919,17 +981,17 @@ export function FinanceiroPage() {
             </article>
 
             <article className="panel finance-form-panel">
-              <span className="panel-kicker">LanÃ§amento manual</span>
+              <span className="panel-kicker">Lançamento manual</span>
               <div className="finance-form-grid">
                 <label><span>Data do movimento</span><input type="date" value={caixaForm.dataMovimento} onChange={(e) => setCaixaForm((a) => ({ ...a, dataMovimento: e.target.value }))} /></label>
-                <label><span>Tipo</span><select value={caixaForm.tipo} onChange={(e) => setCaixaForm((a) => ({ ...a, tipo: e.target.value as "Entrada" | "Saida" }))}><option value="Entrada">Entrada</option><option value="Saida">SaÃ­da</option></select></label>
+                <label><span>Tipo</span><select value={caixaForm.tipo} onChange={(e) => setCaixaForm((a) => ({ ...a, tipo: e.target.value as "Entrada" | "Saida" }))}><option value="Entrada">Entrada</option><option value="Saida">Saída</option></select></label>
                 <label><span>Forma pagamento</span><select value={caixaForm.formaPagamento} onChange={(e) => setCaixaForm((a) => ({ ...a, formaPagamento: e.target.value }))}>{FORMAS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                 <label><span>Conta/Banco</span><select value={caixaForm.contaCaixa} onChange={(e) => setCaixaForm((a) => ({ ...a, contaCaixa: e.target.value }))}>{CONTAS_CAIXA.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                 <label><span>Origem</span><input type="text" value={caixaForm.origem} onChange={(e) => setCaixaForm((a) => ({ ...a, origem: e.target.value }))} /></label>
-                <label><span>ProntuÃ¡rio</span><input type="text" value={caixaForm.prontuario} onChange={(e) => setCaixaForm((a) => ({ ...a, prontuario: e.target.value }))} /></label>
-                <label className="finance-span-2"><span>DescriÃ§Ã£o</span><input type="text" value={caixaForm.descricao} onChange={(e) => setCaixaForm((a) => ({ ...a, descricao: e.target.value }))} /></label>
+                <label><span>Prontuário</span><input type="text" value={caixaForm.prontuario} onChange={(e) => setCaixaForm((a) => ({ ...a, prontuario: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Descrição</span><input type="text" value={caixaForm.descricao} onChange={(e) => setCaixaForm((a) => ({ ...a, descricao: e.target.value }))} /></label>
                 <label><span>Valor</span><input type="text" value={caixaForm.valor} onChange={(e) => setCaixaForm((a) => ({ ...a, valor: e.target.value }))} /></label>
-                <label className="finance-span-2"><span>ObservaÃ§Ã£o</span><textarea rows={3} value={caixaForm.observacao} onChange={(e) => setCaixaForm((a) => ({ ...a, observacao: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={caixaForm.observacao} onChange={(e) => setCaixaForm((a) => ({ ...a, observacao: e.target.value }))} /></label>
               </div>
               <div className="finance-form-actions">
                 <button type="button" className="primary-action" disabled={salvando} onClick={() => void registrarCaixaManual()}>Registrar no caixa</button>
@@ -937,7 +999,7 @@ export function FinanceiroPage() {
             </article>
 
             <article className="panel finance-form-panel">
-              <span className="panel-kicker">Baixa de recebÃ­vel</span>
+              <span className="panel-kicker">Baixa de recebível</span>
               <div className="finance-dropdown-shell">
                 <label>
                   <span>Pesquisar paciente</span>
@@ -964,9 +1026,9 @@ export function FinanceiroPage() {
                         onClick={() => adicionarRecebivelBaixa(item)}
                       >
                         <strong>{item.pacienteNome || "Paciente"}</strong>
-                        <span>ProntuÃ¡rio {item.prontuario || "-"} Â· Parcela {labelParcela(item.parcela)} Â· {item.vencimento || "-"} Â· {item.valor}</span>
+                        <span>Prontuário {item.prontuario || "-"} · Parcela {labelParcela(item.parcela)} · {item.vencimento || "-"} · {item.valor}</span>
                       </button>
-                    )) : <div className="empty-inline">Nenhum recebÃ­vel encontrado.</div>}
+                    )) : <div className="empty-inline">Nenhum recebível encontrado.</div>}
                   </div>
                 ) : null}
               </div>
@@ -981,7 +1043,7 @@ export function FinanceiroPage() {
                         <div className="finance-selected-card-head">
                           <div>
                             <strong>{item.pacienteNome || "Paciente"}</strong>
-                            <span>ProntuÃ¡rio {item.prontuario || "-"} Â· Parcela {labelParcela(item.parcela)} Â· {item.vencimento || "-"} Â· {item.valor}</span>
+                            <span>Prontuário {item.prontuario || "-"} · Parcela {labelParcela(item.parcela)} · {item.vencimento || "-"} · {item.valor}</span>
                           </div>
                           <button type="button" className="ghost-action compact" onClick={() => removerRecebivelBaixa(item.id)}>Remover</button>
                         </div>
@@ -991,7 +1053,7 @@ export function FinanceiroPage() {
                             <input type="text" placeholder="R$ 0,00" value={item.desconto} onChange={(e) => atualizarDescontoRecebivel(item.id, e.target.value)} />
                           </label>
                           <div className="finance-selected-card-total">
-                            <span>Valor lÃ­quido</span>
+                            <span>Valor líquido</span>
                             <strong>{valorLiquido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
                           </div>
                         </div>
@@ -1001,7 +1063,7 @@ export function FinanceiroPage() {
                 </div>
               ) : null}
               <div className="finance-form-actions">
-                <button type="button" className="primary-action" disabled={salvando || !recebiveisSelecionadosDetalhe.length} onClick={() => void baixarRecebivel()}>Dar baixa nos recebÃ­veis</button>
+                <button type="button" className="primary-action" disabled={salvando || !recebiveisSelecionadosDetalhe.length} onClick={() => void baixarRecebivel()}>Dar baixa nos recebíveis</button>
               </div>
             </article>
 
@@ -1015,7 +1077,7 @@ export function FinanceiroPage() {
                   <div className="module-subitem finance-module-subitem" key={item.id} onDoubleClick={() => abrirRecebivelParaEdicao(item.id)}>
                     <div>
                       <strong>{item.descricao || item.origem || "Movimento"}</strong>
-                      <span>{item.data || "-"} Â· {item.contaCaixa || "-"} Â· {item.formaPagamento || "-"}</span>
+                      <span>{item.data || "-"} · {item.contaCaixa || "-"} · {item.formaPagamento || "-"}</span>
                     </div>
                     <div className="module-subitem-right">
                       <strong>{item.valor}</strong>
@@ -1026,7 +1088,7 @@ export function FinanceiroPage() {
                       </div>
                     </div>
                   </div>
-                )) : <div className="empty-inline">Nenhum lanÃ§amento no caixa ainda.</div>}
+                )) : <div className="empty-inline">Nenhum lançamento no caixa ainda.</div>}
               </div>
             </article>
 
@@ -1035,18 +1097,18 @@ export function FinanceiroPage() {
                 <span className="panel-kicker">Editar movimento</span>
                 <div className="finance-form-grid">
                   <label><span>Data</span><input type="date" value={movimentoEditForm.dataMovimento} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, dataMovimento: e.target.value } : a)} /></label>
-                  <label><span>Tipo</span><select value={movimentoEditForm.tipo} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, tipo: e.target.value } : a)}><option value="Entrada">Entrada</option><option value="Saida">SaÃ­da</option></select></label>
+                  <label><span>Tipo</span><select value={movimentoEditForm.tipo} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, tipo: e.target.value } : a)}><option value="Entrada">Entrada</option><option value="Saida">Saída</option></select></label>
                   <label><span>Origem</span><input type="text" value={movimentoEditForm.origem} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, origem: e.target.value } : a)} /></label>
                   <label><span>Conta</span><select value={movimentoEditForm.contaCaixa} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, contaCaixa: e.target.value } : a)}>{CONTAS_CAIXA.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Forma pagamento</span><select value={movimentoEditForm.formaPagamento} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, formaPagamento: e.target.value } : a)}>{FORMAS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                  <label><span>ProntuÃ¡rio</span><input type="text" value={movimentoEditForm.prontuario} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, prontuario: e.target.value } : a)} /></label>
-                  <label className="finance-span-2"><span>DescriÃ§Ã£o</span><input type="text" value={movimentoEditForm.descricao} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, descricao: e.target.value } : a)} /></label>
+                  <label><span>Prontuário</span><input type="text" value={movimentoEditForm.prontuario} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, prontuario: e.target.value } : a)} /></label>
+                  <label className="finance-span-2"><span>Descrição</span><input type="text" value={movimentoEditForm.descricao} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, descricao: e.target.value } : a)} /></label>
                   <label><span>Valor</span><input type="text" value={movimentoEditForm.valor} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, valor: e.target.value } : a)} /></label>
-                  <label className="finance-span-2"><span>ObservaÃ§Ã£o</span><textarea rows={3} value={movimentoEditForm.observacao} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, observacao: e.target.value } : a)} /></label>
+                  <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={movimentoEditForm.observacao} onChange={(e) => setMovimentoEditForm((a) => a ? { ...a, observacao: e.target.value } : a)} /></label>
                 </div>
                 <div className="finance-form-actions">
                   <button type="button" className="ghost-action" onClick={() => setMovimentoEditandoId(0)}>Fechar</button>
-                  <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarMovimentoEditado()}>Salvar ediÃ§Ã£o</button>
+                  <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarMovimentoEditado()}>Salvar edição</button>
                 </div>
               </article>
             ) : null}
@@ -1086,34 +1148,97 @@ export function FinanceiroPage() {
                   <input type="date" value={filtroVencimentoRecebivelInicio} onChange={(e) => setFiltroVencimentoRecebivelInicio(e.target.value)} />
                 </label>
                 <label>
-                  <span>Vencimento atÃ©</span>
+                  <span>Vencimento até</span>
                   <input type="date" value={filtroVencimentoRecebivelFim} onChange={(e) => setFiltroVencimentoRecebivelFim(e.target.value)} />
                 </label>
+              </div>
+              <div className="finance-form-actions">
+                <button type="button" className="ghost-action" onClick={limparFiltrosRecebiveis}>Limpar filtros</button>
               </div>
             </article>
             <article className="panel finance-form-panel"><span>Total filtrado</span><strong>{`R$ ${recebiveisFiltrados.reduce((total, item) => total + moedaParaNumero(item.valor), 0).toFixed(2).replace(".", ",")}`}</strong></article>
             <article className="panel finance-form-panel"><span>Parcelas filtradas</span><strong>{String(recebiveisFiltrados.length)}</strong></article>
-            <article className="panel finance-form-panel"><span>Pacientes Ãºnicos</span><strong>{String(new Set(recebiveisFiltrados.map((i) => i.pacienteNome || "")).size)}</strong></article>
+            <article className="panel finance-form-panel"><span>Pacientes únicos</span><strong>{String(new Set(recebiveisFiltrados.map((i) => i.pacienteNome || "")).size)}</strong></article>
             <article className="panel finance-module-list finance-span-all">
-              <span className="panel-kicker">Detalhamento dos recebÃ­veis</span>
-              <div className="module-sublist">
-                <div className="finance-form-actions finance-book-actions">
-                  <button type="button" className="ghost-action" onClick={exportarRecebiveisFiltrados} disabled={!recebiveisFiltrados.length}>
-                    Baixar relatÃ³rio
-                  </button>
-                </div>
-                {recebiveisFiltrados.length ? recebiveisFiltrados.map((item) => (
-                  <div className="module-subitem finance-module-subitem" key={item.id} onDoubleClick={() => abrirRecebivelParaEdicao(item.id)}>
-                    <div>
-                      <strong>{item.pacienteNome || "Paciente"}</strong>
-                      <span>ProntuÃ¡rio {item.prontuario || "-"} Â· Parcela {labelParcela(item.parcela)} Â· {item.vencimento || "-"}</span>
-                    </div>
-                    <div className="module-subitem-right">
-                      <strong>{item.valor}</strong>
-                      <span className={`module-status-badge ${(item.status || "").toLowerCase().replace(/\s+/g, "-")}`}>{item.status || "-"}</span>
-                    </div>
-                  </div>
-                )) : <div className="empty-inline">Nenhum recebÃ­vel encontrado.</div>}
+              <span className="panel-kicker">Grade de recebíveis</span>
+              <div className="finance-form-actions finance-book-actions">
+                <button type="button" className="ghost-action" onClick={exportarRecebiveisFiltrados} disabled={!recebiveisFiltrados.length}>
+                  Baixar relatório
+                </button>
+              </div>
+              <div className="finance-receivables-grid-shell">
+                <table className="finance-receivables-grid">
+                  <thead>
+                    <tr>
+                      <th>Paciente</th>
+                      <th>Prontuário</th>
+                      <th>Parcela</th>
+                      <th>Vencimento</th>
+                      <th>Valor</th>
+                      <th>Forma</th>
+                      <th>Status</th>
+                      <th>Data da baixa</th>
+                      <th>Observação</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recebiveisFiltrados.length ? recebiveisFiltrados.map((item) => {
+                      const linha = recebiveisGrid[item.id] || recebivelParaForm(item);
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <input type="text" value={linha.pacienteNome} onChange={(e) => atualizarRecebivelGrid(item.id, "pacienteNome", e.target.value)} />
+                          </td>
+                          <td>
+                            <input type="text" value={linha.prontuario} onChange={(e) => atualizarRecebivelGrid(item.id, "prontuario", e.target.value)} />
+                          </td>
+                          <td>
+                            <span className="finance-grid-static-cell">{labelParcela(item.parcela)}</span>
+                          </td>
+                          <td>
+                            <input type="date" value={linha.vencimento} onChange={(e) => atualizarRecebivelGrid(item.id, "vencimento", e.target.value)} />
+                          </td>
+                          <td>
+                            <input type="text" value={linha.valor} onChange={(e) => atualizarRecebivelGrid(item.id, "valor", e.target.value)} />
+                          </td>
+                          <td>
+                            <select value={linha.formaPagamento} onChange={(e) => atualizarRecebivelGrid(item.id, "formaPagamento", e.target.value)}>
+                              {FORMAS.map((forma) => <option key={forma} value={forma}>{forma}</option>)}
+                            </select>
+                          </td>
+                          <td>
+                            <select value={linha.status} onChange={(e) => atualizarRecebivelGrid(item.id, "status", e.target.value)}>
+                              {STATUS_RECEBIVEIS.map((status) => <option key={status} value={status}>{status}</option>)}
+                            </select>
+                          </td>
+                          <td>
+                            <input type="date" value={linha.dataPagamento} onChange={(e) => atualizarRecebivelGrid(item.id, "dataPagamento", e.target.value)} />
+                          </td>
+                          <td>
+                            <input type="text" value={linha.observacao} onChange={(e) => atualizarRecebivelGrid(item.id, "observacao", e.target.value)} />
+                          </td>
+                          <td>
+                            <div className="finance-grid-actions">
+                              <button type="button" className="ghost-action compact" onClick={() => { setRecebivelSelecionadoId(item.id); setAba("individual"); }}>
+                                Abrir
+                              </button>
+                              <button type="button" className="primary-action compact" disabled={salvando} onClick={() => void salvarRecebivelLinha(item.id)}>
+                                Salvar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={10}>
+                          <div className="empty-inline">Nenhum recebível encontrado.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </article>
           </div>
@@ -1175,7 +1300,7 @@ export function FinanceiroPage() {
                   />
                 </label>
                 <label className="finance-span-2">
-                  <span>ObservaÃ§Ã£o</span>
+                  <span>Observação</span>
                   <textarea
                     rows={4}
                     value={reciboForm.observacao}
@@ -1195,7 +1320,7 @@ export function FinanceiroPage() {
                   <div className="module-subitem finance-module-subitem" key={item.id}>
                     <div>
                       <strong>{item.pagador || "Recibo"}</strong>
-                      <span>{item.dataPagamento || "-"} Â· {item.referente || "Sem referÃªncia"}</span>
+                      <span>{item.dataPagamento || "-"} · {item.referente || "Sem referência"}</span>
                     </div>
                     <div className="module-subitem-right">
                       <strong>{item.valor}</strong>
@@ -1228,7 +1353,7 @@ export function FinanceiroPage() {
                   />
                 </label>
                 <label>
-                  <span>MÃªs</span>
+                  <span>Mês</span>
                   <select
                     value={metaForm.mes}
                     onChange={(e) => setMetaForm((atual) => ({ ...atual, mes: Number(e.target.value) }))}
@@ -1250,7 +1375,7 @@ export function FinanceiroPage() {
                 </label>
               </div>
               <div className="finance-form-actions">
-                <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarMetaMensal()}>Salvar metas do mÃªs</button>
+                <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarMetaMensal()}>Salvar metas do mês</button>
               </div>
             </article>
 
@@ -1261,7 +1386,7 @@ export function FinanceiroPage() {
                   <div className="module-subitem finance-module-subitem" key={`${item.ano}-${item.mes}`}>
                     <div>
                       <strong>{item.mesNome}</strong>
-                      <span>Meta {numeroParaMoedaBr(item.meta)} Â· Supermeta {numeroParaMoedaBr(item.supermeta)} Â· Hipermeta {numeroParaMoedaBr(item.hipermeta)}</span>
+                      <span>Meta {numeroParaMoedaBr(item.meta)} · Supermeta {numeroParaMoedaBr(item.supermeta)} · Hipermeta {numeroParaMoedaBr(item.hipermeta)}</span>
                     </div>
                     <div className="module-subitem-right">
                       <strong>{item.dataAtualizacao ? `Atualizado ${item.dataAtualizacao}` : "Sem ajuste"}</strong>
@@ -1281,18 +1406,18 @@ export function FinanceiroPage() {
             <article className="panel finance-form-panel finance-span-all">
               <span className="panel-kicker">{notaFiscalForm.id ? "Editar NF emitida" : "Nova NF emitida"}</span>
               <div className="finance-form-grid">
-                <label><span>CompetÃªncia</span><input type="month" value={notaFiscalForm.competencia} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, competencia: e.target.value }))} /></label>
-                <label><span>Data emissÃ£o</span><input type="date" value={notaFiscalForm.dataEmissao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, dataEmissao: e.target.value }))} /></label>
+                <label><span>Competência</span><input type="month" value={notaFiscalForm.competencia} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, competencia: e.target.value }))} /></label>
+                <label><span>Data emissão</span><input type="date" value={notaFiscalForm.dataEmissao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, dataEmissao: e.target.value }))} /></label>
                 <label><span>Data recebimento</span><input type="date" value={notaFiscalForm.dataRecebimento} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, dataRecebimento: e.target.value }))} /></label>
-                <label><span>NÃºmero NF</span><input type="text" value={notaFiscalForm.numeroNf} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, numeroNf: e.target.value }))} /></label>
-                <label><span>SÃ©rie</span><input type="text" value={notaFiscalForm.serie} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, serie: e.target.value }))} /></label>
+                <label><span>Número NF</span><input type="text" value={notaFiscalForm.numeroNf} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, numeroNf: e.target.value }))} /></label>
+                <label><span>Série</span><input type="text" value={notaFiscalForm.serie} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, serie: e.target.value }))} /></label>
                 <label><span>Conta de entrada</span><select value={notaFiscalForm.contaDestino} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, contaDestino: e.target.value }))}>{CONTAS_CAIXA.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                 <label className="finance-span-2"><span>Cliente / tomador</span><input type="text" value={notaFiscalForm.cliente} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, cliente: e.target.value }))} /></label>
-                <label className="finance-span-2"><span>DescriÃ§Ã£o</span><input type="text" value={notaFiscalForm.descricao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, descricao: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Descrição</span><input type="text" value={notaFiscalForm.descricao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, descricao: e.target.value }))} /></label>
                 <label><span>Valor da NF</span><input type="text" value={notaFiscalForm.valorNf} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, valorNf: e.target.value }))} /></label>
                 <label><span>Valor recebido</span><input type="text" value={notaFiscalForm.valorRecebido} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, valorRecebido: e.target.value }))} /></label>
                 <label><span>Status</span><select value={notaFiscalForm.status} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, status: e.target.value }))}>{STATUS_NOTA_FISCAL.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                <label className="finance-span-2"><span>ObservaÃ§Ã£o</span><textarea rows={3} value={notaFiscalForm.observacao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, observacao: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={notaFiscalForm.observacao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, observacao: e.target.value }))} /></label>
               </div>
               <div className="finance-form-actions">
                 <button type="button" className="ghost-action" onClick={() => setNotaFiscalForm(NOTA_FISCAL_INICIAL)}>Limpar</button>
@@ -1302,8 +1427,8 @@ export function FinanceiroPage() {
 
             <article className="panel finance-form-panel"><span>Total NF</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalNf)}</strong></article>
             <article className="panel finance-form-panel"><span>Total recebido</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalRecebido)}</strong></article>
-            <article className="panel finance-form-panel"><span>DiferenÃ§a acumulada</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalDiferenca)}</strong></article>
-            <article className="panel finance-form-panel"><span>Pendentes de conferÃªncia</span><strong>{String(resumoNotasFiscais.quantidadePendentes)}</strong></article>
+            <article className="panel finance-form-panel"><span>Diferença acumulada</span><strong>{numeroParaMoedaBr(resumoNotasFiscais.totalDiferenca)}</strong></article>
+            <article className="panel finance-form-panel"><span>Pendentes de conferência</span><strong>{String(resumoNotasFiscais.quantidadePendentes)}</strong></article>
 
             <article className="panel finance-module-list finance-span-all">
               <span className="panel-kicker">Controle de NF emitidas</span>
@@ -1311,8 +1436,8 @@ export function FinanceiroPage() {
                 {notasFiscaisOrdenadas.length ? notasFiscaisOrdenadas.map((item) => (
                   <div className="module-subitem finance-module-subitem" key={item.id}>
                     <div>
-                      <strong>{item.numeroNf ? `NF ${item.numeroNf}` : "NF sem nÃºmero"} Â· {item.cliente || "Sem cliente"}</strong>
-                      <span>{item.competencia || "-"} Â· {item.dataEmissao || "-"} Â· {item.contaDestino || "-"} Â· {item.descricao || "Sem descriÃ§Ã£o"}</span>
+                      <strong>{item.numeroNf ? `NF ${item.numeroNf}` : "NF sem número"} · {item.cliente || "Sem cliente"}</strong>
+                      <span>{item.competencia || "-"} · {item.dataEmissao || "-"} · {item.contaDestino || "-"} · {item.descricao || "Sem descrição"}</span>
                     </div>
                     <div className="module-subitem-right">
                       <strong>{item.diferenca}</strong>
@@ -1331,14 +1456,14 @@ export function FinanceiroPage() {
         {!carregando && aba === "individual" ? (
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
-              <span className="panel-kicker">Editar recebÃ­vel individual</span>
+              <span className="panel-kicker">Editar recebível individual</span>
               <label>
-                <span>RecebÃ­vel</span>
+                <span>Recebível</span>
                 <select value={recebivelSelecionadoId} onChange={(e) => setRecebivelSelecionadoId(Number(e.target.value))}>
                   <option value={0}>Selecione</option>
                   {recebiveis.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.pacienteNome} - ProntuÃ¡rio {item.prontuario} - Parcela {labelParcela(item.parcela)} - {item.vencimento}
+                      {item.pacienteNome} - Prontuário {item.prontuario} - Parcela {labelParcela(item.parcela)} - {item.vencimento}
                     </option>
                   ))}
                 </select>
@@ -1346,15 +1471,15 @@ export function FinanceiroPage() {
               {recebivelForm ? (
                 <div className="finance-form-grid">
                   <label><span>Nome do paciente</span><input type="text" value={recebivelForm.pacienteNome} onChange={(e) => setRecebivelForm((a) => a ? { ...a, pacienteNome: e.target.value } : a)} /></label>
-                  <label><span>ProntuÃ¡rio</span><input type="text" value={recebivelForm.prontuario} onChange={(e) => setRecebivelForm((a) => a ? { ...a, prontuario: e.target.value } : a)} /></label>
+                  <label><span>Prontuário</span><input type="text" value={recebivelForm.prontuario} onChange={(e) => setRecebivelForm((a) => a ? { ...a, prontuario: e.target.value } : a)} /></label>
                   <label><span>Vencimento</span><input type="date" value={recebivelForm.vencimento} onChange={(e) => setRecebivelForm((a) => a ? { ...a, vencimento: e.target.value } : a)} /></label>
                   <label><span>Valor</span><input type="text" value={recebivelForm.valor} onChange={(e) => setRecebivelForm((a) => a ? { ...a, valor: e.target.value } : a)} /></label>
                   <label><span>Forma pagamento</span><select value={recebivelForm.formaPagamento} onChange={(e) => setRecebivelForm((a) => a ? { ...a, formaPagamento: e.target.value } : a)}>{FORMAS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Status</span><select value={recebivelForm.status} onChange={(e) => setRecebivelForm((a) => a ? { ...a, status: e.target.value } : a)}>{STATUS_RECEBIVEIS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Data do pagamento</span><input type="date" value={recebivelForm.dataPagamento} onChange={(e) => setRecebivelForm((a) => a ? { ...a, dataPagamento: e.target.value } : a)} /></label>
-                  <label className="finance-span-2"><span>ObservaÃ§Ã£o</span><textarea rows={3} value={recebivelForm.observacao} onChange={(e) => setRecebivelForm((a) => a ? { ...a, observacao: e.target.value } : a)} /></label>
+                  <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={recebivelForm.observacao} onChange={(e) => setRecebivelForm((a) => a ? { ...a, observacao: e.target.value } : a)} /></label>
                   <div className="finance-form-actions finance-span-2">
-                    <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarRecebivelIndividual()}>Salvar alteraÃ§Ãµes do recebÃ­vel</button>
+                    <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarRecebivelIndividual()}>Salvar alterações do recebível</button>
                   </div>
                 </div>
               ) : null}
@@ -1365,14 +1490,14 @@ export function FinanceiroPage() {
         {!carregando && aba === "lote" ? (
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
-              <span className="panel-kicker">Editar recebÃ­veis em lote</span>
+              <span className="panel-kicker">Editar recebíveis em lote</span>
               <label>
                 <span>Lote para editar</span>
                 <select value={loteContratoId} onChange={(e) => setLoteContratoId(Number(e.target.value))}>
                   <option value={0}>Selecione</option>
                   {lotes.map((item) => (
                     <option key={item.contratoId} value={item.contratoId}>
-                      {item.pacienteNome} - ProntuÃ¡rio {item.prontuario} - {item.quantidade} parcelas - inÃ­cio {item.primeiroVencimento}
+                      {item.pacienteNome} - Prontuário {item.prontuario} - {item.quantidade} parcelas - início {item.primeiroVencimento}
                     </option>
                   ))}
                 </select>
@@ -1381,7 +1506,7 @@ export function FinanceiroPage() {
                 <>
                   <div className="finance-form-grid">
                     <label><span>Nome do paciente</span><input type="text" value={loteSelecionado.pacienteNome} readOnly /></label>
-                    <label><span>ProntuÃ¡rio</span><input type="text" value={loteSelecionado.prontuario} readOnly /></label>
+                    <label><span>Prontuário</span><input type="text" value={loteSelecionado.prontuario} readOnly /></label>
                     <label><span>Novo primeiro vencimento</span><input type="date" value={dataBrParaIso(loteSelecionado.primeiroVencimento)} onChange={() => {}} readOnly /></label>
                     <label><span>Forma pagamento</span><input type="text" value={recebiveisDoLote[0]?.formaPagamento || ""} readOnly /></label>
                     <label><span>Status</span><input type="text" value={recebiveisDoLote[0]?.status || ""} readOnly /></label>
@@ -1391,7 +1516,7 @@ export function FinanceiroPage() {
                       <div className="module-subitem finance-module-subitem" key={item.id}>
                         <div>
                           <strong>Parcela {labelParcela(item.parcela)}</strong>
-                          <span>{item.vencimento || "-"} Â· {item.formaPagamento || "-"}</span>
+                          <span>{item.vencimento || "-"} · {item.formaPagamento || "-"}</span>
                         </div>
                         <div className="module-subitem-right">
                           <strong>{item.valor}</strong>
@@ -1401,7 +1526,7 @@ export function FinanceiroPage() {
                     ))}
                   </div>
                   <div className="finance-form-actions">
-                    <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarRecebiveisLote()}>Salvar alteraÃ§Ãµes em lote</button>
+                    <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarRecebiveisLote()}>Salvar alterações em lote</button>
                   </div>
                 </>
               ) : null}
@@ -1434,13 +1559,13 @@ export function FinanceiroPage() {
                   <input type="date" value={filtroVencimentoPagarInicio} onChange={(e) => setFiltroVencimentoPagarInicio(e.target.value)} />
                 </label>
                 <label>
-                  <span>Vencimento atÃ©</span>
+                  <span>Vencimento até</span>
                   <input type="date" value={filtroVencimentoPagarFim} onChange={(e) => setFiltroVencimentoPagarFim(e.target.value)} />
                 </label>
               </div>
               <div className="finance-mini-metrics">
                 <div><span>Total filtrado</span><strong>{`R$ ${contasPagarFiltradas.reduce((total, item) => total + moedaParaNumero(item.valor), 0).toFixed(2).replace(".", ",")}`}</strong></div>
-                <div><span>TÃ­tulos</span><strong>{String(contasPagarFiltradas.length)}</strong></div>
+                <div><span>Títulos</span><strong>{String(contasPagarFiltradas.length)}</strong></div>
                 <div><span>Fornecedores</span><strong>{String(new Set(contasPagarFiltradas.map((item) => item.fornecedor || "")).size)}</strong></div>
                 <div><span>Pagos</span><strong>{`R$ ${contasPagarFiltradas.reduce((total, item) => total + moedaParaNumero(item.valorPago || ""), 0).toFixed(2).replace(".", ",")}`}</strong></div>
               </div>
@@ -1453,7 +1578,7 @@ export function FinanceiroPage() {
                   <div className="module-subitem finance-module-subitem" key={item.id}>
                     <div>
                       <strong>{item.descricao || "Conta a pagar"}</strong>
-                      <span>{item.fornecedor || "-"} Â· {item.vencimento || "-"} Â· {item.categoria || "-"}</span>
+                      <span>{item.fornecedor || "-"} · {item.vencimento || "-"} · {item.categoria || "-"}</span>
                     </div>
                     <div className="module-subitem-right">
                       <strong>{item.valor}</strong>
@@ -1467,7 +1592,7 @@ export function FinanceiroPage() {
                       </div>
                     </div>
                   </div>
-                )) : <div className="empty-inline">NÃ£o hÃ¡ contas a pagar cadastradas.</div>}
+                )) : <div className="empty-inline">Não há contas a pagar cadastradas.</div>}
               </div>
             </article>
           </div>
@@ -1476,17 +1601,17 @@ export function FinanceiroPage() {
         {!carregando && aba === "novo_pagar" ? (
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
-              <span className="panel-kicker">{contaForm.id ? "AtualizaÃ§Ã£o rÃ¡pida" : "Nova conta a pagar"}</span>
+              <span className="panel-kicker">{contaForm.id ? "Atualização rápida" : "Nova conta a pagar"}</span>
               <div className="finance-form-grid">
                 <label><span>Vencimento</span><input type="date" value={contaForm.vencimento} onChange={(e) => setContaForm((a) => ({ ...a, vencimento: e.target.value }))} /></label>
                 <label><span>Fornecedor</span><input type="text" value={contaForm.fornecedor} onChange={(e) => setContaForm((a) => ({ ...a, fornecedor: e.target.value }))} /></label>
-                <label className="finance-span-2"><span>TÃ­tulo / descriÃ§Ã£o</span><input type="text" value={contaForm.descricao} onChange={(e) => setContaForm((a) => ({ ...a, descricao: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Título / descrição</span><input type="text" value={contaForm.descricao} onChange={(e) => setContaForm((a) => ({ ...a, descricao: e.target.value }))} /></label>
                 <label><span>Categoria</span><input type="text" value={contaForm.categoria} onChange={(e) => setContaForm((a) => ({ ...a, categoria: e.target.value }))} /></label>
                 <label><span>Status</span><select value={contaForm.status} onChange={(e) => setContaForm((a) => ({ ...a, status: e.target.value }))}>{STATUS_PAGAR.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                <label><span>Valor do tÃ­tulo</span><input type="text" value={contaForm.valor} onChange={(e) => setContaForm((a) => ({ ...a, valor: e.target.value }))} /></label>
+                <label><span>Valor do título</span><input type="text" value={contaForm.valor} onChange={(e) => setContaForm((a) => ({ ...a, valor: e.target.value }))} /></label>
                 <label><span>Valor pago</span><input type="text" value={contaForm.valorPago} onChange={(e) => setContaForm((a) => ({ ...a, valorPago: e.target.value }))} /></label>
                 <label><span>Data do pagamento</span><input type="date" value={contaForm.pagoEm} onChange={(e) => setContaForm((a) => ({ ...a, pagoEm: e.target.value }))} /></label>
-                <label className="finance-span-2"><span>ObservaÃ§Ã£o</span><textarea rows={3} value={contaForm.observacao} onChange={(e) => setContaForm((a) => ({ ...a, observacao: e.target.value }))} /></label>
+                <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={contaForm.observacao} onChange={(e) => setContaForm((a) => ({ ...a, observacao: e.target.value }))} /></label>
               </div>
               <div className="finance-form-actions">
                 <button type="button" className="ghost-action" onClick={() => setContaForm(CONTA_PAGAR_INICIAL)} disabled={salvando}>Limpar</button>

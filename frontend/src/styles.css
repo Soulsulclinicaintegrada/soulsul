@@ -4231,9 +4231,10 @@ textarea::placeholder {
 
 .agenda-day-column-body {
   position: relative;
-  border-radius: 10px;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
   border: 1px solid rgba(199, 170, 120, 0.16);
+  border-top: 0;
 }
 
 .agenda-lunch-block {
@@ -4271,6 +4272,68 @@ textarea::placeholder {
 
 .agenda-slot.consultorio-ocupado {
   background: rgba(220, 38, 38, 0.14);
+}
+
+.finance-receivables-grid-shell {
+  overflow: auto;
+  border: 1px solid rgba(199, 170, 120, 0.16);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.finance-receivables-grid {
+  width: 100%;
+  min-width: 1220px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.finance-receivables-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f7f1e8;
+  color: #6a5030;
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.finance-receivables-grid th,
+.finance-receivables-grid td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(199, 170, 120, 0.12);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.finance-receivables-grid tbody tr:nth-child(even) {
+  background: rgba(247, 241, 232, 0.42);
+}
+
+.finance-receivables-grid input,
+.finance-receivables-grid select {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(199, 170, 120, 0.18);
+  background: #fff;
+  padding: 6px 10px;
+  font: inherit;
+}
+
+.finance-grid-static-cell {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.finance-grid-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .agenda-event-card {
