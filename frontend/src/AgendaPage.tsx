@@ -2369,7 +2369,13 @@ function atualizarConfigProfissionalDia(
       <div className="agenda-day-layout">
         <div className="agenda-time-column">
           <div className="agenda-column-header agenda-time-head">Horário</div>
-          <div className="agenda-time-list">
+          <div
+            className="agenda-time-list"
+            style={{
+              height: `${alturaAgendaPx}px`,
+              gridTemplateRows: `repeat(${horariosAgenda.length}, ${SLOT_HEIGHT}px)`
+            }}
+          >
             {horariosAgenda.map((slot) => <div key={slot} className="agenda-time-slot">{slot}</div>)}
           </div>
         </div>
@@ -2418,7 +2424,14 @@ function atualizarConfigProfissionalDia(
                     </div>
                   </div>
                 </div>
-                <div className="agenda-day-column-body" style={{ background: profissional.corSuave, height: `${alturaAgendaPx}px` }}>
+                <div
+                  className="agenda-day-column-body"
+                  style={{
+                    background: profissional.corSuave,
+                    height: `${alturaAgendaPx}px`,
+                    gridTemplateRows: `repeat(${horariosAgenda.length}, ${SLOT_HEIGHT}px)`
+                  }}
+                >
                   {profissionalBloqueado ? (
                     <div className="agenda-day-unavailable"><span>{feriadoSelecionado ? `Feriado · ${feriadoSelecionado}` : "Indisponível no dia"}</span></div>
                   ) : null}

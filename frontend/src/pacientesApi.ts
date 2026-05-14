@@ -664,6 +664,14 @@ export type CrmAvaliacaoItemApi = {
   procedimento?: string;
   jaNoCrm?: boolean;
   origemAvaliacao?: boolean;
+  orcamentos?: Array<{
+    contratoId: number;
+    valorTotal?: string;
+    observacao?: string;
+    data?: string;
+    status?: string;
+    procedimentos?: string[];
+  }>;
 };
 
 export type CrmPainelApi = {

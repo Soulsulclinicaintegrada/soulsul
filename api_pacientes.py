@@ -881,6 +881,7 @@ class CrmAvaliacaoItemResposta(BaseModel):
     procedimento: str = ""
     jaNoCrm: bool = False
     origemAvaliacao: bool = False
+    orcamentos: list[dict] = Field(default_factory=list)
 
 
 class CrmPainelResposta(BaseModel):
@@ -5832,6 +5833,54 @@ def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResp
             jaNoCrm=crm_bool(row["crm_id"]),
             origemAvaliacao=crm_bool(row["origem_avaliacao"]),
         )
+    if not por_paciente:
+        return []
+
+    paciente_ids = sorted(por_paciente.keys())
+    marcadores = ",".join("?" for _ in paciente_ids)
+    contratos_rows = conn.execute(
+        f"""
+        SELECT
+            c.id,
+            c.paciente_id,
+            c.valor_total,
+            COALESCE(c.observacoes, '') AS observacoes,
+            COALESCE(c.data_criacao, '') AS data_criacao,
+            COALESCE(c.status, '') AS status,
+            COALESCE(pc.procedimento, '') AS procedimento
+        FROM contratos c
+        LEFT JOIN procedimentos_contrato pc ON pc.contrato_id = c.id
+        WHERE c.paciente_id IN ({marcadores})
+        ORDER BY c.paciente_id, COALESCE(c.data_criacao, '') DESC, c.id DESC, pc.id
+        """,
+        tuple(paciente_ids),
+    ).fetchall()
+
+    contratos_por_id: dict[int, dict] = {}
+    contratos_por_paciente: dict[int, list[dict]] = {}
+    for row in contratos_rows:
+        contrato_id = crm_int(row["id"], 0)
+        paciente_id = crm_int(row["paciente_id"], 0)
+        if contrato_id <= 0 or paciente_id <= 0:
+            continue
+        contrato = contratos_por_id.get(contrato_id)
+        if contrato is None:
+            contrato = {
+                "contratoId": contrato_id,
+                "valorTotal": formatar_moeda_br(float(row["valor_total"] or 0)),
+                "observacao": str(row["observacoes"] or ""),
+                "data": formatar_data_br_valor(row["data_criacao"]),
+                "status": str(row["status"] or ""),
+                "procedimentos": [],
+            }
+            contratos_por_id[contrato_id] = contrato
+            contratos_por_paciente.setdefault(paciente_id, []).append(contrato)
+        procedimento = str(row["procedimento"] or "").strip()
+        if procedimento and procedimento not in contrato["procedimentos"]:
+            contrato["procedimentos"].append(procedimento)
+
+    for paciente_id, item in por_paciente.items():
+        item.orcamentos = contratos_por_paciente.get(paciente_id, [])
     return list(por_paciente.values())
 
 

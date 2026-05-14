@@ -3675,6 +3675,11 @@ textarea::placeholder {
   align-self: start;
 }
 
+.agenda-time-list {
+  display: grid;
+  align-content: start;
+}
+
 .agenda-column-header,
 .agenda-time-slot {
   display: grid;
@@ -3691,10 +3696,11 @@ textarea::placeholder {
 }
 
 .agenda-time-slot {
-  height: 24px;
+  height: 100%;
   color: #916d39;
   font-size: 0.82rem;
   box-sizing: border-box;
+  line-height: 1;
 }
 
 .agenda-time-head {
@@ -4231,6 +4237,8 @@ textarea::placeholder {
 
 .agenda-day-column-body {
   position: relative;
+  display: grid;
+  align-content: start;
   border-radius: 0 0 10px 10px;
   overflow: hidden;
   border: 1px solid rgba(199, 170, 120, 0.16);
@@ -4261,8 +4269,12 @@ textarea::placeholder {
 .agenda-slot {
   appearance: none;
   width: 100%;
-  height: 24px;
+  height: 100%;
   box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  font-size: 0;
   border: 0;
   border-bottom: 1px solid rgba(199, 170, 120, 0.12);
   border-right: 1px solid rgba(199, 170, 120, 0.08);

@@ -595,16 +595,23 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     const linhasValidas = avaliacoesFiltradas.filter((item) => item.pacienteId > 0);
     baixarCsv(
       "crm-avaliacoes.csv",
-      ["Paciente", "Prontuario", "Telefone", "Data", "Profissional", "Procedimento", "Status"],
-      linhasValidas.map((item) => [
-        item.nome,
-        item.prontuario,
-        item.telefone,
-        item.dataAvaliacao,
-        item.profissional,
-        item.procedimento,
-        item.status,
-      ])
+      ["Paciente", "Prontuario", "Telefone", "Data", "Profissional", "Procedimento", "Status", "Orcamento", "Valor total", "Procedimentos do orcamento", "Observacao do orcamento"],
+      linhasValidas.flatMap((item) => {
+        const orcamentos = item.orcamentos?.length ? item.orcamentos : [null];
+        return orcamentos.map((orcamento, indice) => [
+          item.nome,
+          item.prontuario,
+          item.telefone,
+          item.dataAvaliacao,
+          item.profissional,
+          item.procedimento,
+          item.status,
+          orcamento ? `#${orcamento.contratoId}` : (indice === 0 ? "Sem orçamento" : ""),
+          orcamento?.valorTotal || "",
+          (orcamento?.procedimentos || []).join(" | "),
+          orcamento?.observacao || "",
+        ]);
+      })
     );
   }
 
