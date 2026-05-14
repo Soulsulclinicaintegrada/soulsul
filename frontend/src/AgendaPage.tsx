@@ -101,6 +101,7 @@ type DesmarqueConsultaForm = {
 };
 
 const SLOT_HEIGHT = 24;
+const AGENDA_HEADER_HEIGHT = 44;
 const HORARIOS = gerarSlotsQuinzeMinutos("07:00", "20:00");
 const MINUTO_INICIAL_AGENDA = paraMinutos("07:00");
 const NOMES_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
@@ -1210,7 +1211,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     const minutoFinalAgenda = minutoInicialAgenda + horariosAgenda.length * 15;
     if (minutosAgora < minutoInicialAgenda || minutosAgora > minutoFinalAgenda) return null;
     return {
-      top: ((minutosAgora - minutoInicialAgenda) / 15) * SLOT_HEIGHT,
+      top: AGENDA_HEADER_HEIGHT + ((minutosAgora - minutoInicialAgenda) / 15) * SLOT_HEIGHT,
       hora: `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`
     };
   }, [dataSelecionada, horariosAgenda.length, minutoInicialAgenda]);

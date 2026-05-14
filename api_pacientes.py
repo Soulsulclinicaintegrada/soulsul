@@ -4465,16 +4465,44 @@ def montar_tabela_elementos_selecionados_docx(doc, dentes: list[int], *, colunas
     return tabela
 
 
-def encontrar_ancora_odontograma_capa(doc):
-    if Paragraph is None:
+def limpar_conteudo_celula_docx(celula) -> None:
+    if qn is None:
+        return
+    tc = celula._tc
+    for child in list(tc):
+        if child.tag == qn("w:tcPr"):
+            continue
+        tc.remove(child)
+    celula.add_paragraph("")
+
+
+def encontrar_celula_odontograma_capa(doc):
+    if not getattr(doc, "tables", None):
         return None
-    marcadores = ["PRONTUÁRIO Nº", "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICOS", "PLANO DE TRATAMENTO"]
-    for marcador in marcadores:
-        marcador_norm = normalizar_texto_maiusculo(marcador)
-        for paragrafo in doc.paragraphs:
-            if marcador_norm in normalizar_texto_maiusculo(paragrafo.text):
-                return paragrafo
-    return None
+    primeira_tabela = doc.tables[0]
+    if len(primeira_tabela.rows) < 4 or not primeira_tabela.rows[0].cells:
+        return None
+    cabecalho = normalizar_texto_maiusculo(primeira_tabela.rows[0].cells[0].text)
+    if "PRONTUARIO" not in cabecalho:
+        return None
+    return primeira_tabela.rows[3].cells[0]
+
+
+def substituir_odontograma_na_capa_docx(doc, dentes_marcados: list[int]) -> bool:
+    celula = encontrar_celula_odontograma_capa(doc)
+    if celula is None:
+        return False
+    limpar_conteudo_celula_docx(celula)
+    paragrafo_topo = celula.paragraphs[0]
+    paragrafo_topo.alignment = 1
+    tabela = montar_tabela_elementos_selecionados_docx(celula, dentes_marcados, colunas=8)
+    if tabela is None:
+        return False
+    try:
+        tabela.autofit = True
+    except Exception:
+        pass
+    return True
 
 
 def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_ancora=None) -> None:
@@ -4490,8 +4518,10 @@ def inserir_odontograma_contrato_docx(doc, procedimentos: list[dict], tabela_anc
     dentes_deciduos = {dente for dente in dentes_marcados if 50 < dente < 90}
     if not dentes_permanentes and not dentes_deciduos:
         return
+    if substituir_odontograma_na_capa_docx(doc, sorted(dentes_marcados)):
+        return
 
-    ancora_paragrafo = encontrar_ancora_odontograma_capa(doc)
+    ancora_paragrafo = None
     ancora_xml = ancora_paragrafo._p if ancora_paragrafo is not None else (tabela_ancora._tbl if tabela_ancora is not None else None)
     titulo = doc.add_paragraph("ODONTOGRAMA DO CONTRATO")
     if titulo.runs:
@@ -5207,6 +5237,14 @@ def quantidade_parcelas_contrato_pagamento(itens: list[dict], forma_padrao: str)
     return len(itens)
 
 
+def valor_unitario_parcela_contrato(item: dict, quantidade_parcelas: int, forma_padrao: str) -> float:
+    valor_total_item = float(item.get("valor", 0) or 0)
+    forma = str(item.get("forma", forma_padrao)).replace("_", " ").upper()
+    if quantidade_parcelas > 1 and "CARTAO" in normalizar_texto(forma).upper():
+        return round(valor_total_item / quantidade_parcelas, 2)
+    return valor_total_item
+
+
 def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) -> str:
     valor_total = float(contrato["valor_total"] or 0)
     entrada_valor = float(contrato["entrada"] or 0)
@@ -5225,9 +5263,9 @@ def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) ->
 
     valor_restante = sum(float(item.get("valor", 0) or 0) for item in posteriores)
     primeira = posteriores[0]
-    valor_parcela = float(primeira.get("valor", 0) or 0)
     forma_primeira = str(primeira.get("forma", forma)).replace("_", " ").upper()
     quantidade_parcelas = quantidade_parcelas_contrato_pagamento(posteriores, forma)
+    valor_parcela = valor_unitario_parcela_contrato(primeira, quantidade_parcelas, forma)
     sufixo_primeira = (
         f"NO DIA {formatar_data_br_valor(primeira.get('data'))}."
         if forma_primeira in formas_no_dia
