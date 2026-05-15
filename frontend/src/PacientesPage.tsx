@@ -236,6 +236,7 @@ type OrcamentoDraft = {
   clinica: string;
   criadoPor: string;
   data: string;
+  dataRetornoCrm: string;
   observacoes: string;
   tabela: string;
   termoProcedimento: string;
@@ -325,6 +326,7 @@ const ORCAMENTO_INICIAL = (dataAtual: string): OrcamentoDraft => ({
   clinica: CLINICAS_ORCAMENTO[0],
   criadoPor: CRIADORES_ORCAMENTO[0],
   data: dataAtual,
+  dataRetornoCrm: dataAtual,
   observacoes: "",
   tabela: TABELAS_ORCAMENTO[0],
   termoProcedimento: "",
@@ -1699,6 +1701,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         clinica: detalhe.clinica || CLINICAS_ORCAMENTO[0],
         criadoPor: detalhe.criadoPor || CRIADORES_ORCAMENTO[0],
         data: detalhe.data ? detalhe.data.split("/").reverse().join("-") : dataHojeIso(),
+        dataRetornoCrm: detalhe.dataRetornoCrm ? detalhe.dataRetornoCrm.split("/").reverse().join("-") : dataHojeIso(),
         observacoes: detalhe.observacoes || "",
         tabela: detalhe.tabela || TABELAS_ORCAMENTO[0],
         termoProcedimento: "",
@@ -2172,6 +2175,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       setErro("Adicione ao menos um procedimento com dentes/regiões ativos.");
       return;
     }
+    if (!orcamentoDraft.dataRetornoCrm) {
+      setErro("Informe a data de retorno do CRM para este orçamento.");
+      return;
+    }
 
     setSalvandoOrcamento(true);
     setErro(null);
@@ -2180,6 +2187,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         clinica: orcamentoDraft.clinica,
         criado_por: orcamentoDraft.criadoPor,
         data: orcamentoDraft.data,
+        data_retorno_crm: orcamentoDraft.dataRetornoCrm,
         observacoes: orcamentoDraft.observacoes,
         tabela: orcamentoDraft.tabela,
         desconto_percentual: descontoPercentualAplicado,
@@ -3690,6 +3698,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                         <label>
                           <span>Data</span>
                           <input type="date" value={orcamentoDraft.data} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, data: e.target.value })} disabled={orcamentoBloqueado} />
+                        </label>
+                        <label>
+                          <span>Data de retorno CRM</span>
+                          <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} disabled={orcamentoBloqueado} />
                         </label>
                         <label className="full">
                           <span>Observações</span>

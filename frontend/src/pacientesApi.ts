@@ -576,6 +576,7 @@ export type OrcamentoPacientePayload = {
   desconto_percentual?: number;
   desconto_valor?: number;
   validade_orcamento?: string;
+  data_retorno_crm?: string;
   forma_pagamento?: string;
   parcelas?: number;
   entrada?: boolean;
@@ -600,6 +601,7 @@ export type OrcamentoDetalheApi = {
   descontoPercentual?: number;
   descontoValor?: number;
   validadeOrcamento?: string;
+  dataRetornoCrm?: string;
   formaPagamento?: string;
   parcelas?: number;
   entrada?: boolean;
@@ -674,10 +676,41 @@ export type CrmAvaliacaoItemApi = {
   }>;
 };
 
+export type CrmResgateHistoricoItemApi = {
+  id: number;
+  status?: string;
+  observacao?: string;
+  proximoContato?: string;
+  criadoPor?: string;
+  criadoEm?: string;
+  automatico?: boolean;
+};
+
+export type CrmResgateItemApi = {
+  crmId?: number | null;
+  contratoId: number;
+  pacienteId: number;
+  nome: string;
+  prontuario?: string;
+  telefone?: string;
+  dataOrcamento?: string;
+  dataRetorno?: string;
+  statusResgate?: string;
+  observacaoContato?: string;
+  observacaoAvaliacao?: string;
+  observacaoOrcamento?: string;
+  valorTotal?: string;
+  procedimentos?: string[];
+  ultimoContatoEm?: string;
+  ultimoContatoPor?: string;
+  historico?: CrmResgateHistoricoItemApi[];
+};
+
 export type CrmPainelApi = {
   pipeline: CrmPacienteItemApi[];
   finalizados: CrmPacienteItemApi[];
   avaliacoes: CrmAvaliacaoItemApi[];
+  resgates: CrmResgateItemApi[];
 };
 
 export type CrmAtualizacaoPayloadApi = {
@@ -695,6 +728,12 @@ export type CrmAtualizacaoPayloadApi = {
 export type CrmNovoLeadPayloadApi = {
   nome: string;
   telefone: string;
+};
+
+export type CrmResgateAtualizacaoPayloadApi = {
+  status: string;
+  observacao: string;
+  proximo_contato: string;
 };
 
 function normalizarErro(detail: unknown, fallback: string) {
@@ -853,6 +892,13 @@ export async function adicionarPacienteManualCrmApi(payload: CrmNovoLeadPayloadA
 
 export async function atualizarCrmApi(crmId: number, payload: CrmAtualizacaoPayloadApi) {
   return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/${crmId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function atualizarCrmResgateApi(contratoId: number, payload: CrmResgateAtualizacaoPayloadApi) {
+  return fetchJson<CrmResgateItemApi>(`${API_BASE_URL}/api/crm/resgates/${contratoId}`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });

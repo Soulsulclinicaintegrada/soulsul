@@ -6403,6 +6403,34 @@ textarea::placeholder {
   resize: vertical;
 }
 
+.crm-rescue-grid-shell {
+  overflow: auto;
+}
+
+.crm-rescue-grid {
+  min-width: 1680px;
+}
+
+.crm-rescue-grid textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.crm-rescue-text-cell {
+  min-width: 220px;
+  white-space: normal;
+}
+
+.crm-rescue-text-cell strong,
+.crm-rescue-text-cell span {
+  display: block;
+}
+
+.crm-inline-actions-column {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .crm-field-wide {
   grid-column: 1 / -1;
 }

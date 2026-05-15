@@ -5,11 +5,13 @@ import {
   adicionarPacienteAvaliacaoCrmApi,
   removerPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
+  atualizarCrmResgateApi,
   listarPacientesApi,
   listarCrmApi,
   type CrmAvaliacaoItemApi,
   type CrmNovoLeadPayloadApi,
   type CrmPacienteItemApi,
+  type CrmResgateItemApi,
 } from "./pacientesApi";
 import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
 
@@ -33,7 +35,7 @@ type RelatorioCrmItem = {
   usuario?: string;
 };
 
-type CrmAba = "funil" | "agendados" | "finalizados" | "avaliacoes" | "relatorios";
+type CrmAba = "funil" | "agendados" | "finalizados" | "avaliacoes" | "resgates" | "relatorios";
 
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   pacienteId: -1,
@@ -78,6 +80,13 @@ const ETAPAS_CRM = [
   "Em negociação",
   "Convertido",
   "Perdido",
+] as const;
+
+const STATUS_RESGATE = [
+  "Em tratamento",
+  "Ligar novamente",
+  "Desistente",
+  "Convertido",
 ] as const;
 
 function paraDataInput(valor?: string) {
@@ -191,6 +200,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [pipeline, setPipeline] = useState<CrmPacienteItemApi[]>([]);
   const [finalizados, setFinalizados] = useState<CrmPacienteItemApi[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<CrmAvaliacaoItemApi[]>([]);
+  const [resgates, setResgates] = useState<CrmResgateItemApi[]>([]);
   const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
   const [buscaLead, setBuscaLead] = useState("");
   const [leadSelecionadoId, setLeadSelecionadoId] = useState<number | null>(null);
@@ -207,6 +217,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [criandoManual, setCriandoManual] = useState(false);
   const [periodoAvaliacaoInicio, setPeriodoAvaliacaoInicio] = useState("");
   const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
+  const [filtroResgateData, setFiltroResgateData] = useState(hojeIso());
+  const [filtroResgateStatus, setFiltroResgateStatus] = useState("");
   const [relatorioLetra, setRelatorioLetra] = useState("");
   const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
   const [relatorioDataFim, setRelatorioDataFim] = useState("");
@@ -231,13 +243,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const [crmResult, pacientesResult, agendamentosResult] = resultados;
       const resposta = crmResult.status === "fulfilled"
         ? crmResult.value
-        : { pipeline: [], finalizados: [], avaliacoes: [] };
+        : { pipeline: [], finalizados: [], avaliacoes: [], resgates: [] };
       const pacientes = pacientesResult.status === "fulfilled" ? pacientesResult.value : [];
       const agendamentos = agendamentosResult.status === "fulfilled" ? agendamentosResult.value : [];
 
       setPipeline((resposta.pipeline || []).map(normalizarItemCrm));
       setFinalizados((resposta.finalizados || []).map(normalizarItemCrm));
       setAvaliacoes(resposta.avaliacoes || []);
+      setResgates(resposta.resgates || []);
 
       const finalizadosIds = new Set((resposta.finalizados || []).map((item) => item.pacienteId));
       const futurosAtivos = agendamentos.filter((item) => {
@@ -392,6 +405,31 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     },
     [avaliacoes, periodoAvaliacaoFim, periodoAvaliacaoInicio]
   );
+  const resgatesFiltrados = useMemo(
+    () => resgates
+      .filter((item) => {
+        const termo = normalizarTexto(busca || "");
+        if (termo && !correspondeBusca({
+          nome: item.nome,
+          prontuario: item.prontuario,
+          telefone: item.telefone,
+          etapaFunil: item.statusResgate,
+          campanha: (item.procedimentos || []).join(" "),
+        }, termo)) {
+          return false;
+        }
+        const dataRetorno = paraDataInput(item.dataRetorno);
+        if (filtroResgateData && dataRetorno !== filtroResgateData) {
+          return false;
+        }
+        if (filtroResgateStatus && normalizarTexto(item.statusResgate || "") !== normalizarTexto(filtroResgateStatus)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a.nome.localeCompare(b.nome)),
+    [busca, filtroResgateData, filtroResgateStatus, resgates]
+  );
   const semAgendamentoFiltrados = useMemo(
     () => {
       if (!relatorioLetra) return [];
@@ -464,6 +502,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setFinalizados((atual) => aplicar(atual));
   }
 
+  function atualizarResgateLocal(contratoId: number, parcial: Partial<CrmResgateItemApi>) {
+    setResgates((atual) => atual.map((item) => (item.contratoId === contratoId ? { ...item, ...parcial } : item)));
+  }
+
   async function salvarItem(item: CrmPacienteItemApi) {
     setSalvandoId(item.id);
     setErro(null);
@@ -483,6 +525,32 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       setFeedback(`CRM salvo para ${atualizado.nome}.`);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao salvar o CRM.");
+    } finally {
+      setSalvandoId(null);
+    }
+  }
+
+  async function salvarResgate(item: CrmResgateItemApi) {
+    if (!item.observacaoContato?.trim()) {
+      setErro("A observação do contato é obrigatória.");
+      return;
+    }
+    if (!["desistente", "convertido"].includes(normalizarTexto(item.statusResgate || "")) && !paraDataInput(item.dataRetorno)) {
+      setErro("Informe a nova data de retorno para continuar o acompanhamento.");
+      return;
+    }
+    setSalvandoId(item.contratoId);
+    setErro(null);
+    try {
+      const atualizado = await atualizarCrmResgateApi(item.contratoId, {
+        status: item.statusResgate || "",
+        observacao: item.observacaoContato || "",
+        proximo_contato: paraDataInput(item.dataRetorno) || "",
+      });
+      atualizarResgateLocal(item.contratoId, atualizado);
+      setFeedback(`Resgate salvo para ${atualizado.nome}.`);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar o resgate.");
     } finally {
       setSalvandoId(null);
     }
@@ -695,6 +763,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "agendados" ? "active" : ""}`} onClick={() => setAbaAtiva("agendados")}>Agendados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizados" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizados")}>Finalizados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>Avaliações</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "resgates" ? "active" : ""}`} onClick={() => setAbaAtiva("resgates")}>Resgates</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "relatorios" ? "active" : ""}`} onClick={() => setAbaAtiva("relatorios")}>Relatórios</button>
         </div>
         {abaAtiva === "relatorios" ? (
@@ -839,6 +908,112 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             {!carregando && !avaliacoesFiltradas.length ? <div className="module-subitem"><strong>Nenhuma avaliação encontrada.</strong></div> : null}
           </div>
         </article>
+      </section>
+
+      <section className={abaAtiva === "resgates" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
+        <div className="section-title-row">
+          <div>
+            <span className="panel-kicker">Resgates</span>
+            <h2>Orçamentos para retorno</h2>
+          </div>
+          <div className="crm-inline-actions">
+            <span>{resgatesFiltrados.length} linha(s)</span>
+          </div>
+        </div>
+        <div className="crm-filter-row crm-filter-row-report">
+          <label>
+            <span>Data de retorno</span>
+            <input type="date" value={filtroResgateData} onChange={(event) => setFiltroResgateData(event.target.value)} />
+          </label>
+          <label>
+            <span>Status</span>
+            <select value={filtroResgateStatus} onChange={(event) => setFiltroResgateStatus(event.target.value)}>
+              <option value="">Todos</option>
+              {STATUS_RESGATE.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="finance-receivables-grid-shell crm-rescue-grid-shell">
+          <table className="finance-receivables-grid crm-rescue-grid">
+            <thead>
+              <tr>
+                <th>Paciente</th>
+                <th>Prontuário</th>
+                <th>Telefone</th>
+                <th>Data orçamento</th>
+                <th>Valor total</th>
+                <th>Procedimentos</th>
+                <th>Obs. avaliação</th>
+                <th>Obs. orçamento</th>
+                <th>Status</th>
+                <th>Retorno</th>
+                <th>Obs. contato</th>
+                <th>Último registro</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {resgatesFiltrados.map((item) => (
+                <tr key={`resgate-${item.contratoId}`}>
+                  <td>{item.nome}</td>
+                  <td>{item.prontuario || "-"}</td>
+                  <td>{item.telefone || "-"}</td>
+                  <td>{item.dataOrcamento || "-"}</td>
+                  <td>{item.valorTotal || "-"}</td>
+                  <td>{(item.procedimentos || []).join(" | ") || "-"}</td>
+                  <td className="crm-rescue-text-cell">{item.observacaoAvaliacao || "-"}</td>
+                  <td className="crm-rescue-text-cell">{item.observacaoOrcamento || "-"}</td>
+                  <td>
+                    <select
+                      value={item.statusResgate || ""}
+                      onChange={(event) => atualizarResgateLocal(item.contratoId, { statusResgate: event.target.value })}
+                    >
+                      {STATUS_RESGATE.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      type="date"
+                      value={paraDataInput(item.dataRetorno)}
+                      onChange={(event) => atualizarResgateLocal(item.contratoId, { dataRetorno: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <textarea
+                      rows={2}
+                      value={item.observacaoContato || ""}
+                      onChange={(event) => atualizarResgateLocal(item.contratoId, { observacaoContato: event.target.value })}
+                    />
+                  </td>
+                  <td className="crm-rescue-text-cell">
+                    <strong>{item.ultimoContatoEm || "Sem registro"}</strong>
+                    <span>{item.ultimoContatoPor || "-"}</span>
+                    <span>{item.historico?.[0]?.observacao || ""}</span>
+                  </td>
+                  <td>
+                    <div className="crm-inline-actions crm-inline-actions-column">
+                      <button type="button" className="ghost-action compact" onClick={() => onAbrirPaciente?.(item.pacienteId)}>
+                        Abrir
+                      </button>
+                      <button type="button" className="primary-action compact" onClick={() => void salvarResgate(item)} disabled={salvandoId === item.contratoId}>
+                        {salvandoId === item.contratoId ? "Salvando..." : "Salvar"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!carregando && !resgatesFiltrados.length ? (
+                <tr>
+                  <td colSpan={13}>Nenhum resgate encontrado para o filtro atual.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className={abaAtiva === "relatorios" ? "crm-grid" : "crm-grid crm-section-hidden"}>

@@ -163,6 +163,18 @@ def formatar_data_br_valor(valor) -> str:
     return formatar_data_br(parse_data_contrato(valor))
 
 
+def formatar_data_hora_relatorio(valor) -> str:
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    try:
+        data_hora = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        return data_hora.strftime("%d/%m/%Y %H:%M")
+    except ValueError:
+        data = parse_data_contrato(texto)
+        return formatar_data_br(data)
+
+
 def formatar_prontuario_valor(valor) -> str:
     if valor is None:
         return ""
@@ -254,13 +266,37 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "contratos", "desconto_percentual REAL DEFAULT 0")
         garantir_coluna(conn, "contratos", "desconto_valor REAL DEFAULT 0")
         garantir_coluna(conn, "contratos", "validade_orcamento TEXT")
+        garantir_coluna(conn, "contratos", "data_retorno_crm TEXT")
+        garantir_coluna(conn, "contratos", "crm_status TEXT")
+        garantir_coluna(conn, "contratos", "crm_observacao_contato TEXT")
+        garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
+        garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "profissional_snapshot TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "denticao_snapshot TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crm_contatos_historico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crm_id INTEGER,
+                paciente_id INTEGER NOT NULL,
+                contrato_id INTEGER,
+                status TEXT,
+                observacao TEXT,
+                proximo_contato TEXT,
+                criado_por TEXT,
+                criado_em TEXT,
+                automatico INTEGER DEFAULT 0
+            )
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_prontuario ON pacientes(prontuario)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_cpf ON pacientes(cpf)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_recebiveis_paciente_id ON recebiveis(paciente_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_paciente_id ON contratos(paciente_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_data_retorno_crm ON contratos(data_retorno_crm)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
         garantir_coluna(conn, "financeiro", "conta_caixa TEXT")
         garantir_coluna(conn, "contas_pagar", "categoria TEXT")
@@ -884,10 +920,41 @@ class CrmAvaliacaoItemResposta(BaseModel):
     orcamentos: list[dict] = Field(default_factory=list)
 
 
+class CrmResgateHistoricoItemResposta(BaseModel):
+    id: int
+    status: str = ""
+    observacao: str = ""
+    proximoContato: str = ""
+    criadoPor: str = ""
+    criadoEm: str = ""
+    automatico: bool = False
+
+
+class CrmResgateItemResposta(BaseModel):
+    crmId: int | None = None
+    contratoId: int
+    pacienteId: int
+    nome: str
+    prontuario: str = ""
+    telefone: str = ""
+    dataOrcamento: str = ""
+    dataRetorno: str = ""
+    statusResgate: str = ""
+    observacaoContato: str = ""
+    observacaoAvaliacao: str = ""
+    observacaoOrcamento: str = ""
+    valorTotal: str = ""
+    procedimentos: list[str] = Field(default_factory=list)
+    ultimoContatoEm: str = ""
+    ultimoContatoPor: str = ""
+    historico: list[CrmResgateHistoricoItemResposta] = Field(default_factory=list)
+
+
 class CrmPainelResposta(BaseModel):
     pipeline: list[CrmPacienteItemResposta] = Field(default_factory=list)
     finalizados: list[CrmPacienteItemResposta] = Field(default_factory=list)
     avaliacoes: list[CrmAvaliacaoItemResposta] = Field(default_factory=list)
+    resgates: list[CrmResgateItemResposta] = Field(default_factory=list)
 
 
 class CrmAtualizacaoPayload(BaseModel):
@@ -900,6 +967,16 @@ class CrmAtualizacaoPayload(BaseModel):
     proximo_contato: str = ""
     observacao: str = ""
     ultima_interacao: str = ""
+
+
+class CrmResgateAtualizacaoPayload(BaseModel):
+    status: str = ""
+    observacao: str = ""
+    proximo_contato: str = ""
+
+
+class CrmResgateHistoricoPayload(BaseModel):
+    data_retorno_crm: str = ""
 
 
 class CrmNovoLeadPayload(BaseModel):
@@ -946,6 +1023,7 @@ class OrcamentoPacientePayload(BaseModel):
     desconto_percentual: float = 0
     desconto_valor: float = 0
     validade_orcamento: str = ""
+    data_retorno_crm: str = ""
     forma_pagamento: str = ""
     parcelas: int = 1
     entrada: bool = False
@@ -975,6 +1053,7 @@ class OrcamentoDetalheResposta(BaseModel):
     descontoPercentual: float = 0
     descontoValor: float = 0
     validadeOrcamento: str = ""
+    dataRetornoCrm: str = ""
     formaPagamento: str = ""
     parcelas: int = 1
     entrada: bool = False
@@ -2385,6 +2464,7 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         descontoPercentual=float(contrato["desconto_percentual"] or 0),
         descontoValor=float(contrato["desconto_valor"] or 0),
         validadeOrcamento=formatar_data_br_valor(contrato["validade_orcamento"]),
+        dataRetornoCrm=formatar_data_br_valor(contrato["data_retorno_crm"]),
         formaPagamento=str(contrato["forma_pagamento"] or ""),
         parcelas=int(contrato["parcelas"] or 1),
         entrada=float(contrato["entrada"] or 0) > 0,
@@ -2430,15 +2510,18 @@ def salvar_orcamento_paciente(
         None,
     )
     plano_pagamento_json = json.dumps([parcela.model_dump() for parcela in parcelas_plano], ensure_ascii=False)
+    data_retorno_crm = validar_data_retorno_crm(payload.data_retorno_crm)
+    if not data_retorno_crm:
+        raise HTTPException(status_code=400, detail="Informe a data de retorno do CRM para este orçamento.")
 
     if contrato_id is None:
         cursor = conn.execute(
             """
             INSERT INTO contratos (
                 paciente_id, valor_total, entrada, parcelas, primeiro_vencimento, data_pagamento_entrada,
-                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento
+                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento, data_retorno_crm
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paciente_id,
@@ -2457,6 +2540,7 @@ def salvar_orcamento_paciente(
                 desconto_percentual,
                 desconto_valor,
                 payload.validade_orcamento.strip(),
+                data_retorno_crm,
             ),
         )
         contrato_id = int(cursor.lastrowid)
@@ -2467,7 +2551,7 @@ def salvar_orcamento_paciente(
         conn.execute(
             """
             UPDATE contratos
-            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?
+            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?, data_retorno_crm=?
             WHERE id=? AND paciente_id=?
             """,
             (
@@ -2486,6 +2570,7 @@ def salvar_orcamento_paciente(
                 desconto_percentual,
                 desconto_valor,
                 payload.validade_orcamento.strip(),
+                data_retorno_crm,
                 contrato_id,
                 paciente_id,
             ),
@@ -2564,15 +2649,18 @@ def salvar_orcamento_paciente_com_pagamento(
         None,
     )
     plano_pagamento_json = json.dumps([parcela.model_dump() for parcela in parcelas_plano], ensure_ascii=False)
+    data_retorno_crm = validar_data_retorno_crm(payload.data_retorno_crm)
+    if not data_retorno_crm:
+        raise HTTPException(status_code=400, detail="Informe a data de retorno do CRM para este orçamento.")
 
     if contrato_id is None:
         cursor = conn.execute(
             """
             INSERT INTO contratos (
                 paciente_id, valor_total, entrada, parcelas, primeiro_vencimento, data_pagamento_entrada,
-                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento
+                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento, data_retorno_crm
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paciente_id,
@@ -2591,6 +2679,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 desconto_percentual,
                 desconto_valor,
                 payload.validade_orcamento.strip(),
+                data_retorno_crm,
             ),
         )
         contrato_id = int(cursor.lastrowid)
@@ -2601,7 +2690,7 @@ def salvar_orcamento_paciente_com_pagamento(
         conn.execute(
             """
             UPDATE contratos
-            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?
+            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?, data_retorno_crm=?
             WHERE id=? AND paciente_id=?
             """,
             (
@@ -2620,6 +2709,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 desconto_percentual,
                 desconto_valor,
                 payload.validade_orcamento.strip(),
+                data_retorno_crm,
                 contrato_id,
                 paciente_id,
             ),
@@ -5657,6 +5747,13 @@ CRM_ETAPAS_PADRAO = [
     "Perdido",
 ]
 
+CRM_STATUS_RESGATE_PADRAO = {
+    "EM TRATAMENTO": "Em tratamento",
+    "LIGAR NOVAMENTE": "Ligar novamente",
+    "DESISTENTE": "Desistente",
+    "CONVERTIDO": "Convertido",
+}
+
 
 def crm_int(valor: object, padrao: int = 0) -> int:
     try:
@@ -5725,6 +5822,127 @@ def mapear_crm_paciente_item(row: sqlite3.Row) -> CrmPacienteItemResposta:
 
 def crm_entry_por_paciente(conn: sqlite3.Connection, paciente_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM crm_pacientes WHERE paciente_id=? LIMIT 1", (int(paciente_id),)).fetchone()
+
+
+def normalizar_status_resgate(valor: object) -> str:
+    texto = normalizar_texto(str(valor or "")).upper().replace("_", " ")
+    return CRM_STATUS_RESGATE_PADRAO.get(texto, "")
+
+
+def validar_data_retorno_crm(valor: object) -> str:
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    data_parse = parse_data_contrato(texto)
+    if data_parse is None:
+        raise HTTPException(status_code=400, detail="Informe uma data de retorno valida.")
+    return data_parse.isoformat()
+
+
+def registrar_historico_resgate(
+    conn: sqlite3.Connection,
+    *,
+    crm_id: int | None,
+    paciente_id: int,
+    contrato_id: int,
+    status: str,
+    observacao: str,
+    proximo_contato: str,
+    criado_por: str,
+    automatico: bool = False,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO crm_contatos_historico (
+            crm_id, paciente_id, contrato_id, status, observacao, proximo_contato, criado_por, criado_em, automatico
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(crm_id) if crm_id else None,
+            int(paciente_id),
+            int(contrato_id),
+            status.strip(),
+            observacao.strip(),
+            proximo_contato.strip(),
+            str(criado_por or "").strip(),
+            agora_str(),
+            1 if automatico else 0,
+        ),
+    )
+
+
+def atualizar_snapshot_resgate_contrato(
+    conn: sqlite3.Connection,
+    *,
+    contrato_id: int,
+    data_retorno: str,
+    status: str,
+    observacao: str,
+    usuario: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE contratos
+        SET data_retorno_crm=?, crm_status=?, crm_observacao_contato=?, crm_ultimo_contato_em=?, crm_ultimo_contato_por=?
+        WHERE id=?
+        """,
+        (
+            data_retorno.strip(),
+            status.strip(),
+            observacao.strip(),
+            agora_str(),
+            str(usuario or "").strip(),
+            int(contrato_id),
+        ),
+    )
+
+
+def sincronizar_status_resgate_por_orcamento_aprovado(
+    conn: sqlite3.Connection,
+    *,
+    paciente_id: int,
+    contrato_id_origem: int,
+    usuario: str,
+) -> None:
+    usuario_limpo = str(usuario or "").strip() or "sistema"
+    crm = crm_entry_por_paciente(conn, int(paciente_id))
+    contratos = conn.execute(
+        """
+        SELECT id, COALESCE(data_retorno_crm, '') AS data_retorno_crm
+        FROM contratos
+        WHERE paciente_id=?
+        """,
+        (int(paciente_id),),
+    ).fetchall()
+    for contrato in contratos:
+        contrato_id = crm_int(contrato["id"], 0)
+        if contrato_id <= 0:
+            continue
+        data_retorno = str(contrato["data_retorno_crm"] or "").strip()
+        atualizar_snapshot_resgate_contrato(
+            conn,
+            contrato_id=contrato_id,
+            data_retorno=data_retorno,
+            status="Convertido",
+            observacao="Convertido automaticamente por orçamento aprovado.",
+            usuario=usuario_limpo,
+        )
+        registrar_historico_resgate(
+            conn,
+            crm_id=crm_int(crm["id"], 0) if crm is not None else None,
+            paciente_id=int(paciente_id),
+            contrato_id=contrato_id,
+            status="Convertido",
+            observacao=(
+                "Convertido automaticamente por orçamento aprovado."
+                if contrato_id == int(contrato_id_origem)
+                else f"Paciente convertido automaticamente após aprovação do orçamento #{contrato_id_origem}."
+            ),
+            proximo_contato="",
+            criado_por=usuario_limpo,
+            automatico=True,
+        )
 
 
 def garantir_paciente_minimo_crm(
@@ -5882,6 +6100,132 @@ def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResp
     for paciente_id, item in por_paciente.items():
         item.orcamentos = contratos_por_paciente.get(paciente_id, [])
     return list(por_paciente.values())
+
+
+def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta]:
+    rows = conn.execute(
+        """
+        SELECT
+            c.id AS contrato_id,
+            c.paciente_id,
+            COALESCE(crm.id, 0) AS crm_id,
+            COALESCE(NULLIF(p.nome, ''), 'Sem nome') AS nome,
+            COALESCE(p.prontuario, '') AS prontuario,
+            COALESCE(p.telefone, '') AS telefone,
+            COALESCE(c.data_criacao, '') AS data_criacao,
+            COALESCE(c.data_retorno_crm, '') AS data_retorno_crm,
+            COALESCE(c.crm_status, '') AS crm_status,
+            COALESCE(c.crm_observacao_contato, '') AS crm_observacao_contato,
+            COALESCE(c.crm_ultimo_contato_em, '') AS crm_ultimo_contato_em,
+            COALESCE(c.crm_ultimo_contato_por, '') AS crm_ultimo_contato_por,
+            COALESCE(c.observacoes, '') AS observacoes,
+            COALESCE(c.valor_total, 0) AS valor_total,
+            COALESCE(c.status, '') AS status_orcamento,
+            COALESCE(pc.procedimento, '') AS procedimento
+        FROM contratos c
+        JOIN pacientes p ON p.id = c.paciente_id
+        LEFT JOIN crm_pacientes crm ON crm.paciente_id = c.paciente_id
+        LEFT JOIN procedimentos_contrato pc ON pc.contrato_id = c.id
+        WHERE COALESCE(c.status, '') != 'EXCLUIDO'
+        ORDER BY
+            CASE
+                WHEN COALESCE(c.data_retorno_crm, '') = '' THEN 1
+                ELSE 0
+            END,
+            COALESCE(c.data_retorno_crm, ''),
+            nome,
+            c.id
+        """
+    ).fetchall()
+    itens_por_contrato: dict[int, CrmResgateItemResposta] = {}
+    historico_rows = conn.execute(
+        """
+        SELECT *
+        FROM crm_contatos_historico
+        ORDER BY criado_em DESC, id DESC
+        """
+    ).fetchall()
+    historico_por_contrato: dict[int, list[CrmResgateHistoricoItemResposta]] = {}
+    for row in historico_rows:
+        contrato_id = crm_int(row["contrato_id"], 0)
+        if contrato_id <= 0:
+            continue
+        historico_por_contrato.setdefault(contrato_id, []).append(
+            CrmResgateHistoricoItemResposta(
+                id=crm_int(row["id"], 0),
+                status=str(row["status"] or ""),
+                observacao=str(row["observacao"] or ""),
+                proximoContato=formatar_data_br_valor(row["proximo_contato"]),
+                criadoPor=str(row["criado_por"] or ""),
+                criadoEm=formatar_data_hora_relatorio(row["criado_em"]),
+                automatico=crm_bool(row["automatico"]),
+            )
+        )
+
+    paciente_ids = sorted({crm_int(row["paciente_id"], 0) for row in rows if crm_int(row["paciente_id"], 0) > 0})
+    observacao_avaliacao_por_paciente: dict[int, str] = {}
+    if paciente_ids:
+        marcadores = ",".join("?" for _ in paciente_ids)
+        avaliacao_rows = conn.execute(
+            f"""
+            SELECT paciente_id, COALESCE(observacoes, '') AS observacoes, COALESCE(data_agendamento, data) AS data_ref, COALESCE(hora_inicio, '') AS hora_ref
+            FROM agendamentos
+            WHERE paciente_id IN ({marcadores})
+            ORDER BY COALESCE(data_agendamento, data) DESC, COALESCE(hora_inicio, '') DESC, id DESC
+            """,
+            tuple(paciente_ids),
+        ).fetchall()
+        for row in avaliacao_rows:
+            paciente_id = crm_int(row["paciente_id"], 0)
+            if paciente_id <= 0 or paciente_id in observacao_avaliacao_por_paciente:
+                continue
+            if not agendamento_eh_avaliacao(row):
+                continue
+            observacao = str(row["observacoes"] or "").strip()
+            if observacao:
+                observacao_avaliacao_por_paciente[paciente_id] = observacao
+
+    pacientes_convertidos = {
+        crm_int(row["paciente_id"], 0)
+        for row in rows
+        if normalizar_texto(str(row["status_orcamento"] or "")).upper() == "APROVADO"
+    }
+    for row in rows:
+        contrato_id = crm_int(row["contrato_id"], 0)
+        if contrato_id <= 0:
+            continue
+        item = itens_por_contrato.get(contrato_id)
+        if item is None:
+            paciente_id = crm_int(row["paciente_id"], 0)
+            status_snapshot = normalizar_status_resgate(row["crm_status"])
+            if paciente_id in pacientes_convertidos:
+                status_snapshot = "Convertido"
+            if not status_snapshot:
+                status_snapshot = "Ligar novamente"
+            item = CrmResgateItemResposta(
+                crmId=crm_int(row["crm_id"], 0) or None,
+                contratoId=contrato_id,
+                pacienteId=paciente_id,
+                nome=str(row["nome"] or ""),
+                prontuario=formatar_prontuario_valor(row["prontuario"]),
+                telefone=str(row["telefone"] or ""),
+                dataOrcamento=formatar_data_br_valor(row["data_criacao"]),
+                dataRetorno=formatar_data_br_valor(row["data_retorno_crm"]),
+                statusResgate=status_snapshot,
+                observacaoContato=str(row["crm_observacao_contato"] or ""),
+                observacaoAvaliacao=observacao_avaliacao_por_paciente.get(paciente_id, ""),
+                observacaoOrcamento=str(row["observacoes"] or ""),
+                valorTotal=formatar_moeda_br(float(row["valor_total"] or 0)),
+                procedimentos=[],
+                ultimoContatoEm=formatar_data_hora_relatorio(row["crm_ultimo_contato_em"]),
+                ultimoContatoPor=str(row["crm_ultimo_contato_por"] or ""),
+                historico=historico_por_contrato.get(contrato_id, []),
+            )
+            itens_por_contrato[contrato_id] = item
+        procedimento = str(row["procedimento"] or "").strip()
+        if procedimento and procedimento not in item.procedimentos:
+            item.procedimentos.append(procedimento)
+    return list(itens_por_contrato.values())
 
 
 def upsert_crm_origem(
@@ -6086,10 +6430,12 @@ def listar_crm():
             pipeline.append(item)
         finalizados = [item for item in pipeline if item.origemFinalizado]
         avaliacoes = listar_avaliacoes_crm(conn)
+        resgates = listar_resgates_crm(conn)
         return CrmPainelResposta(
             pipeline=pipeline,
             finalizados=finalizados,
             avaliacoes=avaliacoes,
+            resgates=resgates,
         )
     finally:
         conn.close()
@@ -6353,6 +6699,60 @@ def atualizar_item_crm(crm_id: int, payload: CrmAtualizacaoPayload, request: Req
         rota=f"/api/crm/{crm_id}",
     )
     return mapear_crm_paciente_item(row)
+
+
+@app.put("/api/crm/resgates/{contrato_id}", response_model=CrmResgateItemResposta)
+def atualizar_resgate_crm(contrato_id: int, payload: CrmResgateAtualizacaoPayload, request: Request):
+    conn = conectar()
+    try:
+        contrato = conn.execute(
+            "SELECT * FROM contratos WHERE id=? LIMIT 1",
+            (int(contrato_id),),
+        ).fetchone()
+        if contrato is None:
+            raise HTTPException(status_code=404, detail="Orçamento não encontrado para resgate.")
+        paciente_id = crm_int(contrato["paciente_id"], 0)
+        if paciente_id <= 0:
+            raise HTTPException(status_code=400, detail="Paciente inválido no orçamento informado.")
+        status = normalizar_status_resgate(payload.status)
+        if not status:
+            raise HTTPException(status_code=400, detail="Selecione um status válido para o resgate.")
+        observacao = str(payload.observacao or "").strip()
+        if not observacao:
+            raise HTTPException(status_code=400, detail="A observação do contato é obrigatória.")
+        data_retorno = validar_data_retorno_crm(payload.proximo_contato)
+        if status not in {"Desistente", "Convertido"} and not data_retorno:
+            raise HTTPException(status_code=400, detail="Informe a nova data de retorno para continuar o acompanhamento.")
+        if status in {"Desistente", "Convertido"}:
+            data_retorno = ""
+        crm = crm_entry_por_paciente(conn, paciente_id)
+        usuario = usuario_request(request)
+        atualizar_snapshot_resgate_contrato(
+            conn,
+            contrato_id=int(contrato_id),
+            data_retorno=data_retorno,
+            status=status,
+            observacao=observacao,
+            usuario=usuario,
+        )
+        registrar_historico_resgate(
+            conn,
+            crm_id=crm_int(crm["id"], 0) if crm is not None else None,
+            paciente_id=paciente_id,
+            contrato_id=int(contrato_id),
+            status=status,
+            observacao=observacao,
+            proximo_contato=data_retorno,
+            criado_por=usuario,
+            automatico=False,
+        )
+        conn.commit()
+        item = next((resgate for resgate in listar_resgates_crm(conn) if resgate.contratoId == int(contrato_id)), None)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Resgate não encontrado após atualização.")
+        return item
+    finally:
+        conn.close()
 
 
 @app.put("/api/pacientes/{paciente_id}/recebiveis/{recebivel_id}", response_model=RecebivelResumo)
@@ -7142,11 +7542,32 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
 
 
 @app.post("/api/pacientes/{paciente_id}/orcamentos", response_model=OrcamentoCriadoResposta)
-def criar_orcamento_paciente(paciente_id: int, payload: OrcamentoPacientePayload):
+def criar_orcamento_paciente(paciente_id: int, payload: OrcamentoPacientePayload, request: Request):
     conn = conectar()
     try:
         carregar_paciente_por_id(conn, paciente_id)
+        crm = upsert_crm_origem(conn, int(paciente_id), usuario=usuario_request(request))
         contrato_id = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload)
+        data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
+        atualizar_snapshot_resgate_contrato(
+            conn,
+            contrato_id=contrato_id,
+            data_retorno=data_retorno,
+            status="Ligar novamente",
+            observacao="Orçamento lançado no sistema.",
+            usuario=usuario_request(request),
+        )
+        registrar_historico_resgate(
+            conn,
+            crm_id=crm_int(crm["id"], 0) if crm is not None else None,
+            paciente_id=int(paciente_id),
+            contrato_id=contrato_id,
+            status="Ligar novamente",
+            observacao="Orçamento lançado no sistema.",
+            proximo_contato=data_retorno,
+            criado_por=usuario_request(request),
+            automatico=True,
+        )
         conn.commit()
         return OrcamentoCriadoResposta(contrato_id=contrato_id)
     finally:
@@ -7163,11 +7584,35 @@ def detalhar_orcamento_paciente(paciente_id: int, contrato_id: int):
 
 
 @app.put("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}", response_model=OrcamentoCriadoResposta)
-def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: OrcamentoPacientePayload):
+def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: OrcamentoPacientePayload, request: Request):
     conn = conectar()
     try:
         carregar_paciente_por_id(conn, paciente_id)
+        crm = upsert_crm_origem(conn, int(paciente_id), usuario=usuario_request(request))
         contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
+        data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
+        contrato_atual = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id_salvo, paciente_id)).fetchone()
+        status_snapshot = normalizar_status_resgate(contrato_atual["crm_status"]) if contrato_atual is not None else ""
+        observacao_snapshot = str(contrato_atual["crm_observacao_contato"] or "") if contrato_atual is not None else ""
+        atualizar_snapshot_resgate_contrato(
+            conn,
+            contrato_id=contrato_id_salvo,
+            data_retorno=data_retorno,
+            status=status_snapshot or "Ligar novamente",
+            observacao=observacao_snapshot or "Orçamento atualizado no sistema.",
+            usuario=usuario_request(request),
+        )
+        registrar_historico_resgate(
+            conn,
+            crm_id=crm_int(crm["id"], 0) if crm is not None else None,
+            paciente_id=int(paciente_id),
+            contrato_id=contrato_id_salvo,
+            status=status_snapshot or "Ligar novamente",
+            observacao="Orçamento atualizado no sistema.",
+            proximo_contato=data_retorno,
+            criado_por=usuario_request(request),
+            automatico=True,
+        )
         conn.commit()
         return OrcamentoCriadoResposta(contrato_id=contrato_id_salvo)
     finally:
@@ -7203,6 +7648,12 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
                     gerar_documento_contrato(conn, paciente, contrato_atualizado, contrato_id)
                 except Exception as exc:
                     print(f"[orcamento] falha ao gerar documento do contrato {contrato_id}: {exc}", flush=True)
+            sincronizar_status_resgate_por_orcamento_aprovado(
+                conn,
+                paciente_id=int(paciente_id),
+                contrato_id_origem=int(contrato_id),
+                usuario=payload.aprovado_por.strip() or "JULIANA",
+            )
         else:
             conn.execute(
                 "UPDATE contratos SET status='EM_ABERTO', aprovado_por='', data_aprovacao=NULL WHERE id=? AND paciente_id=?",

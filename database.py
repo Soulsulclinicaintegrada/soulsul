@@ -438,7 +438,23 @@ def inicializar_banco():
             data_pagamento_entrada TEXT,
             forma_pagamento TEXT,
             hash_importacao TEXT,
-            data_criacao TEXT
+            data_criacao TEXT,
+            status TEXT DEFAULT 'EM_ABERTO',
+            aprovado_por TEXT,
+            data_aprovacao TEXT,
+            observacoes TEXT,
+            clinica_snapshot TEXT,
+            criado_por_snapshot TEXT,
+            tabela_snapshot TEXT,
+            plano_pagamento_json TEXT,
+            desconto_percentual REAL DEFAULT 0,
+            desconto_valor REAL DEFAULT 0,
+            validade_orcamento TEXT,
+            data_retorno_crm TEXT,
+            crm_status TEXT,
+            crm_observacao_contato TEXT,
+            crm_ultimo_contato_em TEXT,
+            crm_ultimo_contato_por TEXT
         )
         """
     )
@@ -672,6 +688,23 @@ def inicializar_banco():
             atualizado_por TEXT,
             criado_em TEXT,
             atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crm_contatos_historico (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            crm_id INTEGER,
+            paciente_id INTEGER NOT NULL,
+            contrato_id INTEGER,
+            status TEXT,
+            observacao TEXT,
+            proximo_contato TEXT,
+            criado_por TEXT,
+            criado_em TEXT,
+            automatico INTEGER DEFAULT 0
         )
         """
     )
@@ -1106,6 +1139,22 @@ def inicializar_banco():
     garantir_coluna(conn, "contratos", "data_criacao TEXT")
     garantir_coluna(conn, "contratos", "data_pagamento_entrada TEXT")
     garantir_coluna(conn, "contratos", "hash_importacao TEXT")
+    garantir_coluna(conn, "contratos", "status TEXT DEFAULT 'EM_ABERTO'")
+    garantir_coluna(conn, "contratos", "aprovado_por TEXT")
+    garantir_coluna(conn, "contratos", "data_aprovacao TEXT")
+    garantir_coluna(conn, "contratos", "observacoes TEXT")
+    garantir_coluna(conn, "contratos", "clinica_snapshot TEXT")
+    garantir_coluna(conn, "contratos", "criado_por_snapshot TEXT")
+    garantir_coluna(conn, "contratos", "tabela_snapshot TEXT")
+    garantir_coluna(conn, "contratos", "plano_pagamento_json TEXT")
+    garantir_coluna(conn, "contratos", "desconto_percentual REAL DEFAULT 0")
+    garantir_coluna(conn, "contratos", "desconto_valor REAL DEFAULT 0")
+    garantir_coluna(conn, "contratos", "validade_orcamento TEXT")
+    garantir_coluna(conn, "contratos", "data_retorno_crm TEXT")
+    garantir_coluna(conn, "contratos", "crm_status TEXT")
+    garantir_coluna(conn, "contratos", "crm_observacao_contato TEXT")
+    garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
+    garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
     garantir_coluna(conn, "pacientes", "numero TEXT")
     garantir_coluna(conn, "pacientes", "bairro TEXT")
     garantir_coluna(conn, "pacientes", "cidade TEXT")
@@ -1149,6 +1198,15 @@ def inicializar_banco():
     garantir_coluna(conn, "crm_pacientes", "atualizado_por TEXT")
     garantir_coluna(conn, "crm_pacientes", "criado_em TEXT")
     garantir_coluna(conn, "crm_pacientes", "atualizado_em TEXT")
+    garantir_coluna(conn, "crm_contatos_historico", "crm_id INTEGER")
+    garantir_coluna(conn, "crm_contatos_historico", "paciente_id INTEGER")
+    garantir_coluna(conn, "crm_contatos_historico", "contrato_id INTEGER")
+    garantir_coluna(conn, "crm_contatos_historico", "status TEXT")
+    garantir_coluna(conn, "crm_contatos_historico", "observacao TEXT")
+    garantir_coluna(conn, "crm_contatos_historico", "proximo_contato TEXT")
+    garantir_coluna(conn, "crm_contatos_historico", "criado_por TEXT")
+    garantir_coluna(conn, "crm_contatos_historico", "criado_em TEXT")
+    garantir_coluna(conn, "crm_contatos_historico", "automatico INTEGER DEFAULT 0")
     conn.execute(
         """
         UPDATE agendamentos
@@ -1221,6 +1279,10 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_paciente_id ON ordens_servico_protetico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_etapas_ordem_id ON ordem_servico_protetico_etapas(ordem_servico_id)")
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pacientes_paciente_id ON crm_pacientes(paciente_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_retorno_crm ON contratos(data_retorno_crm)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_paciente_id ON crm_contatos_historico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")
