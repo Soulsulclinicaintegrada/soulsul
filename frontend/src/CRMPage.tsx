@@ -89,6 +89,17 @@ const STATUS_RESGATE = [
   "Convertido",
 ] as const;
 
+const OBSERVACAO_RESGATE_AUTOMATICA = "Incluido automaticamente em Resgates a partir das avaliacoes sem orcamento aprovado.";
+
+type ResgateSortKey =
+  | "nome"
+  | "prontuario"
+  | "telefone"
+  | "dataOrcamento"
+  | "valorTotal"
+  | "statusResgate"
+  | "dataRetorno";
+
 function paraDataInput(valor?: string) {
   const texto = String(valor || "").trim();
   if (!texto) return "";
@@ -156,6 +167,17 @@ function extrairDataIso(valor?: string) {
   return `${match[3]}-${match[2]}-${match[1]}`;
 }
 
+function numeroMoeda(valor?: string) {
+  const texto = String(valor || "").trim();
+  if (!texto) return 0;
+  const limpo = texto
+    .replace(/[R$\s]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const numero = Number(limpo);
+  return Number.isFinite(numero) ? numero : 0;
+}
+
 function inicialLetra(valor?: string) {
   const texto = String(valor || "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const letra = texto.charAt(0).toUpperCase();
@@ -219,6 +241,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
   const [filtroResgateData, setFiltroResgateData] = useState(hojeIso());
   const [filtroResgateStatus, setFiltroResgateStatus] = useState("");
+  const [rascunhosObservacaoResgate, setRascunhosObservacaoResgate] = useState<Record<number, string>>({});
+  const [resgateSortKey, setResgateSortKey] = useState<ResgateSortKey>("nome");
+  const [resgateSortDirection, setResgateSortDirection] = useState<"asc" | "desc">("asc");
   const [relatorioLetra, setRelatorioLetra] = useState("");
   const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
   const [relatorioDataFim, setRelatorioDataFim] = useState("");
@@ -407,6 +432,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   );
   const resgatesFiltrados = useMemo(
     () => resgates
+      .map((item) => {
+        const historicoVisivel = (item.historico || []).filter(
+          (registro) => normalizarTexto(registro.observacao || "") !== normalizarTexto(OBSERVACAO_RESGATE_AUTOMATICA)
+        );
+        const ultimaObservacaoVisivel = normalizarTexto(item.observacaoContato || "") === normalizarTexto(OBSERVACAO_RESGATE_AUTOMATICA)
+          ? ""
+          : item.observacaoContato || "";
+        return {
+          ...item,
+          historico: historicoVisivel,
+          observacaoContato: ultimaObservacaoVisivel,
+        };
+      })
       .filter((item) => {
         const termo = normalizarTexto(busca || "");
         if (termo && !correspondeBusca({
@@ -427,8 +465,38 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         }
         return true;
       })
-      .sort((a, b) => a.nome.localeCompare(b.nome)),
-    [busca, filtroResgateData, filtroResgateStatus, resgates]
+      .sort((a, b) => {
+        let comparacao = 0;
+        switch (resgateSortKey) {
+          case "prontuario":
+            comparacao = String(a.prontuario || "").localeCompare(String(b.prontuario || ""));
+            break;
+          case "telefone":
+            comparacao = String(a.telefone || "").localeCompare(String(b.telefone || ""));
+            break;
+          case "dataOrcamento":
+            comparacao = extrairDataIso(a.dataOrcamento).localeCompare(extrairDataIso(b.dataOrcamento));
+            break;
+          case "valorTotal":
+            comparacao = numeroMoeda(a.valorTotal) - numeroMoeda(b.valorTotal);
+            break;
+          case "statusResgate":
+            comparacao = String(a.statusResgate || "").localeCompare(String(b.statusResgate || ""));
+            break;
+          case "dataRetorno":
+            comparacao = paraDataInput(a.dataRetorno).localeCompare(paraDataInput(b.dataRetorno));
+            break;
+          case "nome":
+          default:
+            comparacao = String(a.nome || "").localeCompare(String(b.nome || ""));
+            break;
+        }
+        if (comparacao === 0) {
+          comparacao = String(a.nome || "").localeCompare(String(b.nome || ""));
+        }
+        return resgateSortDirection === "asc" ? comparacao : -comparacao;
+      }),
+    [busca, filtroResgateData, filtroResgateStatus, resgates, resgateSortDirection, resgateSortKey]
   );
   const semAgendamentoFiltrados = useMemo(
     () => {
@@ -506,6 +574,24 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setResgates((atual) => atual.map((item) => (item.contratoId === contratoId ? { ...item, ...parcial } : item)));
   }
 
+  function atualizarRascunhoObservacaoResgate(contratoId: number, valor: string) {
+    setRascunhosObservacaoResgate((atual) => ({ ...atual, [contratoId]: valor }));
+  }
+
+  function alternarOrdenacaoResgate(chave: ResgateSortKey) {
+    if (resgateSortKey === chave) {
+      setResgateSortDirection((atual) => (atual === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setResgateSortKey(chave);
+    setResgateSortDirection("asc");
+  }
+
+  function indicadorOrdenacaoResgate(chave: ResgateSortKey) {
+    if (resgateSortKey !== chave) return "";
+    return resgateSortDirection === "asc" ? " ↑" : " ↓";
+  }
+
   async function salvarItem(item: CrmPacienteItemApi) {
     setSalvandoId(item.id);
     setErro(null);
@@ -531,7 +617,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   }
 
   async function salvarResgate(item: CrmResgateItemApi) {
-    if (!item.observacaoContato?.trim()) {
+    const observacaoNova = String(rascunhosObservacaoResgate[item.contratoId] || "").trim();
+    if (!observacaoNova) {
       setErro("A observação do contato é obrigatória.");
       return;
     }
@@ -544,10 +631,11 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     try {
       const atualizado = await atualizarCrmResgateApi(item.contratoId, {
         status: item.statusResgate || "",
-        observacao: item.observacaoContato || "",
+        observacao: observacaoNova,
         proximo_contato: paraDataInput(item.dataRetorno) || "",
       });
       atualizarResgateLocal(item.contratoId, atualizado);
+      setRascunhosObservacaoResgate((atual) => ({ ...atual, [item.contratoId]: "" }));
       setFeedback(`Resgate salvo para ${atualizado.nome}.`);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao salvar o resgate.");
@@ -934,6 +1022,25 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               ))}
             </select>
           </label>
+          <label>
+            <span>Ordenar por</span>
+            <select value={resgateSortKey} onChange={(event) => setResgateSortKey(event.target.value as ResgateSortKey)}>
+              <option value="nome">Paciente</option>
+              <option value="prontuario">Prontuário</option>
+              <option value="telefone">Telefone</option>
+              <option value="dataOrcamento">Data do orçamento</option>
+              <option value="valorTotal">Valor total</option>
+              <option value="statusResgate">Status</option>
+              <option value="dataRetorno">Retorno</option>
+            </select>
+          </label>
+          <label>
+            <span>Direção</span>
+            <select value={resgateSortDirection} onChange={(event) => setResgateSortDirection(event.target.value as "asc" | "desc")}>
+              <option value="asc">Crescente</option>
+              <option value="desc">Decrescente</option>
+            </select>
+          </label>
         </div>
         <div className="finance-receivables-grid-shell crm-rescue-grid-shell">
           <table className="finance-receivables-grid crm-rescue-grid">
@@ -949,7 +1056,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 <th>Obs. orçamento</th>
                 <th>Status</th>
                 <th>Retorno</th>
-                <th>Obs. contato</th>
+                <th>Nova observaÃ§Ã£o</th>
+                <th>HistÃ³rico de contatos</th>
                 <th>Último registro</th>
                 <th>Ações</th>
               </tr>
@@ -965,7 +1073,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <td>{(item.procedimentos || []).join(" | ") || "-"}</td>
                   <td className="crm-rescue-text-cell">{item.observacaoAvaliacao || "-"}</td>
                   <td className="crm-rescue-text-cell">{item.observacaoOrcamento || "-"}</td>
-                  <td>
+                  <td className="crm-rescue-status-cell">
+                    <span className={`crm-rescue-status-badge crm-rescue-status-${normalizarTexto(item.statusResgate || "").replace(/\s+/g, "-") || "vazio"}`}>
+                      {item.statusResgate || "Sem status"}
+                    </span>
                     <select
                       value={item.statusResgate || ""}
                       onChange={(event) => atualizarResgateLocal(item.contratoId, { statusResgate: event.target.value })}
@@ -985,14 +1096,25 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <td>
                     <textarea
                       rows={2}
-                      value={item.observacaoContato || ""}
-                      onChange={(event) => atualizarResgateLocal(item.contratoId, { observacaoContato: event.target.value })}
+                      value={rascunhosObservacaoResgate[item.contratoId] || ""}
+                      placeholder="Escreva a nova evoluÃ§Ã£o deste contato..."
+                      onChange={(event) => atualizarRascunhoObservacaoResgate(item.contratoId, event.target.value)}
                     />
+                  </td>
+                  <td className="crm-rescue-text-cell">
+                    {(item.historico?.length ? item.historico : []).map((registro) => (
+                      <div key={registro.id} className="crm-rescue-history-item">
+                        <strong>{registro.criadoEm || "Sem data"} · {registro.criadoPor || "-"}</strong>
+                        <span>{registro.status || "-"}</span>
+                        <span>{registro.observacao || "-"}</span>
+                      </div>
+                    ))}
+                    {!item.historico?.length ? <span>Sem histÃ³rico ainda.</span> : null}
                   </td>
                   <td className="crm-rescue-text-cell">
                     <strong>{item.ultimoContatoEm || "Sem registro"}</strong>
                     <span>{item.ultimoContatoPor || "-"}</span>
-                    <span>{item.historico?.[0]?.observacao || ""}</span>
+                    <span>{item.observacaoContato || ""}</span>
                   </td>
                   <td>
                     <div className="crm-inline-actions crm-inline-actions-column">
@@ -1008,7 +1130,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               ))}
               {!carregando && !resgatesFiltrados.length ? (
                 <tr>
-                  <td colSpan={13}>Nenhum resgate encontrado para o filtro atual.</td>
+                  <td colSpan={14}>Nenhum resgate encontrado para o filtro atual.</td>
                 </tr>
               ) : null}
             </tbody>

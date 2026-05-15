@@ -6443,9 +6443,63 @@ textarea::placeholder {
   resize: vertical;
 }
 
+.crm-rescue-grid td select,
+.crm-rescue-grid td input,
+.crm-rescue-grid td textarea {
+  min-width: 160px;
+}
+
+.crm-rescue-status-cell {
+  min-width: 220px;
+}
+
+.crm-rescue-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.crm-rescue-status-em-tratamento {
+  background: rgba(64, 125, 94, 0.16);
+  color: #2f6a4e;
+}
+
+.crm-rescue-status-ligar-novamente {
+  background: rgba(184, 150, 98, 0.18);
+  color: #7b5a27;
+}
+
+.crm-rescue-status-desistente {
+  background: rgba(186, 87, 87, 0.16);
+  color: #9b3f3f;
+}
+
+.crm-rescue-status-convertido {
+  background: rgba(76, 150, 104, 0.18);
+  color: #246744;
+}
+
 .crm-rescue-text-cell {
   min-width: 220px;
   white-space: normal;
+}
+
+.crm-rescue-history-item {
+  padding: 10px 12px;
+  border: 1px solid rgba(199, 170, 120, 0.16);
+  border-radius: 12px;
+  background: rgba(247, 241, 232, 0.7);
+}
+
+.crm-rescue-history-item + .crm-rescue-history-item {
+  margin-top: 8px;
 }
 
 .crm-rescue-text-cell strong,

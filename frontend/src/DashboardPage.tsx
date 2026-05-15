@@ -347,6 +347,38 @@ function DevedoresResumoCard({ itens }: { itens: DashboardDevedorResumoItemApi[]
   );
 }
 
+function VendasMensaisCard({ meses, serie }: { meses: string[]; serie: number[] }) {
+  const itens = meses.map((mes, indice) => ({
+    mes,
+    valor: Number(serie[indice] || 0),
+  }));
+
+  return (
+    <article className="panel summary-panel">
+      <div className="section-title-row">
+        <div>
+          <span className="panel-kicker">Financeiro</span>
+          <h2>Vendas por mês</h2>
+        </div>
+        <span className="panel-meta">{`${itens.length} mês(es)`}</span>
+      </div>
+      <div className="module-sublist">
+        {itens.map((item) => (
+          <div className="module-subitem finance-module-subitem" key={`dashboard-venda-mes-${item.mes}`}>
+            <div>
+              <strong>{item.mes}</strong>
+              <span>Contratos aprovados no mês</span>
+            </div>
+            <div className="module-subitem-right">
+              <strong>{numeroParaMoedaBr(item.valor)}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 export function DashboardPage() {
   const [painel, setPainel] = useState<DashboardPainelApi>(DASHBOARD_VAZIO);
   const [carregando, setCarregando] = useState(true);
@@ -493,6 +525,7 @@ export function DashboardPage() {
         </article>
 
         <div className="side-column">
+          <VendasMensaisCard meses={painel.meses || DASHBOARD_VAZIO.meses} serie={painel.serieVendas || DASHBOARD_VAZIO.serieVendas} />
           <DevedoresResumoCard itens={painel.devedoresResumo || []} />
           <article className="panel summary-panel">
             <div className="section-title-row">
