@@ -6404,11 +6404,38 @@ textarea::placeholder {
 }
 
 .crm-rescue-grid-shell {
-  overflow: auto;
+  max-height: 68vh;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: auto;
+  border: 1px solid rgba(199, 170, 120, 0.16);
+  border-radius: 14px;
+  background: #fff;
 }
 
 .crm-rescue-grid {
   min-width: 1680px;
+}
+
+.crm-rescue-grid-shell::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.crm-rescue-grid-shell::-webkit-scrollbar-track {
+  background: #efe5d4;
+  border-radius: 999px;
+}
+
+.crm-rescue-grid-shell::-webkit-scrollbar-thumb {
+  background: #b99662;
+  border-radius: 999px;
+  border: 3px solid #efe5d4;
+}
+
+.crm-rescue-grid-shell::-webkit-scrollbar-thumb:hover {
+  background: #9d7c4a;
 }
 
 .crm-rescue-grid textarea {
