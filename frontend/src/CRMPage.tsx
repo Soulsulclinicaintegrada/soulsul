@@ -83,7 +83,7 @@ const ETAPAS_CRM = [
 ] as const;
 
 const STATUS_RESGATE = [
-  "Em tratamento",
+  "Em tratativa",
   "Ligar novamente",
   "Desistente",
   "Convertido",

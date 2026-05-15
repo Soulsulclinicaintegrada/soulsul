@@ -6466,7 +6466,8 @@ textarea::placeholder {
   white-space: nowrap;
 }
 
-.crm-rescue-status-em-tratamento {
+.crm-rescue-status-em-tratamento,
+.crm-rescue-status-em-tratativa {
   background: rgba(64, 125, 94, 0.16);
   color: #2f6a4e;
 }

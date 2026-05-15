@@ -5748,7 +5748,8 @@ CRM_ETAPAS_PADRAO = [
 ]
 
 CRM_STATUS_RESGATE_PADRAO = {
-    "EM TRATAMENTO": "Em tratamento",
+    "EM TRATAMENTO": "Em tratativa",
+    "EM TRATATIVA": "Em tratativa",
     "LIGAR NOVAMENTE": "Ligar novamente",
     "DESISTENTE": "Desistente",
     "CONVERTIDO": "Convertido",
