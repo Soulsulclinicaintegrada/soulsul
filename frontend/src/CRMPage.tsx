@@ -239,8 +239,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [criandoManual, setCriandoManual] = useState(false);
   const [periodoAvaliacaoInicio, setPeriodoAvaliacaoInicio] = useState("");
   const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
-  const [filtroResgateData, setFiltroResgateData] = useState(hojeIso());
+  const [filtroResgateData, setFiltroResgateData] = useState("");
   const [filtroResgateStatus, setFiltroResgateStatus] = useState("");
+  const [filtroResgateProcedimento, setFiltroResgateProcedimento] = useState("");
   const [rascunhosObservacaoResgate, setRascunhosObservacaoResgate] = useState<Record<number, string>>({});
   const [resgateSortKey, setResgateSortKey] = useState<ResgateSortKey>("nome");
   const [resgateSortDirection, setResgateSortDirection] = useState<"asc" | "desc">("asc");
@@ -463,6 +464,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         if (filtroResgateStatus && normalizarTexto(item.statusResgate || "") !== normalizarTexto(filtroResgateStatus)) {
           return false;
         }
+        if (filtroResgateProcedimento) {
+          const procedimentosTexto = normalizarTexto((item.procedimentos || []).join(" "));
+          if (!procedimentosTexto.includes(normalizarTexto(filtroResgateProcedimento))) {
+            return false;
+          }
+        }
         return true;
       })
       .sort((a, b) => {
@@ -496,7 +503,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         }
         return resgateSortDirection === "asc" ? comparacao : -comparacao;
       }),
-    [busca, filtroResgateData, filtroResgateStatus, resgates, resgateSortDirection, resgateSortKey]
+    [busca, filtroResgateData, filtroResgateProcedimento, filtroResgateStatus, resgates, resgateSortDirection, resgateSortKey]
   );
   const semAgendamentoFiltrados = useMemo(
     () => {
@@ -1012,6 +1019,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <label>
             <span>Data de retorno</span>
             <input type="date" value={filtroResgateData} onChange={(event) => setFiltroResgateData(event.target.value)} />
+            <div className="crm-inline-actions">
+              <button type="button" className="ghost-action compact" onClick={() => setFiltroResgateData("")}>
+                Todos
+              </button>
+              <button type="button" className="ghost-action compact" onClick={() => setFiltroResgateData(hojeIso())}>
+                Hoje
+              </button>
+            </div>
           </label>
           <label>
             <span>Status</span>
@@ -1021,6 +1036,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 <option key={status} value={status}>{status}</option>
               ))}
             </select>
+          </label>
+          <label>
+            <span>Procedimento</span>
+            <input
+              type="text"
+              value={filtroResgateProcedimento}
+              placeholder="Ex.: protocolo"
+              onChange={(event) => setFiltroResgateProcedimento(event.target.value)}
+            />
           </label>
           <label>
             <span>Ordenar por</span>
