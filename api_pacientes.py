@@ -5910,7 +5910,7 @@ def sincronizar_status_resgate_por_orcamento_aprovado(
     crm = crm_entry_por_paciente(conn, int(paciente_id))
     contratos = conn.execute(
         """
-        SELECT id, COALESCE(data_retorno_crm, '') AS data_retorno_crm
+        SELECT id, COALESCE(data_retorno_crm, '') AS data_retorno_crm, COALESCE(status, '') AS status_orcamento
         FROM contratos
         WHERE paciente_id=?
         """,
@@ -5921,10 +5921,21 @@ def sincronizar_status_resgate_por_orcamento_aprovado(
         if contrato_id <= 0:
             continue
         data_retorno = str(contrato["data_retorno_crm"] or "").strip()
+        status_orcamento = normalizar_texto(str(contrato["status_orcamento"] or "")).upper()
+        if contrato_id != int(contrato_id_origem) and status_orcamento != "APROVADO":
+            atualizar_snapshot_resgate_contrato(
+                conn,
+                contrato_id=contrato_id,
+                data_retorno=data_retorno,
+                status="Ligar novamente",
+                observacao="Orçamento ainda não aprovado.",
+                usuario=usuario_limpo,
+            )
+            continue
         atualizar_snapshot_resgate_contrato(
             conn,
             contrato_id=contrato_id,
-            data_retorno=data_retorno,
+            data_retorno="" if contrato_id == int(contrato_id_origem) else data_retorno,
             status="Convertido",
             observacao="Convertido automaticamente por orçamento aprovado.",
             usuario=usuario_limpo,
@@ -5940,7 +5951,7 @@ def sincronizar_status_resgate_por_orcamento_aprovado(
                 if contrato_id == int(contrato_id_origem)
                 else f"Paciente convertido automaticamente após aprovação do orçamento #{contrato_id_origem}."
             ),
-            proximo_contato="",
+            proximo_contato="" if contrato_id == int(contrato_id_origem) else data_retorno,
             criado_por=usuario_limpo,
             automatico=True,
         )
@@ -6186,11 +6197,6 @@ def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta
             if observacao:
                 observacao_avaliacao_por_paciente[paciente_id] = observacao
 
-    pacientes_convertidos = {
-        crm_int(row["paciente_id"], 0)
-        for row in rows
-        if normalizar_texto(str(row["status_orcamento"] or "")).upper() == "APROVADO"
-    }
     for row in rows:
         contrato_id = crm_int(row["contrato_id"], 0)
         if contrato_id <= 0:
@@ -6198,9 +6204,12 @@ def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta
         item = itens_por_contrato.get(contrato_id)
         if item is None:
             paciente_id = crm_int(row["paciente_id"], 0)
+            status_orcamento = normalizar_texto(str(row["status_orcamento"] or "")).upper()
             status_snapshot = normalizar_status_resgate(row["crm_status"])
-            if paciente_id in pacientes_convertidos:
+            if status_orcamento == "APROVADO":
                 status_snapshot = "Convertido"
+            elif status_snapshot == "Convertido":
+                status_snapshot = "Ligar novamente"
             if not status_snapshot:
                 status_snapshot = "Ligar novamente"
             item = CrmResgateItemResposta(
