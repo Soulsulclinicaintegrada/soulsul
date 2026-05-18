@@ -4288,16 +4288,41 @@ textarea::placeholder {
 
 .finance-receivables-grid-shell {
   overflow: auto;
+  max-height: min(72vh, 680px);
   border: 1px solid rgba(199, 170, 120, 0.16);
   border-radius: 14px;
   background: #fff;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: auto;
+  scrollbar-color: rgba(95, 70, 32, 0.45) rgba(247, 241, 232, 0.95);
+}
+
+.finance-receivables-grid-shell::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.finance-receivables-grid-shell::-webkit-scrollbar-track {
+  background: rgba(247, 241, 232, 0.95);
+  border-radius: 999px;
+}
+
+.finance-receivables-grid-shell::-webkit-scrollbar-thumb {
+  background: rgba(95, 70, 32, 0.38);
+  border-radius: 999px;
+  border: 3px solid rgba(247, 241, 232, 0.95);
+}
+
+.finance-receivables-grid-shell::-webkit-scrollbar-thumb:hover {
+  background: rgba(95, 70, 32, 0.55);
 }
 
 .finance-receivables-grid {
   width: 100%;
-  min-width: 1220px;
+  min-width: 1560px;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 
 .finance-receivables-grid thead th {
@@ -4319,6 +4344,58 @@ textarea::placeholder {
   vertical-align: middle;
 }
 
+.finance-receivables-grid th:nth-child(1),
+.finance-receivables-grid td:nth-child(1) {
+  min-width: 280px;
+  width: 280px;
+}
+
+.finance-receivables-grid th:nth-child(2),
+.finance-receivables-grid td:nth-child(2) {
+  min-width: 140px;
+  width: 140px;
+}
+
+.finance-receivables-grid th:nth-child(3),
+.finance-receivables-grid td:nth-child(3) {
+  min-width: 95px;
+  width: 95px;
+}
+
+.finance-receivables-grid th:nth-child(4),
+.finance-receivables-grid td:nth-child(4),
+.finance-receivables-grid th:nth-child(8),
+.finance-receivables-grid td:nth-child(8) {
+  min-width: 190px;
+  width: 190px;
+}
+
+.finance-receivables-grid th:nth-child(5),
+.finance-receivables-grid td:nth-child(5) {
+  min-width: 140px;
+  width: 140px;
+}
+
+.finance-receivables-grid th:nth-child(6),
+.finance-receivables-grid td:nth-child(6),
+.finance-receivables-grid th:nth-child(7),
+.finance-receivables-grid td:nth-child(7) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-receivables-grid th:nth-child(9),
+.finance-receivables-grid td:nth-child(9) {
+  min-width: 220px;
+  width: 220px;
+}
+
+.finance-receivables-grid th:nth-child(10),
+.finance-receivables-grid td:nth-child(10) {
+  min-width: 170px;
+  width: 170px;
+}
+
 .finance-receivables-grid tbody tr:nth-child(even) {
   background: rgba(247, 241, 232, 0.42);
 }
@@ -4332,6 +4409,15 @@ textarea::placeholder {
   background: #fff;
   padding: 6px 10px;
   font: inherit;
+}
+
+.finance-receivables-patient-cell,
+.finance-receivables-patient-input {
+  min-width: 280px;
+}
+
+.finance-receivables-patient-input {
+  font-weight: 600;
 }
 
 .finance-grid-static-cell {

@@ -1187,8 +1187,14 @@ export function FinanceiroPage() {
                       const linha = recebiveisGrid[item.id] || recebivelParaForm(item);
                       return (
                         <tr key={item.id}>
-                          <td>
-                            <input type="text" value={linha.pacienteNome} onChange={(e) => atualizarRecebivelGrid(item.id, "pacienteNome", e.target.value)} />
+                          <td className="finance-receivables-patient-cell">
+                            <input
+                              type="text"
+                              className="finance-receivables-patient-input"
+                              title={linha.pacienteNome || item.pacienteNome || ""}
+                              value={linha.pacienteNome}
+                              onChange={(e) => atualizarRecebivelGrid(item.id, "pacienteNome", e.target.value)}
+                            />
                           </td>
                           <td>
                             <input type="text" value={linha.prontuario} onChange={(e) => atualizarRecebivelGrid(item.id, "prontuario", e.target.value)} />

@@ -38,7 +38,7 @@ import {
   type AgendaProcedimentoPayload,
   type AgendaSalvarPayload
 } from "./agendaApi";
-import { criarPacienteApi, listarPacientesApi, listarUsuariosApi, type PacienteApiPayload, type UsuarioResumoApi } from "./pacientesApi";
+import { buscarProximoProntuarioApi, criarPacienteApi, listarPacientesApi, listarUsuariosApi, type PacienteApiPayload, type UsuarioResumoApi } from "./pacientesApi";
 import { tiposAtendimentoAgenda } from "./mockData";
 import type { UsuarioSessao } from "./auth";
 
@@ -1572,16 +1572,12 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     const nome = form.pacienteBusca.trim();
     const celular = form.celular.trim();
     if (!nome || !celular) return null;
-    const pacientes = await listarPacientesApi("");
-    const maiorProntuario = pacientes.reduce((maior, paciente) => {
-      const numero = Number(String(paciente.prontuario ?? "").replace(/\D/g, ""));
-      return Number.isFinite(numero) ? Math.max(maior, numero) : maior;
-    }, 0);
+    const { prontuario } = await buscarProximoProntuarioApi();
     const payload: PacienteApiPayload = {
       nome,
       apelido: "",
       sexo: "",
-      prontuario: String(maiorProntuario + 1),
+      prontuario: String(prontuario || "").trim(),
       cpf: "",
       rg: "",
       data_nascimento: "",
