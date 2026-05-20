@@ -2324,10 +2324,80 @@ textarea::placeholder {
   gap: 16px;
 }
 
+.commercial-toolbar-actions,
+.commercial-contract-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .commercial-toolbar h3 {
   margin: 0;
   font-size: 1.24rem;
   letter-spacing: -0.03em;
+}
+
+.commercial-contract-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.commercial-contract-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.commercial-contract-toolbar h3 {
+  margin: 0;
+  font-size: 1.24rem;
+  letter-spacing: -0.03em;
+}
+
+.commercial-contract-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+
+.commercial-contract-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.commercial-contract-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.commercial-contract-summary div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(188, 145, 85, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 253, 250, 0.72);
+}
+
+.commercial-contract-summary span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.commercial-contract-summary strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.commercial-contract-procedures {
+  max-height: min(62vh, 760px);
+  border: 1px solid rgba(188, 145, 85, 0.14);
+  border-radius: 12px;
+  background: #fbfbfb;
 }
 
 .budget-list-shell {

@@ -4719,10 +4719,8 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
         regioes = regioes_por_procedimento.get(chave, [])
         sufixo = ""
         if regioes:
-            somente_dentes = all(regiao.isdigit() for regiao in regioes)
-            if not somente_dentes:
-                rotulo = "Elemento" if len(regioes) == 1 and regioes[0].isdigit() else "Elementos"
-                sufixo = f" - {rotulo}: {', '.join(regioes)}"
+            rotulo = "Elemento" if len(regioes) == 1 else "Elementos"
+            sufixo = f" - {rotulo}: {', '.join(regioes)}"
         itens.append(
             {
                 "procedimento": f"{procedimento}{sufixo}",

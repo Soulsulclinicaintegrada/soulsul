@@ -99,6 +99,8 @@ type AbaFicha = {
   documentos?: AbaDocumentos;
 };
 
+type ModoComercial = "lista" | "contrato";
+
 const OPCOES_SEXO = ["Feminino", "Masculino"] as const;
 const ABAS_PRINCIPAIS: Array<{ key: AbaPrincipal; label: string }> = [
   { key: "Cadastro", label: "Cadastro" },
@@ -888,6 +890,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [abaClinica, setAbaClinica] = useState<AbaClinica>("Plano e ficha clínica");
   const [abaDocumentos, setAbaDocumentos] = useState<AbaDocumentos>("Documentos");
   const [secaoCadastro, setSecaoCadastro] = useState<CadastroSecao>("dados");
+  const [modoComercial, setModoComercial] = useState<ModoComercial>("lista");
   const [modalOrcamentoAberto, setModalOrcamentoAberto] = useState(false);
   const [orcamentoEditandoId, setOrcamentoEditandoId] = useState<number | null>(null);
   const [orcamentoStatusAtual, setOrcamentoStatusAtual] = useState<"EM_ABERTO" | "APROVADO">("EM_ABERTO");
@@ -1687,66 +1690,84 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setProcedimentosOrcamento([]);
     setOrcamentoEditandoId(null);
     setOrcamentoStatusAtual("EM_ABERTO");
+    setModoComercial("lista");
     setModalOrcamentoAberto(true);
   }
 
-  async function abrirOrcamentoExistente(contratoId: number) {
+  async function carregarOrcamentoNoEstado(contratoId: number) {
     if (!pacienteAtivoId) return;
     setErro(null);
-    try {
-      const detalhe = await detalharOrcamentoPacienteApi(pacienteAtivoId, contratoId);
-      setOrcamentoEditandoId(contratoId);
-      setOrcamentoStatusAtual(detalhe.status === "APROVADO" ? "APROVADO" : "EM_ABERTO");
-      setOrcamentoDraft({
+    const detalhe = await detalharOrcamentoPacienteApi(pacienteAtivoId, contratoId);
+    setOrcamentoEditandoId(contratoId);
+    setOrcamentoStatusAtual(detalhe.status === "APROVADO" ? "APROVADO" : "EM_ABERTO");
+    setOrcamentoDraft({
+      clinica: detalhe.clinica || CLINICAS_ORCAMENTO[0],
+      criadoPor: detalhe.criadoPor || CRIADORES_ORCAMENTO[0],
+      data: detalhe.data ? detalhe.data.split("/").reverse().join("-") : dataHojeIso(),
+      dataRetornoCrm: detalhe.dataRetornoCrm ? detalhe.dataRetornoCrm.split("/").reverse().join("-") : dataHojeIso(),
+      observacoes: detalhe.observacoes || "",
+      tabela: detalhe.tabela || TABELAS_ORCAMENTO[0],
+      termoProcedimento: "",
+      profissional: PROFISSIONAIS_ORCAMENTO[0],
+      regiaoInput: "",
+      regioesSelecionadas: [],
+      denticao: DENTICOES[0],
+      valorUnitario: ""
+    });
+    setDescontoOrcamento({
+      percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
+      valor: detalhe.descontoValor ? formatarMoeda(detalhe.descontoValor) : "",
+      validade: detalhe.validadeOrcamento ? detalhe.validadeOrcamento.split("/").reverse().join("-") : ""
+    });
+    setDescontoEditor({
+      percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
+      valor: detalhe.descontoValor ? formatarMoeda(detalhe.descontoValor) : "",
+      validade: detalhe.validadeOrcamento ? detalhe.validadeOrcamento.split("/").reverse().join("-") : ""
+    });
+    setProcedimentoSelecionado(null);
+    const procedimentosCarregados = detalhe.itens.map((item, index) => ({
+        id: index + 1,
+        nome: item.procedimento,
+        profissional: item.profissional,
+        denticao: item.denticao,
+        tabela: detalhe.tabela || TABELAS_ORCAMENTO[0],
         clinica: detalhe.clinica || CLINICAS_ORCAMENTO[0],
         criadoPor: detalhe.criadoPor || CRIADORES_ORCAMENTO[0],
-        data: detalhe.data ? detalhe.data.split("/").reverse().join("-") : dataHojeIso(),
-        dataRetornoCrm: detalhe.dataRetornoCrm ? detalhe.dataRetornoCrm.split("/").reverse().join("-") : dataHojeIso(),
-        observacoes: detalhe.observacoes || "",
-        tabela: detalhe.tabela || TABELAS_ORCAMENTO[0],
-        termoProcedimento: "",
-        profissional: PROFISSIONAIS_ORCAMENTO[0],
-        regiaoInput: "",
-        regioesSelecionadas: [],
-        denticao: DENTICOES[0],
-        valorUnitario: ""
-      });
-      setDescontoOrcamento({
-        percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
-        valor: detalhe.descontoValor ? formatarMoeda(detalhe.descontoValor) : "",
-        validade: detalhe.validadeOrcamento ? detalhe.validadeOrcamento.split("/").reverse().join("-") : ""
-      });
-      setDescontoEditor({
-        percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
-        valor: detalhe.descontoValor ? formatarMoeda(detalhe.descontoValor) : "",
-        validade: detalhe.validadeOrcamento ? detalhe.validadeOrcamento.split("/").reverse().join("-") : ""
-      });
-      setProcedimentoSelecionado(null);
-      const procedimentosCarregados = detalhe.itens.map((item, index) => ({
-          id: index + 1,
-          nome: item.procedimento,
-          profissional: item.profissional,
-          denticao: item.denticao,
-          tabela: detalhe.tabela || TABELAS_ORCAMENTO[0],
-          clinica: detalhe.clinica || CLINICAS_ORCAMENTO[0],
-          criadoPor: detalhe.criadoPor || CRIADORES_ORCAMENTO[0],
-          expandido: true,
-          regioes: item.regioes.map((regiao, regiaoIndex) => ({
-            id: (index + 1) * 1000 + regiaoIndex + 1,
-            nome: regiao.regiao,
-            valor: regiao.valor,
-            ativo: regiao.ativo,
-            faces: regiao.faces
-          }))
-        }));
-      setProcedimentosOrcamento(procedimentosCarregados);
-      const totalDetalhe = procedimentosCarregados.reduce((total, item) => total + subtotalProcedimento(item), 0);
-      const planoCarregado = planoPagamentoDaApi(detalhe.planoPagamento, detalhe.entrada, detalhe.parcelas, totalDetalhe, detalhe.data ? detalhe.data.split("/").reverse().join("-") : dataHojeIso());
-      setPlanoPagamento(planoCarregado);
-      setPlanoPagamentoEditor(planoCarregado);
+        expandido: true,
+        regioes: item.regioes.map((regiao, regiaoIndex) => ({
+          id: (index + 1) * 1000 + regiaoIndex + 1,
+          nome: regiao.regiao,
+          valor: regiao.valor,
+          ativo: regiao.ativo,
+          faces: regiao.faces
+        }))
+      }));
+    setProcedimentosOrcamento(procedimentosCarregados);
+    const totalDetalhe = procedimentosCarregados.reduce((total, item) => total + subtotalProcedimento(item), 0);
+    const planoCarregado = planoPagamentoDaApi(detalhe.planoPagamento, detalhe.entrada, detalhe.parcelas, totalDetalhe, detalhe.data ? detalhe.data.split("/").reverse().join("-") : dataHojeIso());
+    setPlanoPagamento(planoCarregado);
+    setPlanoPagamentoEditor(planoCarregado);
+  }
+
+  async function abrirOrcamentoExistente(contratoId: number) {
+    try {
+      await carregarOrcamentoNoEstado(contratoId);
+      setModoComercial("contrato");
+      setOrcamentoAtivoId(contratoId);
       setModalOrcamentoAberto(true);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar orçamento.");
+    }
+  }
+
+  async function abrirContratoNaAba(contratoId: number) {
+    try {
+      await carregarOrcamentoNoEstado(contratoId);
+      setModoComercial("contrato");
+      setOrcamentoAtivoId(contratoId);
+      setModalOrcamentoAberto(false);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao carregar contrato.");
     }
   }
 
@@ -2204,9 +2225,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         : await criarOrcamentoPacienteApi(pacienteAtivoId, payload);
       setFeedback("Orçamento salvo com sucesso.");
       setModalOrcamentoAberto(false);
+      setModoComercial("contrato");
       setOrcamentoAtivoId(resposta.contrato_id);
-      setOrcamentoEditandoId(null);
-      setOrcamentoStatusAtual("EM_ABERTO");
+      setOrcamentoEditandoId(resposta.contrato_id);
+      setOrcamentoStatusAtual((atual) => (orcamentoEditandoId ? atual : "EM_ABERTO"));
       await carregarFicha(pacienteAtivoId);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao salvar orçamento.");
@@ -2674,6 +2696,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     </section>
   ) : null;
 
+  const contratoAtivoResumo = ficha?.contratos.find((contrato) => contrato.id === orcamentoAtivoId) || null;
+
   const renderFichaPacienteNova = pacienteDetalhe ? (
     <section className="patient-detail-shell patient-detail-shell-clean">
       <article className="patient-record-shell">
@@ -3119,56 +3143,277 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                       <span className="panel-kicker">Orçamentos</span>
                       <h3>Orçamentos do paciente</h3>
                     </div>
-                    <button type="button" className="primary-action" onClick={abrirNovoOrcamento}>
-                      <Plus size={18} />
-                      Novo orçamento
-                    </button>
-                  </div>
-
-                  <div className="budget-list-shell">
-                    {ficha?.contratos.length ? ficha.contratos.map((contrato) => (
-                      <article key={contrato.id} className="budget-list-row">
-                        <div className="budget-list-row-left">
-                          <button
-                            type="button"
-                            className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : "open"}`}
-                            disabled={alterandoStatusOrcamentoId === contrato.id}
-                            onClick={() => {
-                              if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
-                              else void aprovarOrcamento(contrato.id);
-                            }}
-                          >
-                            {alterandoStatusOrcamentoId === contrato.id
-                              ? "Salvando..."
-                              : contrato.status === "APROVADO"
-                                ? "Aprovado"
-                                : "Em Aberto"}
-                          </button>
-                          <span>{contrato.dataCriacao || "Sem data"}</span>
-                          {contrato.aprovadoPor ? <span>{`Aprovado por ${contrato.aprovadoPor}`}</span> : null}
-                        </div>
+                    <div className="commercial-toolbar-actions">
+                      <div className="tab-shell tab-shell-secondary">
                         <button
                           type="button"
-                          className="budget-list-row-main"
-                          onClick={() => abrirOrcamentoExistente(contrato.id)}
+                          className={`segmented-tab segmented-tab-secondary${modoComercial === "lista" ? " active" : ""}`}
+                          onClick={() => {
+                            setModoComercial("lista");
+                            setOrcamentoAtivoId(null);
+                          }}
                         >
-                          <strong>{`Orçamento #${contrato.id}`}</strong>
-                          <span>{contrato.procedimentos.join(", ") || "Sem procedimentos"}</span>
+                          Orçamentos
                         </button>
-                        <div className="budget-list-row-actions">
-                          <strong className="budget-list-row-value">{contrato.valorTotal}</strong>
+                        <button
+                          type="button"
+                          className={`segmented-tab segmented-tab-secondary${modoComercial === "contrato" ? " active" : ""}`}
+                          onClick={() => {
+                            if (orcamentoAtivoId) setModoComercial("contrato");
+                          }}
+                          disabled={!orcamentoAtivoId}
+                        >
+                          {orcamentoAtivoId ? `Contrato #${orcamentoAtivoId}` : "Contrato"}
+                        </button>
+                      </div>
+                      <button type="button" className="primary-action" onClick={abrirNovoOrcamento}>
+                        <Plus size={18} />
+                        Novo orçamento
+                      </button>
+                    </div>
+                  </div>
+
+                  {modoComercial === "contrato" && orcamentoAtivoId ? (
+                    <div className="commercial-contract-shell">
+                      <div className="commercial-contract-toolbar">
+                        <div>
+                          <span className="panel-kicker">Contrato</span>
+                          <h3>{`Contrato #${orcamentoAtivoId}`}</h3>
+                        </div>
+                        <div className="commercial-contract-actions">
+                          <span className={`budget-status-badge ${orcamentoStatusAtual === "APROVADO" ? "approved" : "open"}`}>
+                            {orcamentoStatusAtual === "APROVADO" ? "Aprovado" : "Em Aberto"}
+                          </span>
                           <button
                             type="button"
-                            className="ghost-action danger compact"
-                            onClick={() => void excluirOrcamento(contrato.id, contrato.status || "")}
-                            disabled={excluindoOrcamentoId === contrato.id}
+                            className="ghost-action"
+                            onClick={() => {
+                              setModoComercial("lista");
+                              setOrcamentoAtivoId(null);
+                            }}
                           >
-                            {excluindoOrcamentoId === contrato.id ? "Excluindo..." : "Excluir"}
+                            Voltar
+                          </button>
+                          <button type="button" className="ghost-action" onClick={() => setModalPagamentoAberto(true)}>
+                            Pagamento
+                          </button>
+                          <button type="button" className="ghost-action" onClick={() => void abrirOrcamentoExistente(orcamentoAtivoId)}>
+                            Editor completo
+                          </button>
+                          <button type="button" className="primary-action" onClick={salvarOrcamentoPaciente} disabled={salvandoOrcamento}>
+                            {salvandoOrcamento ? "Salvando..." : "Salvar contrato"}
                           </button>
                         </div>
-                      </article>
-                    )) : <span className="empty-inline">Sem contratos vinculados.</span>}
-                  </div>
+                      </div>
+
+                      <div className="commercial-contract-grid">
+                        <article className="panel commercial-contract-card">
+                          <div className="form-grid three">
+                            <label>
+                              <span>Clínica</span>
+                              <select value={orcamentoDraft.clinica} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, clinica: e.target.value })}>
+                                {CLINICAS_ORCAMENTO.map((item) => <option key={item} value={item}>{item}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              <span>Criado por</span>
+                              <select value={orcamentoDraft.criadoPor} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, criadoPor: e.target.value })}>
+                                {CRIADORES_ORCAMENTO.map((item) => <option key={item} value={item}>{item}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              <span>Data</span>
+                              <input type="date" value={orcamentoDraft.data} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, data: e.target.value })} />
+                            </label>
+                            <label>
+                              <span>Retorno CRM</span>
+                              <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} />
+                            </label>
+                            <label>
+                              <span>Validade</span>
+                              <input type="date" value={descontoOrcamento.validade} onChange={(e) => setDescontoOrcamento((atual) => ({ ...atual, validade: e.target.value }))} />
+                            </label>
+                            <label>
+                              <span>Tabela</span>
+                              <select value={orcamentoDraft.tabela} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, tabela: e.target.value })}>
+                                {TABELAS_ORCAMENTO.map((item) => <option key={item} value={item}>{item}</option>)}
+                              </select>
+                            </label>
+                            <label className="full">
+                              <span>Observações</span>
+                              <textarea rows={3} value={orcamentoDraft.observacoes} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, observacoes: e.target.value })} />
+                            </label>
+                          </div>
+                        </article>
+
+                        <article className="panel commercial-contract-card">
+                          <div className="commercial-contract-summary">
+                            <div><span>Status</span><strong>{orcamentoStatusAtual === "APROVADO" ? "Aprovado" : "Em Aberto"}</strong></div>
+                            <div><span>Forma de pagamento</span><strong>{resumoFormaPagamento(planoPagamento)}</strong></div>
+                            <div><span>Total</span><strong>{contratoAtivoResumo?.valorTotal || formatarMoeda(totalOrcamentoFinal)}</strong></div>
+                          </div>
+                          <div className="payment-table-shell">
+                            <table className="payment-table">
+                              <thead>
+                                <tr>
+                                  <th>Parcela</th>
+                                  <th>Data</th>
+                                  <th>Forma</th>
+                                  <th>Valor</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {planoPagamento.linhas.map((linha, indice) => (
+                                  <tr key={`${linha.descricao}-${indice}`}>
+                                    <td>{linha.descricao}</td>
+                                    <td>{formatarDataCurta(linha.data)}</td>
+                                    <td>{linha.forma}</td>
+                                    <td>{formatarMoeda(linha.valor)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </article>
+                      </div>
+
+                      <div className="budget-preview-body commercial-contract-procedures">
+                        {procedimentosOrcamento.length ? procedimentosOrcamento.map((item) => (
+                          <article key={item.id} className={`budget-preview-item${item.regioes.every((regiao) => !regiao.ativo) ? " ghost" : ""}`}>
+                            <div className="budget-preview-item-row">
+                              <div className="budget-preview-item-main budget-preview-item-main-rich">
+                                <div className="budget-preview-item-top">
+                                  <label className="budget-preview-check">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.regioes.length > 0 && item.regioes.every((regiao) => regiao.ativo)}
+                                      onChange={() => alternarTodasRegioes(item.id)}
+                                    />
+                                  </label>
+                                  <button type="button" className="budget-preview-expand" onClick={() => alternarProcedimentoExpandido(item.id)}>
+                                    <ChevronDown size={16} className={item.expandido ? "expanded" : ""} />
+                                    <div className="budget-preview-expand-copy">
+                                      <strong>{`${item.nome}(x${item.regioes.length})`}</strong>
+                                      <span className="budget-preview-inline-summary">
+                                        {`Dentes/Regiões: ${item.regioes.map((regiao) => regiao.nome || "Não informada").join(", ")}`}
+                                      </span>
+                                    </div>
+                                  </button>
+                                </div>
+                                <div className="budget-preview-meta">
+                                  <span className="budget-preview-meta-line">{item.clinica}</span>
+                                  <span className="budget-preview-meta-line">{item.profissional}</span>
+                                </div>
+                              </div>
+                              <div className="budget-preview-value">
+                                <strong>{formatarMoeda(subtotalProcedimento(item))}</strong>
+                                <div className="budget-preview-value-actions">
+                                  <button type="button" className="budget-preview-value-action" onClick={() => editarProcedimentoOrcamento(item.id)}>
+                                    <Pencil size={16} />
+                                    EDITAR
+                                  </button>
+                                  <button type="button" className="budget-preview-value-action budget-preview-value-action-danger" onClick={() => excluirProcedimentoOrcamento(item.id)}>
+                                    <X size={16} />
+                                    EXCLUIR
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                            {item.expandido ? (
+                              <div className="budget-preview-detail-shell">
+                                <div className="budget-preview-detail-list">
+                                  {item.regioes.map((regiao) => (
+                                    <div key={regiao.id} className={`budget-preview-detail-row${regiao.ativo ? "" : " muted"}`}>
+                                      <label className="budget-preview-check">
+                                        <input
+                                          type="checkbox"
+                                          checked={regiao.ativo}
+                                          onChange={() => alternarRegiaoAtiva(item.id, regiao.id)}
+                                        />
+                                      </label>
+                                      <div className="budget-preview-detail-body">
+                                        <span className="budget-preview-region-name">{regiao.nome || "Região não informada"}</span>
+                                        <span className="budget-preview-detail-copy">
+                                          {regiao.faces.length ? `Faces: ${regiao.faces.join(", ")}` : "Sem faces selecionadas"}
+                                        </span>
+                                        <div className="budget-preview-faces">
+                                          {FACES_PADRAO.map((face) => (
+                                            <button
+                                              key={face}
+                                              type="button"
+                                              className={`budget-face-chip${regiao.faces.includes(face) ? " active" : ""}`}
+                                              onClick={() => atualizarFacesRegiao(item.id, regiao.id, face)}
+                                            >
+                                              {face}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <input
+                                        className="budget-preview-value-input"
+                                        value={formatarMoeda(regiao.valor)}
+                                        onChange={(e) => atualizarValorRegiao(item.id, regiao.id, e.target.value)}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </article>
+                        )) : (
+                          <div className="budget-preview-empty">
+                            <strong>Sem procedimentos carregados.</strong>
+                            <span>Use o editor completo para adicionar novos procedimentos ao contrato.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="budget-list-shell">
+                      {ficha?.contratos.length ? ficha.contratos.map((contrato) => (
+                        <article key={contrato.id} className="budget-list-row">
+                          <div className="budget-list-row-left">
+                            <button
+                              type="button"
+                              className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : "open"}`}
+                              disabled={alterandoStatusOrcamentoId === contrato.id}
+                              onClick={() => {
+                                if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
+                                else void aprovarOrcamento(contrato.id);
+                              }}
+                            >
+                              {alterandoStatusOrcamentoId === contrato.id
+                                ? "Salvando..."
+                                : contrato.status === "APROVADO"
+                                  ? "Aprovado"
+                                  : "Em Aberto"}
+                            </button>
+                            <span>{contrato.dataCriacao || "Sem data"}</span>
+                            {contrato.aprovadoPor ? <span>{`Aprovado por ${contrato.aprovadoPor}`}</span> : null}
+                          </div>
+                          <button
+                            type="button"
+                            className="budget-list-row-main"
+                            onClick={() => void abrirContratoNaAba(contrato.id)}
+                          >
+                            <strong>{`Orçamento #${contrato.id}`}</strong>
+                            <span>{contrato.procedimentos.join(", ") || "Sem procedimentos"}</span>
+                          </button>
+                          <div className="budget-list-row-actions">
+                            <strong className="budget-list-row-value">{contrato.valorTotal}</strong>
+                            <button
+                              type="button"
+                              className="ghost-action danger compact"
+                              onClick={() => void excluirOrcamento(contrato.id, contrato.status || "")}
+                              disabled={excluindoOrcamentoId === contrato.id}
+                            >
+                              {excluindoOrcamentoId === contrato.id ? "Excluindo..." : "Excluir"}
+                            </button>
+                          </div>
+                        </article>
+                      )) : <span className="empty-inline">Sem contratos vinculados.</span>}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </article>
