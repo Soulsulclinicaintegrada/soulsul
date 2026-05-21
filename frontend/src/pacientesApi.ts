@@ -211,6 +211,16 @@ export type RecebivelResumoApi = {
   status?: string;
   dataPagamento?: string;
   observacao?: string;
+  historicoCobranca?: RecebivelHistoricoItemApi[];
+};
+
+export type RecebivelHistoricoItemApi = {
+  id: number;
+  status?: string;
+  observacao?: string;
+  cobrado?: boolean;
+  criadoPor?: string;
+  criadoEm?: string;
 };
 
 export type RecebivelAtualizacaoPayload = {
@@ -222,6 +232,8 @@ export type RecebivelAtualizacaoPayload = {
   status: string;
   data_pagamento: string;
   observacao: string;
+  cobranca_realizada?: boolean;
+  observacao_cobranca?: string;
 };
 
 export type RecebivelLotePayload = {
@@ -489,6 +501,15 @@ export type DashboardDevedorResumoItemApi = {
   status?: string;
 };
 
+export type DashboardVendaResumoItemApi = {
+  contratoId: number;
+  pacienteId?: number | null;
+  nome: string;
+  valor?: string;
+  formaPagamento?: string;
+  data?: string;
+};
+
 export type DashboardFunilApi = {
   leads: number;
   agendou: number;
@@ -528,6 +549,7 @@ export type DashboardPainelApi = {
   agendaHoje: DashboardAgendaHojeItemApi[];
   calendarioPagamentos?: DashboardCalendarioPagamentoItemApi[];
   devedoresResumo?: DashboardDevedorResumoItemApi[];
+  vendasResumo?: DashboardVendaResumoItemApi[];
   alertas: DashboardAlertaApi[];
   atividades: DashboardAtividadeApi[];
 };
@@ -625,12 +647,14 @@ export type FichaPacienteApi = {
 export type CrmPacienteResumoApi = {
   crmId?: number | null;
   finalizado?: boolean;
+  cancelado?: boolean;
   avaliacao?: boolean;
   etapaFunil?: string;
   campanha?: string;
   canal?: string;
   ultimaAvaliacaoEm?: string;
   finalizadoEm?: string;
+  canceladoEm?: string;
 };
 
 export type CrmPacienteItemApi = {
@@ -640,6 +664,7 @@ export type CrmPacienteItemApi = {
   prontuario?: string;
   telefone?: string;
   origemFinalizado?: boolean;
+  origemCancelado?: boolean;
   origemAvaliacao?: boolean;
   etapaFunil?: string;
   canal?: string;
@@ -652,6 +677,7 @@ export type CrmPacienteItemApi = {
   ultimaInteracao?: string;
   ultimaAvaliacaoEm?: string;
   finalizadoEm?: string;
+  canceladoEm?: string;
   atualizadoEm?: string;
 };
 
@@ -709,6 +735,7 @@ export type CrmResgateItemApi = {
 export type CrmPainelApi = {
   pipeline: CrmPacienteItemApi[];
   finalizados: CrmPacienteItemApi[];
+  cancelados: CrmPacienteItemApi[];
   avaliacoes: CrmAvaliacaoItemApi[];
   resgates: CrmResgateItemApi[];
 };
@@ -865,8 +892,20 @@ export async function marcarPacienteFinalizadoCrmApi(pacienteId: number) {
   });
 }
 
+export async function marcarPacienteCanceladoCrmApi(pacienteId: number) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/cancelado`, {
+    method: "POST"
+  });
+}
+
 export async function reativarPacienteCrmApi(pacienteId: number) {
   return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/reativar`, {
+    method: "POST"
+  });
+}
+
+export async function removerPacienteCanceladoCrmApi(pacienteId: number) {
+  return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/cancelado/remover`, {
     method: "POST"
   });
 }

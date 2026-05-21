@@ -11,6 +11,7 @@ import pandas as pd
 
 from api_pacientes import garantir_colunas_pacientes_api
 from database import conectar, inicializar_banco
+from financeiro_aliases import ALIAS_FINANCEIRO_POR_NOME
 
 
 POSSIVEIS_ARQUIVOS_RECEBIVEIS = [
@@ -178,13 +179,22 @@ def map_status(pago: Any, status: Any, vencimento: str, cobranca: Any = None) ->
 
 def build_patient_lookup(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     rows = conn.execute(
-        "SELECT id, nome, prontuario, telefone FROM pacientes"
+        "SELECT id, nome, prontuario, telefone, apelido, responsavel FROM pacientes"
     ).fetchall()
     lookup: dict[str, sqlite3.Row] = {}
     for row in rows:
-        key = normalize_text(row["nome"])
-        if key and key not in lookup:
-            lookup[key] = row
+        chaves = {
+            normalize_text(row["nome"]),
+            normalize_text(row["apelido"]),
+            normalize_text(row["responsavel"]),
+        }
+        for key in chaves:
+            if key and key not in lookup:
+                lookup[key] = row
+    for alias_planilha, nome_sistema in ALIAS_FINANCEIRO_POR_NOME.items():
+        paciente = lookup.get(normalize_text(nome_sistema))
+        if paciente is not None:
+            lookup[alias_planilha] = paciente
     return lookup
 
 
@@ -233,13 +243,20 @@ def reconcile() -> dict[str, int]:
     for _, plan_items in sorted(plan_groups.items(), key=lambda entry: entry[0]):
         for plan_item in plan_items:
             patient = patient_lookup.get(normalize_text(plan_item["paciente_nome"]))
+            paciente_nome_final = plan_item["paciente_nome"]
+            prontuario_final = ""
+            paciente_id_final = None
+            if patient is not None:
+                paciente_id_final = int(patient["id"])
+                paciente_nome_final = clean_str(patient["nome"]) or plan_item["paciente_nome"]
+                prontuario_final = clean_str(patient["prontuario"])
             reconciled_rows.append(
                 {
                     "id": next_id,
                     "contrato_id": None,
-                    "paciente_id": int(patient["id"]) if patient else None,
-                    "paciente_nome": plan_item["paciente_nome"],
-                    "prontuario": clean_str(patient["prontuario"]) if patient else "",
+                    "paciente_id": paciente_id_final,
+                    "paciente_nome": paciente_nome_final,
+                    "prontuario": prontuario_final,
                     "parcela_numero": None,
                     "vencimento": plan_item["vencimento"],
                     "valor": plan_item["valor"],

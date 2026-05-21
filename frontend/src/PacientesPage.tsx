@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   adicionarPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
+  marcarPacienteCanceladoCrmApi,
   marcarPacienteFinalizadoCrmApi,
+  removerPacienteCanceladoCrmApi,
   reativarPacienteCrmApi,
   alterarStatusOrcamentoPacienteApi,
   buscarCepApi,
@@ -1552,6 +1554,26 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setModalRecebivelAberto(true);
   }
 
+  async function enviarPacienteCanceladoParaCrm() {
+    if (!pacienteAtivoId) return;
+    setSalvandoCrmFinalizado(true);
+    setErro(null);
+    try {
+      if (ficha?.crm?.cancelado) {
+        await removerPacienteCanceladoCrmApi(pacienteAtivoId);
+        setFeedback("Paciente removido da lista de cancelados do CRM.");
+      } else {
+        await marcarPacienteCanceladoCrmApi(pacienteAtivoId);
+        setFeedback("Paciente enviado para a lista de cancelados do CRM.");
+      }
+      await carregarFicha(pacienteAtivoId);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao atualizar cancelamento no CRM.");
+    } finally {
+      setSalvandoCrmFinalizado(false);
+    }
+  }
+
   function abrirRecebivelParaBaixa(item: RecebivelResumoApi) {
     setRecebivelModalModo("baixa");
     setRecebivelForm({
@@ -2740,6 +2762,21 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
               : ficha?.crm?.finalizado
                 ? "Reativar paciente"
                 : "Marcar como finalizado"}
+          </button>
+          <button
+            type="button"
+            className="icon-action patient-finalizar-action"
+            onClick={() => void enviarPacienteCanceladoParaCrm()}
+            disabled={salvandoCrmFinalizado}
+          >
+            <X size={18} />
+            {salvandoCrmFinalizado
+              ? ficha?.crm?.cancelado
+                ? "Removendo..."
+                : "Enviando ao CRM..."
+              : ficha?.crm?.cancelado
+                ? "Remover de cancelados"
+                : "Marcar como cancelado"}
           </button>
         </div>
 

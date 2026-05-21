@@ -271,6 +271,8 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "contratos", "crm_observacao_contato TEXT")
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
+        garantir_coluna(conn, "crm_pacientes", "origem_cancelado INTEGER DEFAULT 0")
+        garantir_coluna(conn, "crm_pacientes", "cancelado_em TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "profissional_snapshot TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "denticao_snapshot TEXT")
         conn.execute(
@@ -289,6 +291,20 @@ def garantir_colunas_pacientes_api() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recebiveis_historico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recebivel_id INTEGER NOT NULL,
+                paciente_id INTEGER NOT NULL,
+                status TEXT,
+                observacao TEXT,
+                cobrado INTEGER DEFAULT 0,
+                criado_por TEXT,
+                criado_em TEXT
+            )
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_prontuario ON pacientes(prontuario)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_cpf ON pacientes(cpf)")
@@ -297,6 +313,7 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_data_retorno_crm ON contratos(data_retorno_crm)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_recebiveis_historico_recebivel_id ON recebiveis_historico(recebivel_id)")
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
         garantir_coluna(conn, "financeiro", "conta_caixa TEXT")
         garantir_coluna(conn, "contas_pagar", "categoria TEXT")
@@ -549,6 +566,16 @@ class RecebivelResumo(BaseModel):
     status: str = ""
     dataPagamento: str = ""
     observacao: str = ""
+    historicoCobranca: list["RecebivelHistoricoItemResposta"] = Field(default_factory=list)
+
+
+class RecebivelHistoricoItemResposta(BaseModel):
+    id: int
+    status: str = ""
+    observacao: str = ""
+    cobrado: bool = False
+    criadoPor: str = ""
+    criadoEm: str = ""
 
 
 class RecebivelAtualizacaoPayload(BaseModel):
@@ -560,6 +587,8 @@ class RecebivelAtualizacaoPayload(BaseModel):
     status: str = ""
     data_pagamento: str = ""
     observacao: str = ""
+    cobranca_realizada: bool = False
+    observacao_cobranca: str = ""
 
 
 class RecebivelLotePayload(BaseModel):
@@ -815,6 +844,15 @@ class DashboardDevedorResumoItemResposta(BaseModel):
     status: str = ""
 
 
+class DashboardVendaResumoItemResposta(BaseModel):
+    contratoId: int
+    pacienteId: int | None = None
+    nome: str
+    valor: str = ""
+    formaPagamento: str = ""
+    data: str = ""
+
+
 class DashboardAlertaItemResposta(BaseModel):
     titulo: str
     detalhe: str
@@ -856,6 +894,7 @@ class DashboardPainelResposta(BaseModel):
     agendaHoje: list[DashboardAgendaHojeItemResposta]
     calendarioPagamentos: list[DashboardCalendarioPagamentoItemResposta] = []
     devedoresResumo: list[DashboardDevedorResumoItemResposta] = Field(default_factory=list)
+    vendasResumo: list[DashboardVendaResumoItemResposta] = Field(default_factory=list)
     alertas: list[DashboardAlertaItemResposta]
     atividades: list[DashboardAtividadeItemResposta]
 
@@ -876,12 +915,14 @@ class FichaPacienteResposta(BaseModel):
 class CrmPacienteResumoResposta(BaseModel):
     crmId: int | None = None
     finalizado: bool = False
+    cancelado: bool = False
     avaliacao: bool = False
     etapaFunil: str = ""
     campanha: str = ""
     canal: str = "Facebook"
     ultimaAvaliacaoEm: str = ""
     finalizadoEm: str = ""
+    canceladoEm: str = ""
 
 
 class CrmPacienteItemResposta(BaseModel):
@@ -891,6 +932,7 @@ class CrmPacienteItemResposta(BaseModel):
     prontuario: str = ""
     telefone: str = ""
     origemFinalizado: bool = False
+    origemCancelado: bool = False
     origemAvaliacao: bool = False
     etapaFunil: str = "Novo lead"
     canal: str = "Facebook"
@@ -903,6 +945,7 @@ class CrmPacienteItemResposta(BaseModel):
     ultimaInteracao: str = ""
     ultimaAvaliacaoEm: str = ""
     finalizadoEm: str = ""
+    canceladoEm: str = ""
     atualizadoEm: str = ""
 
 
@@ -953,6 +996,7 @@ class CrmResgateItemResposta(BaseModel):
 class CrmPainelResposta(BaseModel):
     pipeline: list[CrmPacienteItemResposta] = Field(default_factory=list)
     finalizados: list[CrmPacienteItemResposta] = Field(default_factory=list)
+    cancelados: list[CrmPacienteItemResposta] = Field(default_factory=list)
     avaliacoes: list[CrmAvaliacaoItemResposta] = Field(default_factory=list)
     resgates: list[CrmResgateItemResposta] = Field(default_factory=list)
 
@@ -3195,18 +3239,18 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     caixa_rows = carregar_caixa_financeiro(conn)
     contratos_rows = conn.execute(
         """
-        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status
+        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status, forma_pagamento
         FROM contratos
         """
     ).fetchall()
     pacientes_nome_rows = conn.execute("SELECT id, nome, prontuario FROM pacientes").fetchall()
     pacientes_nome_map = {
-        int(row["id"]): {
+        crm_int(row["id"]): {
             "nome": str(row["nome"] or "").strip(),
             "prontuario": str(row["prontuario"] or "").strip(),
         }
         for row in pacientes_nome_rows
-        if row["id"] is not None
+        if crm_int(row["id"]) > 0
     }
     agendamentos_mes_rows = conn.execute(
         """
@@ -3246,21 +3290,37 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         vendas_mes_rows.append(row)
 
     detalhes_vendas_mes: list[DashboardIndicadorDetalheItemResposta] = []
+    vendas_resumo: list[DashboardVendaResumoItemResposta] = []
     for row in sorted(
         vendas_mes_rows,
         key=lambda item: parse_data_contrato(str(item["data_aprovacao"] or "")) or parse_data_contrato(str(item["data_criacao"] or "")) or date.min,
         reverse=True,
     ):
         data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
-        paciente_info = pacientes_nome_map.get(int(row["paciente_id"])) if row["paciente_id"] is not None else None
+        paciente_id = crm_int(row["paciente_id"])
+        contrato_id = crm_int(row["id"])
+        paciente_info = pacientes_nome_map.get(paciente_id) if paciente_id > 0 else None
         prontuario = (paciente_info or {}).get("prontuario") or ""
+        forma_pagamento = str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento"
         detalhes_vendas_mes.append(
             DashboardIndicadorDetalheItemResposta(
-                titulo=(paciente_info or {}).get("nome") or f"Contrato #{int(row['id'])}",
+                titulo=(paciente_info or {}).get("nome") or f"Contrato #{contrato_id}",
                 subtitulo=f"Venda em {formatar_data_br(data_ref)}",
-                meta=f"Contrato #{int(row['id'])}" + (f" · {prontuario}" if prontuario else ""),
+                meta=(
+                    f"Contrato #{contrato_id}" + (f" · {prontuario}" if prontuario else "") + f" · {forma_pagamento}"
+                ),
                 valor=formatar_moeda_br(float(row["valor_total"] or 0)),
                 status=str(row["status"] or ""),
+            )
+        )
+        vendas_resumo.append(
+            DashboardVendaResumoItemResposta(
+                contratoId=contrato_id,
+                pacienteId=paciente_id if paciente_id > 0 else None,
+                nome=(paciente_info or {}).get("nome") or f"Contrato #{contrato_id}",
+                valor=formatar_moeda_br(float(row["valor_total"] or 0)),
+                formaPagamento=forma_pagamento,
+                data=formatar_data_br(data_ref),
             )
         )
 
@@ -3281,8 +3341,8 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             titulo=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
             subtitulo=f"Vencimento em {formatar_data_br(parse_data_contrato(row['vencimento']))}",
             meta=(
-                f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}"
-                if int(row["total_parcelas"] or 0) > 0
+                f"Parcela {crm_int(row['parcela_numero'])}/{crm_int(row['total_parcelas'])}"
+                if "total_parcelas" in row.keys() and crm_int(row["total_parcelas"]) > 0
                 else (str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento")
             ),
             valor=formatar_moeda_br(float(row["valor"] or 0)),
@@ -3305,8 +3365,8 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             titulo=str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado",
             subtitulo=f"Vencido em {formatar_data_br(parse_data_contrato(row['vencimento']))}",
             meta=(
-                f"Parcela {int(row['parcela_numero'] or 0)}/{int(row['total_parcelas'] or 0)}"
-                if int(row["total_parcelas"] or 0) > 0
+                f"Parcela {crm_int(row['parcela_numero'])}/{crm_int(row['total_parcelas'])}"
+                if "total_parcelas" in row.keys() and crm_int(row["total_parcelas"]) > 0
                 else (str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento")
             ),
             valor=formatar_moeda_br(float(row["valor"] or 0)),
@@ -3347,19 +3407,19 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     ]
 
     ids_leads = {
-        int(row["paciente_id"])
+        crm_int(row["paciente_id"])
         for row in agendamentos_mes_rows
-        if row["paciente_id"] is not None
+        if crm_int(row["paciente_id"]) > 0
     }
     ids_agendou = {
-        int(row["paciente_id"])
+        crm_int(row["paciente_id"])
         for row in agendamentos_mes_rows
-        if row["paciente_id"] is not None and normalizar_texto(row["status"]) not in {"cancelado", "faltou"}
+        if crm_int(row["paciente_id"]) > 0 and normalizar_texto(row["status"]) not in {"cancelado", "faltou"}
     }
     ids_compareceu = {
-        int(row["paciente_id"])
+        crm_int(row["paciente_id"])
         for row in agendamentos_mes_rows
-        if row["paciente_id"] is not None and normalizar_texto(row["status"]) in {"atendido", "em atendimento"}
+        if crm_int(row["paciente_id"]) > 0 and normalizar_texto(row["status"]) in {"atendido", "em atendimento"}
     }
     ids_fechou = set()
     for row in contratos_rows:
@@ -3368,8 +3428,9 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
         if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_atual:
             continue
-        if row["paciente_id"] is not None:
-            ids_fechou.add(int(row["paciente_id"]))
+        paciente_id = crm_int(row["paciente_id"])
+        if paciente_id > 0:
+            ids_fechou.add(paciente_id)
 
     meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
     meta_mes = float(meta_atual.meta or 0)
@@ -3472,6 +3533,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             fechou=len(ids_fechou),
         ),
         agendaHoje=[],
+        vendasResumo=vendas_resumo,
         calendarioPagamentos=[
             DashboardCalendarioPagamentoItemResposta(
                 data=data_ref,
@@ -5686,7 +5748,72 @@ def sincronizar_financeiro_contrato(conn: sqlite3.Connection, paciente_row: sqli
     # a parcela e baixada no caixa.
 
 
-def mapear_recebivel(row: sqlite3.Row) -> RecebivelResumo:
+def carregar_historico_cobranca_recebiveis(
+    conn: sqlite3.Connection,
+    recebivel_ids: list[int],
+) -> dict[int, list[RecebivelHistoricoItemResposta]]:
+    ids_validos = [int(recebivel_id) for recebivel_id in recebivel_ids if int(recebivel_id or 0) > 0]
+    if not ids_validos:
+        return {}
+    placeholders = ",".join("?" for _ in ids_validos)
+    rows = conn.execute(
+        f"""
+        SELECT id, recebivel_id, status, observacao, cobrado, criado_por, criado_em
+        FROM recebiveis_historico
+        WHERE recebivel_id IN ({placeholders})
+        ORDER BY datetime(COALESCE(criado_em, '')) DESC, id DESC
+        """,
+        ids_validos,
+    ).fetchall()
+    historico_por_recebivel: dict[int, list[RecebivelHistoricoItemResposta]] = {}
+    for row in rows:
+        recebivel_id = int(row["recebivel_id"] or 0)
+        historico_por_recebivel.setdefault(recebivel_id, []).append(
+            RecebivelHistoricoItemResposta(
+                id=int(row["id"] or 0),
+                status=str(row["status"] or ""),
+                observacao=str(row["observacao"] or ""),
+                cobrado=bool(row["cobrado"]),
+                criadoPor=str(row["criado_por"] or ""),
+                criadoEm=str(row["criado_em"] or ""),
+            )
+        )
+    return historico_por_recebivel
+
+
+def registrar_historico_cobranca_recebivel(
+    conn: sqlite3.Connection,
+    *,
+    recebivel_id: int,
+    paciente_id: int,
+    status: str,
+    observacao: str,
+    cobrado: bool,
+    criado_por: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO recebiveis_historico (
+            recebivel_id, paciente_id, status, observacao, cobrado, criado_por, criado_em
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(recebivel_id),
+            int(paciente_id),
+            str(status or "").strip(),
+            str(observacao or "").strip(),
+            1 if cobrado else 0,
+            str(criado_por or "").strip(),
+            agora_str(),
+        ),
+    )
+
+
+def mapear_recebivel(
+    row: sqlite3.Row,
+    historico_cobranca: list[RecebivelHistoricoItemResposta] | None = None,
+) -> RecebivelResumo:
     return RecebivelResumo(
         id=int(row["id"]),
         pacienteId=int(row["paciente_id"]) if row["paciente_id"] is not None else None,
@@ -5700,6 +5827,7 @@ def mapear_recebivel(row: sqlite3.Row) -> RecebivelResumo:
         status=str(row["status"] or ""),
         dataPagamento=formatar_data_br_valor(row["data_pagamento"]) if "data_pagamento" in row.keys() else "",
         observacao=str(row["observacao"] or ""),
+        historicoCobranca=historico_cobranca or [],
     )
 
 
@@ -5786,12 +5914,14 @@ def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResp
     return CrmPacienteResumoResposta(
         crmId=crm_int(row["id"], 0) if row["id"] is not None else None,
         finalizado=crm_bool(row["origem_finalizado"]),
+        cancelado=crm_bool(row["origem_cancelado"]),
         avaliacao=crm_bool(row["origem_avaliacao"]),
         etapaFunil=str(row["etapa_funil"] or "Novo lead"),
         campanha=str(row["campanha"] or ""),
         canal=str(row["canal"] or "Facebook"),
         ultimaAvaliacaoEm=formatar_data_br_valor(row["ultima_avaliacao_em"]),
         finalizadoEm=formatar_data_br_valor(row["finalizado_em"]),
+        canceladoEm=formatar_data_br_valor(row["cancelado_em"]),
     )
 
 
@@ -5803,6 +5933,7 @@ def mapear_crm_paciente_item(row: sqlite3.Row) -> CrmPacienteItemResposta:
         prontuario=formatar_prontuario_valor(row["prontuario"]),
         telefone=str(row["telefone"] or ""),
         origemFinalizado=crm_bool(row["origem_finalizado"]),
+        origemCancelado=crm_bool(row["origem_cancelado"]),
         origemAvaliacao=crm_bool(row["origem_avaliacao"]),
         etapaFunil=str(row["etapa_funil"] or "Novo lead"),
         canal=str(row["canal"] or "Facebook"),
@@ -5815,6 +5946,7 @@ def mapear_crm_paciente_item(row: sqlite3.Row) -> CrmPacienteItemResposta:
         ultimaInteracao=formatar_data_br_valor(row["ultima_interacao"]),
         ultimaAvaliacaoEm=formatar_data_br_valor(row["ultima_avaliacao_em"]),
         finalizadoEm=formatar_data_br_valor(row["finalizado_em"]),
+        canceladoEm=formatar_data_br_valor(row["cancelado_em"]),
         atualizadoEm=str(row["atualizado_em"] or ""),
     )
 
@@ -6241,6 +6373,7 @@ def upsert_crm_origem(
     paciente_id: int,
     *,
     marcar_finalizado: bool = False,
+    marcar_cancelado: bool = False,
     marcar_avaliacao: bool = False,
     usuario: str = "",
     ultima_avaliacao_em: str = "",
@@ -6252,17 +6385,19 @@ def upsert_crm_origem(
         conn.execute(
             """
             INSERT INTO crm_pacientes (
-                paciente_id, origem_finalizado, origem_avaliacao, etapa_funil, canal,
-                ultima_avaliacao_em, finalizado_em, criado_por, atualizado_por, criado_em, atualizado_em
+                paciente_id, origem_finalizado, origem_cancelado, origem_avaliacao, etapa_funil, canal,
+                ultima_avaliacao_em, finalizado_em, cancelado_em, criado_por, atualizado_por, criado_em, atualizado_em
             )
-            VALUES (?, ?, ?, 'Novo lead', 'Facebook', ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 'Novo lead', 'Facebook', ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(paciente_id),
                 1 if marcar_finalizado else 0,
+                1 if marcar_cancelado else 0,
                 1 if marcar_avaliacao else 0,
                 ultima_avaliacao_em or "",
                 agora if marcar_finalizado else "",
+                agora if marcar_cancelado else "",
                 usuario_limpo,
                 usuario_limpo,
                 agora,
@@ -6275,18 +6410,22 @@ def upsert_crm_origem(
             UPDATE crm_pacientes
             SET
                 origem_finalizado=?,
+                origem_cancelado=?,
                 origem_avaliacao=?,
                 ultima_avaliacao_em=?,
                 finalizado_em=?,
+                cancelado_em=?,
                 atualizado_por=?,
                 atualizado_em=?
             WHERE paciente_id=?
             """,
             (
                 1 if (bool(int(existente["origem_finalizado"] or 0)) or marcar_finalizado) else 0,
+                1 if (bool(int(existente["origem_cancelado"] or 0)) or marcar_cancelado) else 0,
                 1 if (bool(int(existente["origem_avaliacao"] or 0)) or marcar_avaliacao) else 0,
                 ultima_avaliacao_em or str(existente["ultima_avaliacao_em"] or ""),
                 str(existente["finalizado_em"] or "") or (agora if marcar_finalizado else ""),
+                str(existente["cancelado_em"] or "") or (agora if marcar_cancelado else ""),
                 usuario_limpo or str(existente["atualizado_por"] or ""),
                 agora,
                 int(paciente_id),
@@ -6322,9 +6461,20 @@ def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -
         for row in contratos_rows
     ]
 
-    recebiveis = [mapear_recebivel(row) for row in recebiveis_rows]
+    historico_por_recebivel = carregar_historico_cobranca_recebiveis(
+        conn,
+        [int(row["id"] or 0) for row in recebiveis_rows],
+    )
+    recebiveis = [
+        mapear_recebivel(row, historico_por_recebivel.get(int(row["id"] or 0), []))
+        for row in recebiveis_rows
+    ]
     agendamentos = [mapear_agendamento(row) for row in agendamentos_rows]
-    recibos = [mapear_recebivel(row) for row in recebiveis_rows if str(row["status"] or "") == "Pago"]
+    recibos = [
+        mapear_recebivel(row, historico_por_recebivel.get(int(row["id"] or 0), []))
+        for row in recebiveis_rows
+        if str(row["status"] or "") == "Pago"
+    ]
 
     return FichaPacienteResposta(
         paciente=mapear_paciente_detalhe(paciente_row),
@@ -6437,11 +6587,13 @@ def listar_crm():
                 continue
             pipeline.append(item)
         finalizados = [item for item in pipeline if item.origemFinalizado]
+        cancelados = [item for item in pipeline if item.origemCancelado]
         avaliacoes = listar_avaliacoes_crm(conn)
         resgates = listar_resgates_crm(conn)
         return CrmPainelResposta(
             pipeline=pipeline,
             finalizados=finalizados,
+            cancelados=cancelados,
             avaliacoes=avaliacoes,
             resgates=resgates,
         )
@@ -6480,6 +6632,41 @@ def marcar_paciente_finalizado_crm(paciente_id: int, request: Request):
         info=str(paciente["nome"] or f"Paciente {paciente_id}"),
         metodo_http="POST",
         rota=f"/api/crm/pacientes/{paciente_id}/finalizado",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.post("/api/crm/pacientes/{paciente_id}/cancelado", response_model=CrmPacienteItemResposta)
+def marcar_paciente_cancelado_crm(paciente_id: int, request: Request):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        crm = upsert_crm_origem(
+            conn,
+            paciente_id=int(paciente_id),
+            marcar_cancelado=True,
+            usuario=usuario_request(request),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm["id"]),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Paciente cancelado",
+        info=str(paciente["nome"] or f"Paciente {paciente_id}"),
+        metodo_http="POST",
+        rota=f"/api/crm/pacientes/{paciente_id}/cancelado",
     )
     return mapear_crm_paciente_item(row)
 
@@ -6527,6 +6714,53 @@ def reativar_paciente_crm(paciente_id: int, request: Request):
         info=str(paciente["nome"] or f"Paciente {paciente_id}"),
         metodo_http="POST",
         rota=f"/api/crm/pacientes/{paciente_id}/reativar",
+    )
+    return mapear_crm_paciente_item(row)
+
+
+@app.post("/api/crm/pacientes/{paciente_id}/cancelado/remover", response_model=CrmPacienteItemResposta)
+def remover_paciente_cancelado_crm(paciente_id: int, request: Request):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        atual = crm_entry_por_paciente(conn, int(paciente_id))
+        if atual is None:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado no CRM.")
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET origem_cancelado=0,
+                cancelado_em='',
+                atualizado_por=?,
+                atualizado_em=?
+            WHERE paciente_id=?
+            """,
+            (
+                usuario_request(request),
+                agora_str(),
+                int(paciente_id),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.paciente_id=?
+            LIMIT 1
+            """,
+            (int(paciente_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Paciente reativado de cancelados",
+        info=str(paciente["nome"] or f"Paciente {paciente_id}"),
+        metodo_http="POST",
+        rota=f"/api/crm/pacientes/{paciente_id}/cancelado/remover",
     )
     return mapear_crm_paciente_item(row)
 
@@ -6764,7 +6998,7 @@ def atualizar_resgate_crm(contrato_id: int, payload: CrmResgateAtualizacaoPayloa
 
 
 @app.put("/api/pacientes/{paciente_id}/recebiveis/{recebivel_id}", response_model=RecebivelResumo)
-def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: RecebivelAtualizacaoPayload):
+def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: RecebivelAtualizacaoPayload, request: Request):
     conn = conectar()
     try:
         carregar_paciente_por_id(conn, paciente_id)
@@ -6795,9 +7029,23 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
                 paciente_id,
             ),
         )
+        observacao_cobranca = str(payload.observacao_cobranca or "").strip()
+        if payload.cobranca_realizada or observacao_cobranca:
+            registrar_historico_cobranca_recebivel(
+                conn,
+                recebivel_id=recebivel_id,
+                paciente_id=paciente_id,
+                status="Cobrado" if payload.cobranca_realizada else "Contato",
+                observacao=observacao_cobranca or payload.observacao.strip(),
+                cobrado=bool(payload.cobranca_realizada),
+                criado_por=usuario_request(request),
+            )
         conn.commit()
         atualizado = carregar_recebivel_paciente(conn, paciente_id, recebivel_id)
-        return mapear_recebivel(atualizado)
+        return mapear_recebivel(
+            atualizado,
+            carregar_historico_cobranca_recebiveis(conn, [recebivel_id]).get(recebivel_id, []),
+        )
     finally:
         conn.close()
 
@@ -6823,7 +7071,7 @@ def atualizar_recebiveis_lote(contrato_id: int, payload: RecebivelLotePayload):
 
 
 @app.post("/api/pacientes/{paciente_id}/recebiveis/{recebivel_id}/baixar", response_model=RecebivelResumo)
-def baixar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: BaixaRecebivelPayload):
+def baixar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: BaixaRecebivelPayload, request: Request):
     conn = conectar()
     try:
         carregar_paciente_por_id(conn, paciente_id)
@@ -6837,8 +7085,20 @@ def baixar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: Baix
             desconto_valor=payload.desconto_valor,
             observacao=payload.observacao,
         )
+        registrar_historico_cobranca_recebivel(
+            conn,
+            recebivel_id=recebivel_id,
+            paciente_id=paciente_id,
+            status="Pago",
+            observacao=str(payload.observacao or "").strip() or "Recebível baixado no caixa.",
+            cobrado=True,
+            criado_por=usuario_request(request),
+        )
         conn.commit()
-        return mapear_recebivel(atualizado)
+        return mapear_recebivel(
+            atualizado,
+            carregar_historico_cobranca_recebiveis(conn, [recebivel_id]).get(recebivel_id, []),
+        )
     finally:
         conn.close()
 
@@ -6865,9 +7125,16 @@ def painel_financeiro():
         caixa_rows = carregar_caixa_financeiro(conn)
         contas_rows = carregar_contas_pagar_financeiro(conn)
         saldos_rows = carregar_saldos_conta_financeiro(conn)
+        historico_por_recebivel = carregar_historico_cobranca_recebiveis(
+            conn,
+            [int(row["id"] or 0) for row in recebiveis_rows],
+        )
         return FinanceiroPainelResposta(
             resumo=resumo_financeiro_global(recebiveis_rows),
-            recebiveis=[mapear_recebivel(row) for row in recebiveis_rows],
+            recebiveis=[
+                mapear_recebivel(row, historico_por_recebivel.get(int(row["id"] or 0), []))
+                for row in recebiveis_rows
+            ],
             caixa=[mapear_movimento_caixa(row) for row in caixa_rows],
             contasPagar=[mapear_conta_pagar(row) for row in contas_rows],
             saldosConta=[mapear_saldo_conta(row) for row in saldos_rows],

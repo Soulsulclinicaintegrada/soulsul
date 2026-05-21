@@ -7,7 +7,8 @@ import {
   type DashboardCalendarioPagamentoItemApi,
   type DashboardDevedorResumoItemApi,
   type DashboardIndicadorApi,
-  type DashboardPainelApi
+  type DashboardPainelApi,
+  type DashboardVendaResumoItemApi
 } from "./pacientesApi";
 
 function iconeIndicador(chave: string) {
@@ -352,7 +353,6 @@ function VendasMensaisCard({ meses, serie }: { meses: string[]; serie: number[] 
     mes,
     valor: Number(serie[indice] || 0),
   }));
-
   return (
     <article className="panel summary-panel">
       <div className="section-title-row">
@@ -374,6 +374,35 @@ function VendasMensaisCard({ meses, serie }: { meses: string[]; serie: number[] 
             </div>
           </div>
         ))}
+      </div>
+    </article>
+  );
+}
+
+function VendasResumoCard({ itens }: { itens: DashboardVendaResumoItemApi[] }) {
+  return (
+    <article className="panel summary-panel">
+      <div className="section-title-row">
+        <div>
+          <span className="panel-kicker">Financeiro</span>
+          <h2>Vendas do mês</h2>
+        </div>
+        <span className="panel-meta">{`${itens.length} contrato(s)`}</span>
+      </div>
+      <div className="module-sublist">
+        {itens.length ? itens.map((item) => (
+          <div className="module-subitem finance-module-subitem" key={`dashboard-venda-resumo-${item.contratoId}`}>
+            <div>
+              <strong>{item.nome || "Paciente"}</strong>
+              <span>{`${item.formaPagamento || "Sem forma de pagamento"}${item.data ? ` · ${item.data}` : ""}`}</span>
+            </div>
+            <div className="module-subitem-right">
+              <strong>{item.valor || "R$ 0,00"}</strong>
+            </div>
+          </div>
+        )) : (
+          <div className="dashboard-feedback">Nenhuma venda aprovada neste mês.</div>
+        )}
       </div>
     </article>
   );
@@ -525,7 +554,7 @@ export function DashboardPage() {
         </article>
 
         <div className="side-column">
-          <VendasMensaisCard meses={painel.meses || DASHBOARD_VAZIO.meses} serie={painel.serieVendas || DASHBOARD_VAZIO.serieVendas} />
+          <VendasResumoCard itens={painel.vendasResumo || []} />
           <DevedoresResumoCard itens={painel.devedoresResumo || []} />
           <article className="panel summary-panel">
             <div className="section-title-row">
