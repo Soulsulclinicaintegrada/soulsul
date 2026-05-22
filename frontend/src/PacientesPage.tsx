@@ -1099,7 +1099,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       setPacientes(lista);
       if (navegacao?.pacienteId) {
         setPacienteAtivoId(navegacao.pacienteId);
-      } else if (buscaAtiva) {
+      } else if (buscaAtiva && pacienteAtivoId == null) {
         setPacienteAtivoId(null);
         setFicha(null);
       }
@@ -1140,7 +1140,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   useEffect(() => {
     carregarLista();
-  }, [busca]);
+  }, [busca, pacienteAtivoId]);
 
   useEffect(() => {
     let ativo = true;
@@ -1384,6 +1384,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setErro(null);
     try {
       const atualizado = await atualizarPacienteApi(pacienteAtivoId, mapFormParaPayload(editForm));
+      setEditForm(mapPacienteParaForm(atualizado));
+      setFicha((atual) => (atual ? { ...atual, paciente: atualizado } : atual));
       if (agendarAvaliacao) {
         await agendarAvaliacaoCrmPaciente(
           pacienteAtivoId,
@@ -1399,8 +1401,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       } else {
         setFeedback("Paciente atualizado com sucesso.");
       }
-      await carregarLista();
-      await carregarFicha(pacienteAtivoId);
+      try {
+        await carregarLista();
+        await carregarFicha(pacienteAtivoId);
+      } catch (refreshError) {
+        console.warn("Paciente salvo, mas houve falha ao recarregar a ficha.", refreshError);
+      }
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao atualizar paciente.");
     } finally {
