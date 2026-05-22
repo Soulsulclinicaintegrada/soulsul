@@ -101,6 +101,7 @@ type RecebivelBaixaSelecionado = {
 };
 
 type RecebivelGridMap = Record<number, RecebivelForm>;
+type OrdenacaoCobranca = "nome" | "vencimento" | "valor" | "status" | "prontuario";
 
 type ReciboManualForm = {
   valor: string;
@@ -346,6 +347,8 @@ export function FinanceiroPage() {
   const [filtroFormaRecebivel, setFiltroFormaRecebivel] = useState("");
   const [filtroVencimentoRecebivelInicio, setFiltroVencimentoRecebivelInicio] = useState("");
   const [filtroVencimentoRecebivelFim, setFiltroVencimentoRecebivelFim] = useState("");
+  const [ordenacaoCobranca, setOrdenacaoCobranca] = useState<OrdenacaoCobranca>("nome");
+  const [direcaoCobranca, setDirecaoCobranca] = useState<"asc" | "desc">("asc");
   const [filtroFornecedorPagar, setFiltroFornecedorPagar] = useState("");
   const [filtroStatusPagar, setFiltroStatusPagar] = useState("");
   const [filtroCategoriaPagar, setFiltroCategoriaPagar] = useState("");
@@ -473,6 +476,27 @@ export function FinanceiroPage() {
     () => recebiveisFiltrados.filter((item) => ["Aberto", "Atrasado"].includes(item.status || "")),
     [recebiveisFiltrados]
   );
+
+  const cobrancasOrdenadas = useMemo(() => {
+    const lista = [...cobrancasFiltradas];
+    const fator = direcaoCobranca === "desc" ? -1 : 1;
+    return lista.sort((a, b) => {
+      let comparacao = 0;
+      if (ordenacaoCobranca === "valor") {
+        comparacao = moedaParaNumero(a.valor) - moedaParaNumero(b.valor);
+      } else if (ordenacaoCobranca === "vencimento") {
+        comparacao = dataBrParaIso(a.vencimento).localeCompare(dataBrParaIso(b.vencimento));
+      } else if (ordenacaoCobranca === "status") {
+        comparacao = String(a.status || "").localeCompare(String(b.status || ""), "pt-BR");
+      } else if (ordenacaoCobranca === "prontuario") {
+        comparacao = String(a.prontuario || "").localeCompare(String(b.prontuario || ""), "pt-BR");
+      } else {
+        comparacao = String(a.pacienteNome || "").localeCompare(String(b.pacienteNome || ""), "pt-BR");
+      }
+      if (comparacao !== 0) return comparacao * fator;
+      return String(a.pacienteNome || "").localeCompare(String(b.pacienteNome || ""), "pt-BR") * fator;
+    });
+  }, [cobrancasFiltradas, direcaoCobranca, ordenacaoCobranca]);
 
   const totalCobrancas = useMemo(
     () => cobrancasFiltradas.reduce((total, item) => total + moedaParaNumero(item.valor), 0),
@@ -768,6 +792,8 @@ export function FinanceiroPage() {
     setFiltroStatusRecebivel("");
     setFiltroVencimentoRecebivelInicio("");
     setFiltroVencimentoRecebivelFim("");
+    setOrdenacaoCobranca("nome");
+    setDirecaoCobranca("asc");
   }
 
   async function salvarRecebiveisLote() {
@@ -1186,6 +1212,23 @@ export function FinanceiroPage() {
                   <span>Vencimento até</span>
                   <input type="date" value={filtroVencimentoRecebivelFim} onChange={(e) => setFiltroVencimentoRecebivelFim(e.target.value)} />
                 </label>
+                <label>
+                  <span>Ordenar por</span>
+                  <select value={ordenacaoCobranca} onChange={(e) => setOrdenacaoCobranca(e.target.value as OrdenacaoCobranca)}>
+                    <option value="nome">Paciente</option>
+                    <option value="vencimento">Vencimento</option>
+                    <option value="valor">Valor</option>
+                    <option value="status">Status</option>
+                    <option value="prontuario">Prontuário</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Direção</span>
+                  <select value={direcaoCobranca} onChange={(e) => setDirecaoCobranca(e.target.value as "asc" | "desc")}>
+                    <option value="asc">Crescente</option>
+                    <option value="desc">Decrescente</option>
+                  </select>
+                </label>
               </div>
               <div className="finance-form-actions">
                 <button type="button" className="ghost-action" onClick={limparFiltrosRecebiveis}>Limpar filtros</button>
@@ -1553,7 +1596,7 @@ export function FinanceiroPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {cobrancasFiltradas.length ? cobrancasFiltradas.map((item) => {
+                    {cobrancasOrdenadas.length ? cobrancasOrdenadas.map((item) => {
                       const linha = recebiveisGrid[item.id] || recebivelParaForm(item);
                       const historico = item.historicoCobranca || [];
                       return (
