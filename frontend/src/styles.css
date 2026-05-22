@@ -4526,7 +4526,8 @@ textarea::placeholder {
 }
 
 .finance-receivables-grid input,
-.finance-receivables-grid select {
+.finance-receivables-grid select,
+.finance-receivables-grid textarea {
   width: 100%;
   min-height: 34px;
   border-radius: 10px;
@@ -4534,6 +4535,11 @@ textarea::placeholder {
   background: #fff;
   padding: 6px 10px;
   font: inherit;
+}
+
+.finance-receivables-grid textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .finance-receivables-patient-cell,
@@ -4557,6 +4563,103 @@ textarea::placeholder {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.finance-collections-grid {
+  min-width: 1980px;
+}
+
+.finance-collections-grid th:nth-child(1),
+.finance-collections-grid td:nth-child(1) {
+  min-width: 260px;
+  width: 260px;
+}
+
+.finance-collections-grid th:nth-child(2),
+.finance-collections-grid td:nth-child(2) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-collections-grid th:nth-child(3),
+.finance-collections-grid td:nth-child(3) {
+  min-width: 90px;
+  width: 90px;
+}
+
+.finance-collections-grid th:nth-child(4),
+.finance-collections-grid td:nth-child(4) {
+  min-width: 160px;
+  width: 160px;
+}
+
+.finance-collections-grid th:nth-child(5),
+.finance-collections-grid td:nth-child(5) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-collections-grid th:nth-child(6),
+.finance-collections-grid td:nth-child(6) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-collections-grid th:nth-child(7),
+.finance-collections-grid td:nth-child(7) {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-collections-grid th:nth-child(8),
+.finance-collections-grid td:nth-child(8) {
+  min-width: 280px;
+  width: 280px;
+}
+
+.finance-collections-grid th:nth-child(9),
+.finance-collections-grid td:nth-child(9) {
+  min-width: 430px;
+  width: 430px;
+}
+
+.finance-collections-grid th:nth-child(10),
+.finance-collections-grid td:nth-child(10) {
+  min-width: 150px;
+  width: 150px;
+}
+
+.finance-collections-patient {
+  display: grid;
+  gap: 4px;
+}
+
+.finance-collections-patient strong {
+  color: var(--text);
+}
+
+.finance-collections-patient span,
+.finance-collections-empty {
+  color: var(--muted);
+}
+
+.finance-collections-check {
+  justify-content: center;
+}
+
+.finance-collections-textarea {
+  min-height: 104px;
+}
+
+.finance-collections-history {
+  max-height: 180px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.finance-collections-actions {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .finance-check-row {

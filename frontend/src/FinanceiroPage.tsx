@@ -35,7 +35,7 @@ import {
   urlExportarCaixaExcel
 } from "./pacientesApi";
 
-type AbaFinanceiro = "caixa" | "recebiveis" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais";
+type AbaFinanceiro = "caixa" | "recebiveis" | "cobrancas" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais";
 
 type RecebivelForm = {
   id: number;
@@ -47,6 +47,8 @@ type RecebivelForm = {
   status: string;
   dataPagamento: string;
   observacao: string;
+  cobrancaRealizada: boolean;
+  observacaoCobranca: string;
 };
 
 type ContaPagarForm = {
@@ -272,7 +274,9 @@ function recebivelParaForm(item: RecebivelResumoApi): RecebivelForm {
     formaPagamento: item.formaPagamento || "PIX",
     status: item.status || "Aberto",
     dataPagamento: dataBrParaIso(item.dataPagamento),
-    observacao: item.observacao || ""
+    observacao: item.observacao || "",
+    cobrancaRealizada: false,
+    observacaoCobranca: ""
   };
 }
 
@@ -441,6 +445,10 @@ export function FinanceiroPage() {
   );
 
   const recebivelSelecionado = recebiveisSelecionadosDetalhe[0] || null;
+  const recebivelSelecionadoHistorico = useMemo(
+    () => recebiveis.find((item) => item.id === recebivelSelecionadoId) || null,
+    [recebivelSelecionadoId, recebiveis]
+  );
 
   const recebiveisFiltrados = useMemo(() => {
     const termo = buscaRecebivel.trim().toLowerCase();
@@ -460,6 +468,21 @@ export function FinanceiroPage() {
       return String(a.vencimento || "").localeCompare(String(b.vencimento || ""), "pt-BR");
     });
   }, [recebiveis, buscaRecebivel, filtroStatusRecebivel, filtroFormaRecebivel, filtroVencimentoRecebivelInicio, filtroVencimentoRecebivelFim]);
+
+  const cobrancasFiltradas = useMemo(
+    () => recebiveisFiltrados.filter((item) => ["Aberto", "Atrasado"].includes(item.status || "")),
+    [recebiveisFiltrados]
+  );
+
+  const totalCobrancas = useMemo(
+    () => cobrancasFiltradas.reduce((total, item) => total + moedaParaNumero(item.valor), 0),
+    [cobrancasFiltradas]
+  );
+
+  const totalPacientesCobranca = useMemo(
+    () => new Set(cobrancasFiltradas.map((item) => item.pacienteNome || "")).size,
+    [cobrancasFiltradas]
+  );
 
   const contasPagarFiltradas = useMemo(() => {
     return contasPagar.filter((item) => {
@@ -678,7 +701,9 @@ export function FinanceiroPage() {
       forma_pagamento: recebivelForm.formaPagamento,
       status: recebivelForm.status,
       data_pagamento: recebivelForm.dataPagamento,
-      observacao: recebivelForm.observacao
+      observacao: recebivelForm.observacao,
+      cobranca_realizada: recebivelForm.cobrancaRealizada,
+      observacao_cobranca: recebivelForm.observacaoCobranca
     };
     try {
       await atualizarRecebivelPacienteApi(item.pacienteId, item.id, payload);
@@ -690,7 +715,7 @@ export function FinanceiroPage() {
     }
   }
 
-  function atualizarRecebivelGrid(recebivelId: number, campo: keyof RecebivelForm, valor: string) {
+  function atualizarRecebivelGrid(recebivelId: number, campo: keyof RecebivelForm, valor: string | boolean) {
     setRecebiveisGrid((atual) => {
       const base = atual[recebivelId] || recebivelParaForm(recebiveis.find((item) => item.id === recebivelId) || { id: recebivelId, valor: "0,00" });
       return {
@@ -718,7 +743,9 @@ export function FinanceiroPage() {
         forma_pagamento: formLinha.formaPagamento,
         status: formLinha.status,
         data_pagamento: formLinha.dataPagamento,
-        observacao: formLinha.observacao
+        observacao: formLinha.observacao,
+        cobranca_realizada: formLinha.cobrancaRealizada,
+        observacao_cobranca: formLinha.observacaoCobranca
       });
       await carregarPainel();
     } catch (error) {
@@ -732,6 +759,13 @@ export function FinanceiroPage() {
     setBuscaRecebivel("");
     setFiltroStatusRecebivel("");
     setFiltroFormaRecebivel("");
+    setFiltroVencimentoRecebivelInicio("");
+    setFiltroVencimentoRecebivelFim("");
+  }
+
+  function limparFiltrosCobrancas() {
+    setBuscaRecebivel("");
+    setFiltroStatusRecebivel("");
     setFiltroVencimentoRecebivelInicio("");
     setFiltroVencimentoRecebivelFim("");
   }
@@ -949,6 +983,7 @@ export function FinanceiroPage() {
         <div className="finance-tabs">
           <button type="button" className={aba === "caixa" ? "active" : ""} onClick={() => setAba("caixa")}>Caixa</button>
           <button type="button" className={aba === "recebiveis" ? "active" : ""} onClick={() => setAba("recebiveis")}>Recebíveis</button>
+          <button type="button" className={aba === "cobrancas" ? "active" : ""} onClick={() => setAba("cobrancas")}>Cobranças</button>
           <button type="button" className={aba === "individual" ? "active" : ""} onClick={() => setAba("individual")}>Editar individual</button>
           <button type="button" className={aba === "lote" ? "active" : ""} onClick={() => setAba("lote")}>Editar lote</button>
           <button type="button" className={aba === "pagar" ? "active" : ""} onClick={() => setAba("pagar")}>Contas a pagar</button>
@@ -1459,6 +1494,153 @@ export function FinanceiroPage() {
           </div>
         ) : null}
 
+        {!carregando && aba === "cobrancas" ? (
+          <div className="finance-legacy-grid">
+            <article className="panel finance-form-panel finance-span-all">
+              <span className="panel-kicker">Cobranças</span>
+              <div className="finance-form-grid">
+                <label className="finance-span-2">
+                  <span>Pesquisar devedor</span>
+                  <input
+                    type="text"
+                    placeholder="Nome, prontuário, parcela ou vencimento"
+                    value={buscaRecebivel}
+                    onChange={(e) => setBuscaRecebivel(e.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select value={filtroStatusRecebivel} onChange={(e) => setFiltroStatusRecebivel(e.target.value)}>
+                    <option value="">Todos</option>
+                    <option value="Atrasado">Atrasado</option>
+                    <option value="Aberto">Em aberto</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Vencimento de</span>
+                  <input type="date" value={filtroVencimentoRecebivelInicio} onChange={(e) => setFiltroVencimentoRecebivelInicio(e.target.value)} />
+                </label>
+                <label>
+                  <span>Vencimento até</span>
+                  <input type="date" value={filtroVencimentoRecebivelFim} onChange={(e) => setFiltroVencimentoRecebivelFim(e.target.value)} />
+                </label>
+              </div>
+              <div className="finance-form-actions">
+                <button type="button" className="ghost-action" onClick={limparFiltrosCobrancas}>Limpar filtros</button>
+              </div>
+            </article>
+
+            <article className="panel finance-form-panel"><span>Total devedor</span><strong>{`R$ ${totalCobrancas.toFixed(2).replace(".", ",")}`}</strong></article>
+            <article className="panel finance-form-panel"><span>Parcelas devedoras</span><strong>{String(cobrancasFiltradas.length)}</strong></article>
+            <article className="panel finance-form-panel"><span>Pacientes devedores</span><strong>{String(totalPacientesCobranca)}</strong></article>
+
+            <article className="panel finance-module-list finance-span-all">
+              <span className="panel-kicker">Lista de cobranças</span>
+              <div className="finance-receivables-grid-shell finance-collections-grid-shell">
+                <table className="finance-receivables-grid finance-collections-grid">
+                  <thead>
+                    <tr>
+                      <th>Paciente</th>
+                      <th>Prontuário</th>
+                      <th>Parcela</th>
+                      <th>Vencimento</th>
+                      <th>Valor</th>
+                      <th>Status</th>
+                      <th>Cobrei agora</th>
+                      <th>Nova observação</th>
+                      <th>Histórico</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cobrancasFiltradas.length ? cobrancasFiltradas.map((item) => {
+                      const linha = recebiveisGrid[item.id] || recebivelParaForm(item);
+                      const historico = item.historicoCobranca || [];
+                      return (
+                        <tr key={item.id}>
+                          <td className="finance-receivables-patient-cell">
+                            <div className="finance-collections-patient">
+                              <strong>{linha.pacienteNome || item.pacienteNome || "Paciente"}</strong>
+                              <span>{item.formaPagamento || "-"}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="finance-grid-static-cell">{linha.prontuario || "-"}</span>
+                          </td>
+                          <td>
+                            <span className="finance-grid-static-cell">{labelParcela(item.parcela)}</span>
+                          </td>
+                          <td>
+                            <input type="date" value={linha.vencimento} onChange={(e) => atualizarRecebivelGrid(item.id, "vencimento", e.target.value)} />
+                          </td>
+                          <td>
+                            <input type="text" value={linha.valor} onChange={(e) => atualizarRecebivelGrid(item.id, "valor", e.target.value)} />
+                          </td>
+                          <td>
+                            <select value={linha.status} onChange={(e) => atualizarRecebivelGrid(item.id, "status", e.target.value)}>
+                              <option value="Atrasado">Atrasado</option>
+                              <option value="Aberto">Aberto</option>
+                              <option value="Pago">Pago</option>
+                              <option value="Suspenso">Suspenso</option>
+                              <option value="Cancelado">Cancelado</option>
+                            </select>
+                          </td>
+                          <td>
+                            <label className="finance-check-row finance-collections-check">
+                              <input
+                                type="checkbox"
+                                checked={linha.cobrancaRealizada}
+                                onChange={(e) => atualizarRecebivelGrid(item.id, "cobrancaRealizada", e.target.checked)}
+                              />
+                              <span>Sim</span>
+                            </label>
+                          </td>
+                          <td>
+                            <textarea
+                              rows={4}
+                              className="finance-collections-textarea"
+                              placeholder="Ex.: liguei, não atendeu, pediu retorno sexta..."
+                              value={linha.observacaoCobranca}
+                              onChange={(e) => atualizarRecebivelGrid(item.id, "observacaoCobranca", e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <div className="finance-history-list finance-collections-history">
+                              {historico.length ? historico.map((registro) => (
+                                <div key={registro.id} className="finance-history-item">
+                                  <strong>{registro.criadoEm || "Sem data"} · {registro.criadoPor || "-"}</strong>
+                                  <span>{registro.status || (registro.cobrado ? "Cobrado" : "Contato")}</span>
+                                  <span>{registro.observacao || "-"}</span>
+                                </div>
+                              )) : <span className="finance-collections-empty">Sem histórico ainda.</span>}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="finance-grid-actions finance-collections-actions">
+                              <button type="button" className="ghost-action compact" onClick={() => { setRecebivelSelecionadoId(item.id); setAba("individual"); }}>
+                                Abrir
+                              </button>
+                              <button type="button" className="primary-action compact" disabled={salvando} onClick={() => void salvarRecebivelLinha(item.id)}>
+                                Salvar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={10}>
+                          <div className="empty-inline">Nenhum devedor encontrado.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        ) : null}
+
         {!carregando && aba === "individual" ? (
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
@@ -1484,6 +1666,36 @@ export function FinanceiroPage() {
                   <label><span>Status</span><select value={recebivelForm.status} onChange={(e) => setRecebivelForm((a) => a ? { ...a, status: e.target.value } : a)}>{STATUS_RECEBIVEIS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Data do pagamento</span><input type="date" value={recebivelForm.dataPagamento} onChange={(e) => setRecebivelForm((a) => a ? { ...a, dataPagamento: e.target.value } : a)} /></label>
                   <label className="finance-span-2"><span>Observação</span><textarea rows={3} value={recebivelForm.observacao} onChange={(e) => setRecebivelForm((a) => a ? { ...a, observacao: e.target.value } : a)} /></label>
+                  <label className="finance-check-row finance-span-2">
+                    <input
+                      type="checkbox"
+                      checked={recebivelForm.cobrancaRealizada}
+                      onChange={(e) => setRecebivelForm((a) => a ? { ...a, cobrancaRealizada: e.target.checked } : a)}
+                    />
+                    <span>Marcar que cobrei este recebível agora</span>
+                  </label>
+                  <label className="finance-span-2">
+                    <span>Nova observação de cobrança</span>
+                    <textarea
+                      rows={3}
+                      placeholder="Ex.: cobrei por WhatsApp, prometeu pagar sexta, não atendeu..."
+                      value={recebivelForm.observacaoCobranca}
+                      onChange={(e) => setRecebivelForm((a) => a ? { ...a, observacaoCobranca: e.target.value } : a)}
+                    />
+                  </label>
+                  <div className="finance-span-2 finance-history-shell">
+                    <strong>Histórico de cobranças</strong>
+                    <div className="finance-history-list">
+                      {(recebivelSelecionadoHistorico?.historicoCobranca || []).map((registro) => (
+                        <div key={registro.id} className="finance-history-item">
+                          <strong>{registro.criadoEm || "Sem data"} · {registro.criadoPor || "-"}</strong>
+                          <span>{registro.status || (registro.cobrado ? "Cobrado" : "Contato")}</span>
+                          <span>{registro.observacao || "-"}</span>
+                        </div>
+                      ))}
+                      {!recebivelSelecionadoHistorico?.historicoCobranca?.length ? <span>Sem histórico ainda.</span> : null}
+                    </div>
+                  </div>
                   <div className="finance-form-actions finance-span-2">
                     <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarRecebivelIndividual()}>Salvar alterações do recebível</button>
                   </div>
