@@ -3564,6 +3564,23 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         for row in recebiveis_rows
         if normalizar_texto(row["status"]) in {"aberto", "atrasado"}
     ]
+    devedores_resumo_por_paciente: dict[str, sqlite3.Row] = {}
+    for row in devedores_resumo_rows:
+        paciente_id = crm_int(row["paciente_id"], 0)
+        nome = str(row["paciente_nome"] or "Paciente não informado").strip() or "Paciente não informado"
+        chave = f"id:{paciente_id}" if paciente_id > 0 else f"nome:{normalizar_texto(nome)}"
+        atual = devedores_resumo_por_paciente.get(chave)
+        if atual is None:
+            devedores_resumo_por_paciente[chave] = row
+            continue
+        status_atual = normalizar_texto(atual["status"])
+        status_novo = normalizar_texto(row["status"])
+        vencimento_atual = parse_data_contrato(atual["vencimento"]) or date.max
+        vencimento_novo = parse_data_contrato(row["vencimento"]) or date.max
+        prioridade_atual = 0 if status_atual == "atrasado" else 1
+        prioridade_nova = 0 if status_novo == "atrasado" else 1
+        if (prioridade_nova, vencimento_novo, int(row["id"] or 0)) < (prioridade_atual, vencimento_atual, int(atual["id"] or 0)):
+            devedores_resumo_por_paciente[chave] = row
     devedores_resumo = [
         DashboardDevedorResumoItemResposta(
             recebivelId=int(row["id"] or 0),
@@ -3575,7 +3592,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             status=str(row["status"] or "").strip(),
         )
         for row in sorted(
-            devedores_resumo_rows,
+            devedores_resumo_por_paciente.values(),
             key=lambda item: (
                 str(item["paciente_nome"] or "").strip().lower(),
                 parse_data_contrato(item["vencimento"]) or date.max,
@@ -7937,7 +7954,11 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
     conn = conectar()
     try:
         existente = carregar_paciente_por_id(conn, paciente_id)
-        prontuario = formatar_prontuario_valor(payload.prontuario) or formatar_prontuario_valor(existente["prontuario"])
+        prontuario = (
+            formatar_prontuario_valor(payload.prontuario)
+            or formatar_prontuario_valor(existente["prontuario"])
+            or proximo_prontuario(conn)
+        )
         erros = validar_dados_paciente(
             payload.nome,
             prontuario,
