@@ -597,6 +597,20 @@ function mapPacienteParaForm(paciente?: PacienteDetalheApi | null): PacienteForm
   };
 }
 
+function mapPacienteDetalheParaResumo(paciente: PacienteDetalheApi): PacienteResumoApi {
+  return {
+    id: paciente.id,
+    nome: paciente.nome || "",
+    apelido: paciente.apelido || "",
+    prontuario: paciente.prontuario || "",
+    cpf: paciente.cpf || "",
+    telefone: paciente.telefone || "",
+    email: paciente.email || "",
+    dataNascimento: paciente.dataNascimento || "",
+    fotoUrl: paciente.fotoUrl || ""
+  };
+}
+
 function mapFormParaPayload(form: PacienteForm): PacienteApiPayload {
   return {
     nome: form.nome.trim(),
@@ -1140,7 +1154,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   useEffect(() => {
     carregarLista();
-  }, [busca, pacienteAtivoId]);
+  }, [busca]);
 
   useEffect(() => {
     let ativo = true;
@@ -1386,6 +1400,18 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       const atualizado = await atualizarPacienteApi(pacienteAtivoId, mapFormParaPayload(editForm));
       setEditForm(mapPacienteParaForm(atualizado));
       setFicha((atual) => (atual ? { ...atual, paciente: atualizado } : atual));
+      setPacientes((atual) => {
+        const resumoAtualizado = mapPacienteDetalheParaResumo(atualizado);
+        const indice = atual.findIndex((item) => item.id === atualizado.id);
+        if (indice >= 0) {
+          const proximo = [...atual];
+          proximo[indice] = resumoAtualizado;
+          return proximo;
+        }
+        return busca.trim()
+          ? [resumoAtualizado, ...atual]
+          : atual;
+      });
       if (agendarAvaliacao) {
         await agendarAvaliacaoCrmPaciente(
           pacienteAtivoId,
