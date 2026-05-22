@@ -1,6 +1,6 @@
 ﻿import { LogOut, Menu, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import logoUrl from "../../assets/sou sul marca preta fundo.png";
+import logoUrl from "./assets/logo-soul-sul.png";
 import { carregarUsuarioSessao, salvarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { AgendaPage } from "./AgendaPage";
 import { CRMPage } from "./CRMPage";
