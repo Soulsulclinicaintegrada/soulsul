@@ -126,6 +126,12 @@ function formatarDataDetalhada(dataIso?: string) {
   return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 }
 
+function extrairMesDataBr(dataBr?: string) {
+  const match = String(dataBr || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return 0;
+  return Number(match[2] || 0);
+}
+
 type FunilProps = {
   titulo: string;
   subtitulo: string;
@@ -379,7 +385,19 @@ function VendasMensaisCard({ meses, serie }: { meses: string[]; serie: number[] 
   );
 }
 
-function VendasResumoCard({ itens }: { itens: DashboardVendaResumoItemApi[] }) {
+function VendasResumoCard({
+  itens,
+  meses,
+  mesSelecionado,
+  onSelecionarMes
+}: {
+  itens: DashboardVendaResumoItemApi[];
+  meses: string[];
+  mesSelecionado: number;
+  onSelecionarMes: (mes: number) => void;
+}) {
+  const itensFiltrados = itens.filter((item) => extrairMesDataBr(item.data) === mesSelecionado);
+  const nomeMes = meses[mesSelecionado - 1] || "";
   return (
     <article className="panel summary-panel">
       <div className="section-title-row">
@@ -387,10 +405,22 @@ function VendasResumoCard({ itens }: { itens: DashboardVendaResumoItemApi[] }) {
           <span className="panel-kicker">Financeiro</span>
           <h2>Vendas do mês</h2>
         </div>
-        <span className="panel-meta">{`${itens.length} contrato(s)`}</span>
+        <span className="panel-meta">{`${itensFiltrados.length} contrato(s)`}</span>
+      </div>
+      <div className="finance-form-grid">
+        <label>
+          <span>Mês</span>
+          <select value={mesSelecionado} onChange={(event) => onSelecionarMes(Number(event.target.value) || 1)}>
+            {meses.map((mes, indice) => (
+              <option key={`${mes}-${indice + 1}`} value={indice + 1}>
+                {mes}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="module-sublist">
-        {itens.length ? itens.map((item) => (
+        {itensFiltrados.length ? itensFiltrados.map((item) => (
           <div className="module-subitem finance-module-subitem" key={`dashboard-venda-resumo-${item.contratoId}`}>
             <div>
               <strong>{item.nome || "Paciente"}</strong>
@@ -416,6 +446,7 @@ export function DashboardPage() {
   const [salvandoMeta, setSalvandoMeta] = useState(false);
   const [pagamentoDiaAtivo, setPagamentoDiaAtivo] = useState<DashboardCalendarioPagamentoItemApi | null>(null);
   const [indicadorAtivo, setIndicadorAtivo] = useState<DashboardIndicadorApi | null>(null);
+  const [mesVendasSelecionado, setMesVendasSelecionado] = useState(new Date().getMonth() + 1);
 
   async function carregar() {
     setCarregando(true);
@@ -554,7 +585,12 @@ export function DashboardPage() {
         </article>
 
         <div className="side-column">
-          <VendasResumoCard itens={painel.vendasResumo || []} />
+          <VendasResumoCard
+            itens={painel.vendasResumo || []}
+            meses={painel.meses || DASHBOARD_VAZIO.meses}
+            mesSelecionado={mesVendasSelecionado}
+            onSelecionarMes={setMesVendasSelecionado}
+          />
           <DevedoresResumoCard itens={painel.devedoresResumo || []} />
           <article className="panel summary-panel">
             <div className="section-title-row">

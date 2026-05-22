@@ -3468,6 +3468,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         vendas_mes_rows.append(row)
 
     detalhes_vendas_mes: list[DashboardIndicadorDetalheItemResposta] = []
+    vendas_resumo_mes: list[DashboardVendaResumoItemResposta] = []
     vendas_resumo: list[DashboardVendaResumoItemResposta] = []
     for row in sorted(
         vendas_mes_rows,
@@ -3491,6 +3492,37 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 status=str(row["status"] or ""),
             )
         )
+        vendas_resumo_mes.append(
+            DashboardVendaResumoItemResposta(
+                contratoId=contrato_id,
+                pacienteId=paciente_id if paciente_id > 0 else None,
+                nome=(paciente_info or {}).get("nome") or f"Contrato #{contrato_id}",
+                valor=formatar_moeda_br(float(row["valor_total"] or 0)),
+                formaPagamento=forma_pagamento,
+                data=formatar_data_br(data_ref),
+            )
+        )
+
+    vendas_ano_rows = []
+    for row in contratos_rows:
+        status = normalizar_texto(row["status"])
+        if status not in {"aprovado", "aprovada", "convertido"}:
+            continue
+        data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
+        if not data_ref or data_ref.year != ano_atual:
+            continue
+        vendas_ano_rows.append(row)
+
+    for row in sorted(
+        vendas_ano_rows,
+        key=lambda item: parse_data_contrato(str(item["data_aprovacao"] or "")) or parse_data_contrato(str(item["data_criacao"] or "")) or date.min,
+        reverse=True,
+    ):
+        data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
+        paciente_id = crm_int(row["paciente_id"])
+        contrato_id = crm_int(row["id"])
+        paciente_info = pacientes_nome_map.get(paciente_id) if paciente_id > 0 else None
+        forma_pagamento = str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento"
         vendas_resumo.append(
             DashboardVendaResumoItemResposta(
                 contratoId=contrato_id,
