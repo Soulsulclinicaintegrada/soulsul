@@ -2368,6 +2368,61 @@ textarea::placeholder {
   padding: 18px;
 }
 
+.budget-history-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.budget-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.budget-history-list {
+  display: grid;
+  gap: 10px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.budget-history-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(188, 145, 85, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 253, 250, 0.9);
+}
+
+.budget-history-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.budget-history-item-top strong {
+  color: var(--text);
+}
+
+.budget-history-item-top span,
+.budget-history-item-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.budget-history-item p {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
 .commercial-contract-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4504,6 +4559,47 @@ textarea::placeholder {
   align-items: center;
 }
 
+.finance-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+}
+
+.finance-check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  flex: 0 0 auto;
+}
+
+.finance-history-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.finance-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.finance-history-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(199, 170, 120, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 253, 249, 0.78);
+}
+
+.finance-history-item strong {
+  color: var(--text);
+}
+
+.finance-history-item span {
+  color: var(--muted);
+}
+
 .agenda-event-card {
   position: absolute;
   left: 2px;
@@ -6571,7 +6667,8 @@ textarea::placeholder {
 }
 
 .crm-rescue-grid {
-  min-width: 1680px;
+  min-width: 2940px;
+  table-layout: fixed;
 }
 
 .crm-rescue-grid-shell::-webkit-scrollbar {
@@ -6597,12 +6694,19 @@ textarea::placeholder {
 .crm-rescue-grid textarea {
   min-height: 72px;
   resize: vertical;
+  width: 100%;
 }
 
 .crm-rescue-grid td select,
 .crm-rescue-grid td input,
 .crm-rescue-grid td textarea {
-  min-width: 160px;
+  min-width: 0;
+  width: 100%;
+}
+
+.crm-rescue-grid th,
+.crm-rescue-grid td {
+  vertical-align: top;
 }
 
 .crm-rescue-status-cell {
@@ -6646,6 +6750,11 @@ textarea::placeholder {
 .crm-rescue-text-cell {
   min-width: 220px;
   white-space: normal;
+  word-break: break-word;
+}
+
+.crm-rescue-history-cell {
+  min-width: 340px;
 }
 
 .crm-rescue-history-item {
@@ -6653,6 +6762,8 @@ textarea::placeholder {
   border: 1px solid rgba(199, 170, 120, 0.16);
   border-radius: 12px;
   background: rgba(247, 241, 232, 0.7);
+  white-space: normal;
+  word-break: break-word;
 }
 
 .crm-rescue-history-item + .crm-rescue-history-item {
@@ -6667,6 +6778,68 @@ textarea::placeholder {
 .crm-inline-actions-column {
   flex-direction: column;
   align-items: stretch;
+  min-width: 90px;
+}
+
+.budget-crm-shortcut {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(188, 145, 85, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 253, 250, 0.9);
+}
+
+.budget-crm-shortcut-head {
+  display: grid;
+  gap: 4px;
+}
+
+.budget-crm-shortcut-head span,
+.budget-crm-last-touch span,
+.budget-crm-history-item span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.budget-crm-shortcut-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.budget-crm-last-touch {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(247, 241, 232, 0.8);
+}
+
+.budget-crm-history-list {
+  display: grid;
+  gap: 10px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.budget-crm-history-item {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid rgba(199, 170, 120, 0.16);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.budget-crm-history-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.budget-crm-history-item p {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .crm-field-wide {

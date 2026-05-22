@@ -305,6 +305,19 @@ def garantir_colunas_pacientes_api() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS orcamentos_historico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contrato_id INTEGER NOT NULL,
+                paciente_id INTEGER NOT NULL,
+                tipo TEXT,
+                observacao TEXT,
+                criado_por TEXT,
+                criado_em TEXT
+            )
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_prontuario ON pacientes(prontuario)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_cpf ON pacientes(cpf)")
@@ -314,6 +327,7 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_recebiveis_historico_recebivel_id ON recebiveis_historico(recebivel_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_orcamentos_historico_contrato_id ON orcamentos_historico(contrato_id)")
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
         garantir_coluna(conn, "financeiro", "conta_caixa TEXT")
         garantir_coluna(conn, "contas_pagar", "categoria TEXT")
@@ -1063,6 +1077,7 @@ class OrcamentoPacientePayload(BaseModel):
     criado_por: str = ""
     data: str = ""
     observacoes: str = ""
+    nova_observacao: str = ""
     tabela: str = ""
     desconto_percentual: float = 0
     desconto_valor: float = 0
@@ -1084,6 +1099,14 @@ class OrcamentoStatusPayload(BaseModel):
     aprovado_por: str = ""
 
 
+class OrcamentoHistoricoItemResposta(BaseModel):
+    id: int
+    tipo: str = ""
+    observacao: str = ""
+    criadoPor: str = ""
+    criadoEm: str = ""
+
+
 class OrcamentoDetalheResposta(BaseModel):
     contrato_id: int
     status: str = "EM_ABERTO"
@@ -1103,6 +1126,12 @@ class OrcamentoDetalheResposta(BaseModel):
     entrada: bool = False
     planoPagamento: list[ParcelaPagamentoPayload] = Field(default_factory=list)
     itens: list[OrcamentoItemPayload] = Field(default_factory=list)
+    historico: list[OrcamentoHistoricoItemResposta] = Field(default_factory=list)
+    crmStatus: str = ""
+    crmObservacaoContato: str = ""
+    crmUltimoContatoEm: str = ""
+    crmUltimoContatoPor: str = ""
+    crmHistorico: list[CrmResgateHistoricoItemResposta] = Field(default_factory=list)
 
 
 class ProcedimentoResumoResposta(BaseModel):
@@ -2494,6 +2523,8 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         for item in plano_pagamento_bruto
         if isinstance(item, dict)
     ]
+    historico = carregar_historico_orcamento(conn, [contrato_id]).get(contrato_id, [])
+    crm_historico = carregar_historico_resgate_por_contrato(conn, contrato_id)
 
     return OrcamentoDetalheResposta(
         contrato_id=contrato_id,
@@ -2514,7 +2545,154 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         entrada=float(contrato["entrada"] or 0) > 0,
         planoPagamento=plano_pagamento,
         itens=itens,
+        historico=historico,
+        crmStatus=normalizar_status_resgate(contrato["crm_status"]),
+        crmObservacaoContato=str(contrato["crm_observacao_contato"] or ""),
+        crmUltimoContatoEm=formatar_data_hora_relatorio(contrato["crm_ultimo_contato_em"]),
+        crmUltimoContatoPor=str(contrato["crm_ultimo_contato_por"] or ""),
+        crmHistorico=crm_historico,
     )
+
+
+def carregar_historico_orcamento(
+    conn: sqlite3.Connection,
+    contrato_ids: list[int],
+) -> dict[int, list[OrcamentoHistoricoItemResposta]]:
+    ids = sorted({int(contrato_id) for contrato_id in contrato_ids if int(contrato_id or 0) > 0})
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, contrato_id, COALESCE(tipo, '') AS tipo, COALESCE(observacao, '') AS observacao,
+               COALESCE(criado_por, '') AS criado_por, COALESCE(criado_em, '') AS criado_em
+        FROM orcamentos_historico
+        WHERE contrato_id IN ({placeholders})
+        ORDER BY datetime(COALESCE(criado_em, '')) DESC, id DESC
+        """,
+        ids,
+    ).fetchall()
+    historico: dict[int, list[OrcamentoHistoricoItemResposta]] = {contrato_id: [] for contrato_id in ids}
+    for row in rows:
+        contrato_id = int(row["contrato_id"] or 0)
+        historico.setdefault(contrato_id, []).append(
+            OrcamentoHistoricoItemResposta(
+                id=int(row["id"] or 0),
+                tipo=str(row["tipo"] or ""),
+                observacao=str(row["observacao"] or ""),
+                criadoPor=str(row["criado_por"] or ""),
+                criadoEm=str(row["criado_em"] or ""),
+            )
+        )
+    return historico
+
+
+def carregar_historico_resgate_por_contrato(
+    conn: sqlite3.Connection,
+    contrato_id: int,
+) -> list[CrmResgateHistoricoItemResposta]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM crm_contatos_historico
+        WHERE contrato_id=?
+        ORDER BY criado_em DESC, id DESC
+        """,
+        (int(contrato_id),),
+    ).fetchall()
+    return [
+        CrmResgateHistoricoItemResposta(
+            id=crm_int(row["id"], 0),
+            status=str(row["status"] or ""),
+            observacao=str(row["observacao"] or ""),
+            proximoContato=formatar_data_br_valor(row["proximo_contato"]),
+            criadoPor=str(row["criado_por"] or ""),
+            criadoEm=formatar_data_hora_relatorio(row["criado_em"]),
+            automatico=crm_bool(row["automatico"]),
+        )
+        for row in rows
+    ]
+
+
+def registrar_historico_orcamento(
+    conn: sqlite3.Connection,
+    paciente_id: int,
+    contrato_id: int,
+    tipo: str,
+    observacao: str,
+    criado_por: str,
+) -> None:
+    texto = str(observacao or "").strip()
+    if not texto:
+        return
+    conn.execute(
+        """
+        INSERT INTO orcamentos_historico (
+            contrato_id, paciente_id, tipo, observacao, criado_por, criado_em
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(contrato_id),
+            int(paciente_id),
+            str(tipo or "").strip().upper() or "OBSERVACAO",
+            texto,
+            str(criado_por or "").strip(),
+            agora_str(),
+        ),
+    )
+
+
+def assinatura_orcamento_atual(conn: sqlite3.Connection, contrato_id: int) -> str:
+    procedimentos_rows = conn.execute(
+        """
+        SELECT COALESCE(procedimento, '') AS procedimento,
+               COALESCE(valor, 0) AS valor,
+               COALESCE(profissional_snapshot, '') AS profissional,
+               COALESCE(denticao_snapshot, '') AS denticao
+        FROM procedimentos_contrato
+        WHERE contrato_id=?
+        ORDER BY id
+        """,
+        (contrato_id,),
+    ).fetchall()
+    regioes_rows = conn.execute(
+        """
+        SELECT COALESCE(grupo_item, 0) AS grupo_item,
+               COALESCE(regiao, '') AS regiao,
+               COALESCE(dente, '') AS dente,
+               COALESCE(status, '') AS status,
+               COALESCE(faces, '') AS faces,
+               COALESCE(valor, 0) AS valor
+        FROM procedimentos_dente
+        WHERE contrato_id=?
+        ORDER BY grupo_item, id
+        """,
+        (contrato_id,),
+    ).fetchall()
+    assinatura = {
+        "procedimentos": [
+            {
+                "procedimento": str(row["procedimento"] or ""),
+                "valor": float(row["valor"] or 0),
+                "profissional": str(row["profissional"] or ""),
+                "denticao": str(row["denticao"] or ""),
+            }
+            for row in procedimentos_rows
+        ],
+        "regioes": [
+            {
+                "grupo_item": int(row["grupo_item"] or 0),
+                "regiao": str(row["regiao"] or ""),
+                "dente": str(row["dente"] or ""),
+                "status": str(row["status"] or ""),
+                "faces": str(row["faces"] or ""),
+                "valor": float(row["valor"] or 0),
+            }
+            for row in regioes_rows
+        ],
+    }
+    return json.dumps(assinatura, ensure_ascii=False, sort_keys=True)
 
 
 def salvar_orcamento_paciente(
@@ -7823,6 +8001,15 @@ def criar_orcamento_paciente(paciente_id: int, payload: OrcamentoPacientePayload
         carregar_paciente_por_id(conn, paciente_id)
         crm = upsert_crm_origem(conn, int(paciente_id), usuario=usuario_request(request))
         contrato_id = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload)
+        if payload.nova_observacao.strip():
+            registrar_historico_orcamento(
+                conn,
+                paciente_id=int(paciente_id),
+                contrato_id=contrato_id,
+                tipo="OBSERVACAO",
+                observacao=payload.nova_observacao.strip(),
+                criado_por=usuario_request(request),
+            )
         data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
         atualizar_snapshot_resgate_contrato(
             conn,
@@ -7864,9 +8051,56 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
     try:
         carregar_paciente_por_id(conn, paciente_id)
         crm = upsert_crm_origem(conn, int(paciente_id), usuario=usuario_request(request))
+        contrato_anterior = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
+        assinatura_anterior = assinatura_orcamento_atual(conn, contrato_id) if contrato_anterior is not None else ""
+        valor_bruto_novo = sum(
+            sum(float(regiao.valor or 0) for regiao in item.regioes if regiao.ativo)
+            for item in payload.itens
+        )
+        valor_total_novo = max(
+            0.0,
+            valor_bruto_novo
+            - (valor_bruto_novo * max(0.0, float(payload.desconto_percentual or 0)) / 100.0)
+            - max(0.0, float(payload.desconto_valor or 0)),
+        )
         contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
         data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
         contrato_atual = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id_salvo, paciente_id)).fetchone()
+        assinatura_atual = assinatura_orcamento_atual(conn, contrato_id_salvo) if contrato_atual is not None else ""
+        alteracoes: list[str] = []
+        if contrato_anterior is not None:
+            if str(contrato_anterior["observacoes"] or "").strip() != payload.observacoes.strip():
+                alteracoes.append("observações gerais")
+            if str(contrato_anterior["forma_pagamento"] or "").strip() != str(payload.forma_pagamento or "").strip():
+                alteracoes.append("forma de pagamento")
+            if str(contrato_anterior["data_retorno_crm"] or "").strip() != data_retorno:
+                alteracoes.append("retorno CRM")
+            if str(contrato_anterior["data_criacao"] or "").strip() != str(payload.data or "").strip():
+                alteracoes.append("data do orçamento")
+            if str(contrato_anterior["validade_orcamento"] or "").strip() != str(payload.validade_orcamento or "").strip():
+                alteracoes.append("validade")
+            if round(float(contrato_anterior["valor_total"] or 0), 2) != round(valor_total_novo, 2):
+                alteracoes.append("valor total")
+            if assinatura_anterior != assinatura_atual:
+                alteracoes.append("procedimentos")
+        if alteracoes:
+            registrar_historico_orcamento(
+                conn,
+                paciente_id=int(paciente_id),
+                contrato_id=contrato_id_salvo,
+                tipo="ALTERACAO",
+                observacao=f"Orçamento alterado: {', '.join(alteracoes)}.",
+                criado_por=usuario_request(request),
+            )
+        if payload.nova_observacao.strip():
+            registrar_historico_orcamento(
+                conn,
+                paciente_id=int(paciente_id),
+                contrato_id=contrato_id_salvo,
+                tipo="OBSERVACAO",
+                observacao=payload.nova_observacao.strip(),
+                criado_por=usuario_request(request),
+            )
         status_snapshot = normalizar_status_resgate(contrato_atual["crm_status"]) if contrato_atual is not None else ""
         observacao_snapshot = str(contrato_atual["crm_observacao_contato"] or "") if contrato_atual is not None else ""
         atualizar_snapshot_resgate_contrato(

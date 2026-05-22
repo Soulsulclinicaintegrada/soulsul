@@ -1160,6 +1160,22 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         </div>
         <div className="finance-receivables-grid-shell crm-rescue-grid-shell">
           <table className="finance-receivables-grid crm-rescue-grid">
+            <colgroup>
+              <col style={{ width: "220px" }} />
+              <col style={{ width: "110px" }} />
+              <col style={{ width: "150px" }} />
+              <col style={{ width: "130px" }} />
+              <col style={{ width: "130px" }} />
+              <col style={{ width: "320px" }} />
+              <col style={{ width: "220px" }} />
+              <col style={{ width: "220px" }} />
+              <col style={{ width: "240px" }} />
+              <col style={{ width: "170px" }} />
+              <col style={{ width: "260px" }} />
+              <col style={{ width: "340px" }} />
+              <col style={{ width: "240px" }} />
+              <col style={{ width: "120px" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Paciente</th>
@@ -1217,7 +1233,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                       onChange={(event) => atualizarRascunhoObservacaoResgate(item.contratoId, event.target.value)}
                     />
                   </td>
-                  <td className="crm-rescue-text-cell">
+                  <td className="crm-rescue-text-cell crm-rescue-history-cell">
                     {(item.historico?.length ? item.historico : []).map((registro) => (
                       <div key={registro.id} className="crm-rescue-history-item">
                         <strong>{registro.criadoEm || "Sem data"} Â· {registro.criadoPor || "-"}</strong>

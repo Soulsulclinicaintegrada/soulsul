@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   adicionarPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
+  atualizarCrmResgateApi,
   marcarPacienteCanceladoCrmApi,
   marcarPacienteFinalizadoCrmApi,
   removerPacienteCanceladoCrmApi,
@@ -34,6 +35,8 @@ import {
   atualizarOrcamentoPacienteApi,
   type ArquivoPacienteItemApi,
   type FichaPacienteApi,
+  type CrmResgateHistoricoItemApi,
+  type OrcamentoHistoricoItemApi,
   type PacienteApiPayload,
   type PacienteDetalheApi,
   type PacienteResumoApi,
@@ -184,6 +187,7 @@ const TAXA_CARTAO_CREDITO: Record<number, number> = {
   11: 1,
   12: 1
 };
+const STATUS_RESGATE_ORCAMENTO = ["Em tratativa", "Ligar novamente", "Desistente", "Convertido"] as const;
 
 type ProcedimentoCatalogo = {
   id: number;
@@ -898,6 +902,13 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [orcamentoStatusAtual, setOrcamentoStatusAtual] = useState<"EM_ABERTO" | "APROVADO">("EM_ABERTO");
   const [excluindoOrcamentoId, setExcluindoOrcamentoId] = useState<number | null>(null);
   const [orcamentoDraft, setOrcamentoDraft] = useState<OrcamentoDraft>(() => ORCAMENTO_INICIAL(dataHojeIso()));
+  const [novaObservacaoOrcamento, setNovaObservacaoOrcamento] = useState("");
+  const [historicoOrcamento, setHistoricoOrcamento] = useState<OrcamentoHistoricoItemApi[]>([]);
+  const [crmAtalhoStatus, setCrmAtalhoStatus] = useState<string>("Ligar novamente");
+  const [crmAtalhoObservacao, setCrmAtalhoObservacao] = useState("");
+  const [crmHistoricoOrcamento, setCrmHistoricoOrcamento] = useState<CrmResgateHistoricoItemApi[]>([]);
+  const [crmUltimoContatoResumo, setCrmUltimoContatoResumo] = useState<{ em: string; por: string; observacao: string }>({ em: "", por: "", observacao: "" });
+  const [salvandoCrmAtalho, setSalvandoCrmAtalho] = useState(false);
   const [planoPagamento, setPlanoPagamento] = useState<PlanoPagamento>(() => normalizarPlanoPagamento(null, 0, dataHojeIso()));
   const [planoPagamentoEditor, setPlanoPagamentoEditor] = useState<PlanoPagamento>(() => normalizarPlanoPagamento(null, 0, dataHojeIso()));
   const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
@@ -1704,6 +1715,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   function abrirNovoOrcamento() {
     setOrcamentoDraft(ORCAMENTO_INICIAL(dataHojeIso()));
+    setNovaObservacaoOrcamento("");
+    setHistoricoOrcamento([]);
+    setCrmAtalhoStatus("Ligar novamente");
+    setCrmAtalhoObservacao("");
+    setCrmHistoricoOrcamento([]);
+    setCrmUltimoContatoResumo({ em: "", por: "", observacao: "" });
     setDescontoOrcamento(DESCONTO_INICIAL);
     setDescontoEditor(DESCONTO_INICIAL);
     setPlanoPagamento(normalizarPlanoPagamento(null, 0, dataHojeIso()));
@@ -1735,6 +1752,16 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       regioesSelecionadas: [],
       denticao: DENTICOES[0],
       valorUnitario: ""
+    });
+    setNovaObservacaoOrcamento("");
+    setHistoricoOrcamento(detalhe.historico || []);
+    setCrmAtalhoStatus(detalhe.crmStatus || "Ligar novamente");
+    setCrmAtalhoObservacao("");
+    setCrmHistoricoOrcamento(detalhe.crmHistorico || []);
+    setCrmUltimoContatoResumo({
+      em: detalhe.crmUltimoContatoEm || "",
+      por: detalhe.crmUltimoContatoPor || "",
+      observacao: detalhe.crmObservacaoContato || "",
     });
     setDescontoOrcamento({
       percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
@@ -2232,6 +2259,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         data: orcamentoDraft.data,
         data_retorno_crm: orcamentoDraft.dataRetornoCrm,
         observacoes: orcamentoDraft.observacoes,
+        nova_observacao: novaObservacaoOrcamento,
         tabela: orcamentoDraft.tabela,
         desconto_percentual: descontoPercentualAplicado,
         desconto_valor: descontoValorAplicado,
@@ -2252,10 +2280,41 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       setOrcamentoEditandoId(resposta.contrato_id);
       setOrcamentoStatusAtual((atual) => (orcamentoEditandoId ? atual : "EM_ABERTO"));
       await carregarFicha(pacienteAtivoId);
+      await carregarOrcamentoNoEstado(resposta.contrato_id);
+      setNovaObservacaoOrcamento("");
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao salvar orçamento.");
     } finally {
       setSalvandoOrcamento(false);
+    }
+  }
+
+  async function salvarAtalhoCrmOrcamento() {
+    if (!orcamentoAtivoId) return;
+    const observacao = crmAtalhoObservacao.trim();
+    if (!observacao) {
+      setErro("Escreva a observação do CRM para salvar o retorno deste orçamento.");
+      return;
+    }
+    if (!["desistente", "convertido"].includes(normalizarTextoComparacao(crmAtalhoStatus || "")) && !orcamentoDraft.dataRetornoCrm) {
+      setErro("Informe a data de retorno do CRM para continuar o acompanhamento.");
+      return;
+    }
+    setSalvandoCrmAtalho(true);
+    setErro(null);
+    try {
+      await atualizarCrmResgateApi(orcamentoAtivoId, {
+        status: crmAtalhoStatus || "Ligar novamente",
+        observacao,
+        proximo_contato: ["desistente", "convertido"].includes(normalizarTextoComparacao(crmAtalhoStatus || "")) ? "" : orcamentoDraft.dataRetornoCrm,
+      });
+      await carregarOrcamentoNoEstado(orcamentoAtivoId);
+      setCrmAtalhoObservacao("");
+      setFeedback("CRM do orçamento salvo.");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar o CRM do orçamento.");
+    } finally {
+      setSalvandoCrmAtalho(false);
     }
   }
 
@@ -3277,9 +3336,42 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                               </select>
                             </label>
                             <label className="full">
-                              <span>Observações</span>
+                              <span>Observações gerais</span>
                               <textarea rows={3} value={orcamentoDraft.observacoes} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, observacoes: e.target.value })} />
                             </label>
+                            <label className="full">
+                              <span>Nova observação ou alteração</span>
+                              <textarea
+                                rows={3}
+                                value={novaObservacaoOrcamento}
+                                onChange={(e) => setNovaObservacaoOrcamento(e.target.value)}
+                                placeholder="Ex.: paciente pediu ajuste, alterei procedimento, aguardando retorno..."
+                              />
+                            </label>
+                          </div>
+                          <div className="budget-history-panel">
+                            <div className="budget-history-header">
+                              <strong>Histórico do orçamento</strong>
+                              <span>{historicoOrcamento.length} registro(s)</span>
+                            </div>
+                            {historicoOrcamento.length ? (
+                              <div className="budget-history-list">
+                                {historicoOrcamento.map((item) => (
+                                  <article key={item.id} className="budget-history-item">
+                                    <div className="budget-history-item-top">
+                                      <strong>{item.tipo === "ALTERACAO" ? "Alteração" : "Observação"}</strong>
+                                      <span>{formatarDataHora(item.criadoEm)}</span>
+                                    </div>
+                                    <div className="budget-history-item-meta">
+                                      {item.criadoPor ? `Por ${item.criadoPor}` : "Usuário não informado"}
+                                    </div>
+                                    <p>{item.observacao || "-"}</p>
+                                  </article>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="empty-inline">Nenhuma observação salva neste orçamento.</span>
+                            )}
                           </div>
                         </article>
 
@@ -3288,6 +3380,57 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             <div><span>Status</span><strong>{orcamentoStatusAtual === "APROVADO" ? "Aprovado" : "Em Aberto"}</strong></div>
                             <div><span>Forma de pagamento</span><strong>{resumoFormaPagamento(planoPagamento)}</strong></div>
                             <div><span>Total</span><strong>{contratoAtivoResumo?.valorTotal || formatarMoeda(totalOrcamentoFinal)}</strong></div>
+                          </div>
+                          <div className="budget-crm-shortcut">
+                            <div className="budget-crm-shortcut-head">
+                              <strong>CRM rápido</strong>
+                              <span>Use quando o paciente não fechar na hora.</span>
+                            </div>
+                            <div className="form-grid two">
+                              <label>
+                                <span>Status CRM</span>
+                                <select value={crmAtalhoStatus} onChange={(e) => setCrmAtalhoStatus(e.target.value)}>
+                                  {STATUS_RESGATE_ORCAMENTO.map((status) => (
+                                    <option key={status} value={status}>{status}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                <span>Retorno CRM</span>
+                                <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} />
+                              </label>
+                              <label className="full">
+                                <span>Nova observação do CRM</span>
+                                <textarea
+                                  rows={3}
+                                  value={crmAtalhoObservacao}
+                                  onChange={(e) => setCrmAtalhoObservacao(e.target.value)}
+                                  placeholder="Ex.: paciente achou alto, pediu retorno na próxima semana..."
+                                />
+                              </label>
+                            </div>
+                            <div className="budget-crm-shortcut-actions">
+                              <button type="button" className="primary-action" onClick={salvarAtalhoCrmOrcamento} disabled={salvandoCrmAtalho}>
+                                {salvandoCrmAtalho ? "Salvando..." : "Salvar CRM"}
+                              </button>
+                            </div>
+                            <div className="budget-crm-last-touch">
+                              <strong>{crmUltimoContatoResumo.em || "Sem registro"}</strong>
+                              <span>{crmUltimoContatoResumo.por || "-"}</span>
+                              <span>{crmUltimoContatoResumo.observacao || ""}</span>
+                            </div>
+                            <div className="budget-crm-history-list">
+                              {crmHistoricoOrcamento.length ? crmHistoricoOrcamento.map((item) => (
+                                <article key={item.id} className="budget-crm-history-item">
+                                  <div className="budget-crm-history-top">
+                                    <strong>{item.criadoEm || "Sem data"}</strong>
+                                    <span>{item.criadoPor || "-"}</span>
+                                  </div>
+                                  <span>{item.status || "-"}</span>
+                                  <p>{item.observacao || "-"}</p>
+                                </article>
+                              )) : <span className="empty-inline">Sem histórico do CRM neste orçamento.</span>}
+                            </div>
                           </div>
                           <div className="payment-table-shell">
                             <table className="payment-table">
@@ -3986,8 +4129,18 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                           <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} disabled={orcamentoBloqueado} />
                         </label>
                         <label className="full">
-                          <span>Observações</span>
+                          <span>Observações gerais</span>
                           <textarea rows={3} value={orcamentoDraft.observacoes} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, observacoes: e.target.value })} disabled={orcamentoBloqueado} />
+                        </label>
+                        <label className="full">
+                          <span>Nova observação ou alteração</span>
+                          <textarea
+                            rows={3}
+                            value={novaObservacaoOrcamento}
+                            onChange={(e) => setNovaObservacaoOrcamento(e.target.value)}
+                            placeholder="Ex.: paciente pediu ajuste, alterei procedimento, aguardando retorno..."
+                            disabled={orcamentoBloqueado}
+                          />
                         </label>
                         <label className="budget-table-field">
                           <span>Tabela</span>
@@ -3997,6 +4150,30 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             ))}
                           </select>
                         </label>
+                      </div>
+                      <div className="budget-history-panel">
+                        <div className="budget-history-header">
+                          <strong>Histórico do orçamento</strong>
+                          <span>{historicoOrcamento.length} registro(s)</span>
+                        </div>
+                        {historicoOrcamento.length ? (
+                          <div className="budget-history-list">
+                            {historicoOrcamento.map((item) => (
+                              <article key={item.id} className="budget-history-item">
+                                <div className="budget-history-item-top">
+                                  <strong>{item.tipo === "ALTERACAO" ? "Alteração" : "Observação"}</strong>
+                                  <span>{formatarDataHora(item.criadoEm)}</span>
+                                </div>
+                                <div className="budget-history-item-meta">
+                                  {item.criadoPor ? `Por ${item.criadoPor}` : "Usuário não informado"}
+                                </div>
+                                <p>{item.observacao || "-"}</p>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="empty-inline">Nenhuma observação salva neste orçamento.</span>
+                        )}
                       </div>
                     </div>
 

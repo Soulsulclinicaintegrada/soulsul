@@ -594,6 +594,7 @@ export type OrcamentoPacientePayload = {
   criado_por: string;
   data: string;
   observacoes: string;
+  nova_observacao?: string;
   tabela: string;
   desconto_percentual?: number;
   desconto_valor?: number;
@@ -608,6 +609,14 @@ export type OrcamentoPacientePayload = {
 
 export type OrcamentoCriadoApi = {
   contrato_id: number;
+};
+
+export type OrcamentoHistoricoItemApi = {
+  id: number;
+  tipo?: string;
+  observacao?: string;
+  criadoPor?: string;
+  criadoEm?: string;
 };
 
 export type OrcamentoDetalheApi = {
@@ -629,6 +638,12 @@ export type OrcamentoDetalheApi = {
   entrada?: boolean;
   planoPagamento?: ParcelaPagamentoApi[];
   itens: OrcamentoItemPayload[];
+  historico?: OrcamentoHistoricoItemApi[];
+  crmStatus?: string;
+  crmObservacaoContato?: string;
+  crmUltimoContatoEm?: string;
+  crmUltimoContatoPor?: string;
+  crmHistorico?: CrmResgateHistoricoItemApi[];
 };
 
 export type FichaPacienteApi = {
