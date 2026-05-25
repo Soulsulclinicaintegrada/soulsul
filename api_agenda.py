@@ -48,6 +48,10 @@ def adicionar_dias_data_br(data_br: str, dias: int) -> str:
     return data_date_para_br(data_br_para_date(data_br) + timedelta(days=dias))
 
 
+def formatar_moeda_br(valor: float) -> str:
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def colunas_tabela(conn: sqlite3.Connection, nome_tabela: str) -> set[str]:
     return {row["name"] for row in conn.execute(f"PRAGMA table_info({nome_tabela})")}
 
@@ -767,7 +771,12 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         row_val(row, "procedimento_nome_snapshot", "") or row_val(row, "procedimento", "") or ""
     )
     contrato_id = row_val(row, "contrato_id")
-    financeiro = "Financeiro Ok" if contrato_id else "Sem vínculo"
+    financeiro = resumir_financeiro_agendamento(
+        conn,
+        paciente_id=row_val(row, "paciente_id"),
+        prontuario=row_val(row, "prontuario_snapshot", "") or "",
+        contrato_id=contrato_id,
+    )
     return AgendamentoResposta(
         id=row["id"],
         pacienteId=row_val(row, "paciente_id"),
@@ -804,6 +813,94 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         recorrenciaIndice=row_val(row, "recorrencia_indice"),
         historico=carregar_historico_agendamento(conn, row["id"]),
     )
+
+
+def obter_nome_paciente_financeiro(
+    conn: sqlite3.Connection,
+    *,
+    paciente_id: int | None,
+    prontuario: str,
+) -> str:
+    if paciente_id:
+        row = conn.execute("SELECT nome FROM pacientes WHERE id=?", (int(paciente_id),)).fetchone()
+        if row and str(row_val(row, "nome", "") or "").strip():
+            return str(row_val(row, "nome", "") or "").strip()
+    prontuario_limpo = str(prontuario or "").strip()
+    if prontuario_limpo:
+        row = conn.execute(
+            "SELECT nome FROM pacientes WHERE trim(COALESCE(prontuario, '')) = ?",
+            (prontuario_limpo,),
+        ).fetchone()
+        if row and str(row_val(row, "nome", "") or "").strip():
+            return str(row_val(row, "nome", "") or "").strip()
+    return ""
+
+
+def resumir_financeiro_agendamento(
+    conn: sqlite3.Connection,
+    *,
+    paciente_id: int | None,
+    prontuario: str,
+    contrato_id: int | None,
+) -> str:
+    nome_paciente = obter_nome_paciente_financeiro(
+        conn,
+        paciente_id=paciente_id,
+        prontuario=prontuario,
+    )
+    filtros: list[str] = []
+    params: list[object] = []
+    if paciente_id:
+        filtros.append("paciente_id = ?")
+        params.append(int(paciente_id))
+    prontuario_limpo = str(prontuario or "").strip()
+    if prontuario_limpo:
+        filtros.append("trim(COALESCE(prontuario, '')) = ?")
+        params.append(prontuario_limpo)
+    if nome_paciente:
+        nome_normalizado = str(nome_paciente).strip().lower()
+        filtros.append("lower(trim(COALESCE(observacao, ''))) LIKE ?")
+        params.append(f"%responsavel_financeiro={nome_normalizado}%")
+        filtros.append(
+            """
+            paciente_id IN (
+                SELECT id
+                FROM pacientes
+                WHERE lower(trim(COALESCE(responsavel, ''))) = ?
+            )
+            """
+        )
+        params.append(nome_normalizado)
+
+    recebiveis: list[sqlite3.Row] = []
+    if filtros:
+        recebiveis = conn.execute(
+            f"""
+            SELECT DISTINCT id, status, valor
+            FROM recebiveis
+            WHERE {' OR '.join(f'({filtro})' for filtro in filtros)}
+            """,
+            tuple(params),
+        ).fetchall()
+
+    if not recebiveis:
+        return "Financeiro Ok" if contrato_id else "Sem vínculo"
+
+    total_em_aberto = 0.0
+    total_atrasado = 0.0
+    for recebivel in recebiveis:
+        status = str(row_val(recebivel, "status", "") or "").strip().lower()
+        valor = float(row_val(recebivel, "valor", 0) or 0)
+        if status in {"aberto", "a vencer", "atrasado"}:
+            total_em_aberto += valor
+        if status == "atrasado":
+            total_atrasado += valor
+
+    if total_atrasado > 0:
+        return f"Devendo {formatar_moeda_br(total_em_aberto or total_atrasado)}"
+    if total_em_aberto > 0:
+        return f"Em aberto {formatar_moeda_br(total_em_aberto)}"
+    return "Financeiro Ok"
 
 
 def contar_conflitos_horario(

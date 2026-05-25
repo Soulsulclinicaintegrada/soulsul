@@ -11,7 +11,11 @@ import pandas as pd
 
 from api_pacientes import garantir_colunas_pacientes_api
 from database import conectar, inicializar_banco
-from financeiro_aliases import ALIAS_FINANCEIRO_POR_NOME
+from financeiro_aliases import (
+    ALIAS_FINANCEIRO_POR_NOME,
+    NOME_EXIBICAO_FINANCEIRO_POR_ALIAS,
+    RESPONSAVEL_FINANCEIRO_POR_ALIAS,
+)
 
 
 POSSIVEIS_ARQUIVOS_RECEBIVEIS = [
@@ -183,14 +187,16 @@ def build_patient_lookup(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     ).fetchall()
     lookup: dict[str, sqlite3.Row] = {}
     for row in rows:
-        chaves = {
+        for key in (
             normalize_text(row["nome"]),
             normalize_text(row["apelido"]),
-            normalize_text(row["responsavel"]),
-        }
-        for key in chaves:
+        ):
             if key and key not in lookup:
                 lookup[key] = row
+    for row in rows:
+        key = normalize_text(row["responsavel"])
+        if key and key not in lookup:
+            lookup[key] = row
     for alias_planilha, nome_sistema in ALIAS_FINANCEIRO_POR_NOME.items():
         paciente = lookup.get(normalize_text(nome_sistema))
         if paciente is not None:
@@ -242,14 +248,30 @@ def reconcile() -> dict[str, int]:
     next_id = 1
     for _, plan_items in sorted(plan_groups.items(), key=lambda entry: entry[0]):
         for plan_item in plan_items:
-            patient = patient_lookup.get(normalize_text(plan_item["paciente_nome"]))
+            alias_key = normalize_text(plan_item["paciente_nome"])
+            patient = patient_lookup.get(alias_key)
             paciente_nome_final = plan_item["paciente_nome"]
             prontuario_final = ""
             paciente_id_final = None
+            observacao_final = plan_item["observacao"]
             if patient is not None:
                 paciente_id_final = int(patient["id"])
-                paciente_nome_final = clean_str(patient["nome"]) or plan_item["paciente_nome"]
+                paciente_nome_final = (
+                    NOME_EXIBICAO_FINANCEIRO_POR_ALIAS.get(alias_key)
+                    or clean_str(patient["nome"])
+                    or plan_item["paciente_nome"]
+                )
                 prontuario_final = clean_str(patient["prontuario"])
+            responsavel_financeiro = RESPONSAVEL_FINANCEIRO_POR_ALIAS.get(alias_key, "")
+            if responsavel_financeiro:
+                observacao_final = " | ".join(
+                    part
+                    for part in [
+                        observacao_final,
+                        f"RESPONSAVEL_FINANCEIRO={responsavel_financeiro}",
+                    ]
+                    if part
+                )
             reconciled_rows.append(
                 {
                     "id": next_id,
@@ -262,7 +284,7 @@ def reconcile() -> dict[str, int]:
                     "valor": plan_item["valor"],
                     "forma_pagamento": "BOLETO",
                     "status": plan_item["status"],
-                    "observacao": plan_item["observacao"],
+                    "observacao": observacao_final,
                     "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "hash_importacao": f"recebiveis-planilha:{next_id}",
                     "data_pagamento": plan_item["data_pagamento"],
