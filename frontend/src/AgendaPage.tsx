@@ -845,9 +845,15 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     },
     [agendaSomentePropria, eventos, profissionaisImportadosAtuais, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
   );
-  const profissionaisVisiveis = useMemo(
-    () => profissionaisDisponiveis.filter((item) => profissionaisSelecionados.includes(item.id)),
+  const profissionaisSelecionadosAtivos = useMemo(
+    () => profissionaisSelecionados.filter((id) => profissionaisDisponiveis.some((item) => item.id === id)),
     [profissionaisDisponiveis, profissionaisSelecionados]
+  );
+  const profissionaisVisiveis = useMemo(
+    () => (profissionaisSelecionadosAtivos.length
+      ? profissionaisDisponiveis.filter((item) => profissionaisSelecionadosAtivos.includes(item.id))
+      : profissionaisDisponiveis),
+    [profissionaisDisponiveis, profissionaisSelecionadosAtivos]
   );
   const resolverProfissionalEvento = useMemo(() => {
     const mapaProfissionais = new Map(
@@ -1066,8 +1072,12 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     [eventos]
   );
   const eventosFiltradosProfissionais = useMemo(
-    () => eventosVisiveis.filter((evento) => profissionaisSelecionados.includes(evento.profissionalId)),
-    [eventosVisiveis, profissionaisSelecionados]
+    () => (
+      profissionaisSelecionadosAtivos.length
+        ? eventosVisiveis.filter((evento) => profissionaisSelecionadosAtivos.includes(evento.profissionalId))
+        : eventosVisiveis
+    ),
+    [eventosVisiveis, profissionaisSelecionadosAtivos]
   );
   const eventosDia = useMemo(
     () => eventosFiltradosProfissionais.filter((evento) => evento.data === isoParaBr(dataSelecionada)),
