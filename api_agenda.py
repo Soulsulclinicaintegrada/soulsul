@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import json
 import sqlite3
 from typing import Literal
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,8 +16,17 @@ from pydantic import BaseModel, Field
 from database import conectar, inicializar_banco
 
 
+TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo") if ZoneInfo is not None else None
+
+
+def agora_local() -> datetime:
+    if TIMEZONE_LOCAL is not None:
+        return datetime.now(TIMEZONE_LOCAL)
+    return datetime.now()
+
+
 def agora_br() -> str:
-    return datetime.now().strftime("%d/%m/%Y %H:%M")
+    return agora_local().strftime("%d/%m/%Y %H:%M")
 
 
 def para_minutos(hora: str) -> int:
