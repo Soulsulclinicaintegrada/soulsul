@@ -2449,7 +2449,8 @@ textarea::placeholder {
 }
 
 .commercial-contract-procedures {
-  max-height: min(62vh, 760px);
+  max-height: min(72vh, 860px);
+  overflow: auto;
   border: 1px solid rgba(188, 145, 85, 0.14);
   border-radius: 12px;
   background: #fbfbfb;
@@ -2747,7 +2748,7 @@ textarea::placeholder {
 .budget-preview-item {
   display: grid;
   border-radius: 6px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(188, 145, 85, 0.14);
   box-shadow: 0 8px 22px rgba(53, 35, 13, 0.08), 0 2px 6px rgba(53, 35, 13, 0.05);
   background: #fff;
@@ -2756,8 +2757,8 @@ textarea::placeholder {
 
 .budget-preview-item-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(132px, 148px);
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(176px, 212px);
+  align-items: start;
 }
 
 .budget-preview-item.ghost {
@@ -2767,28 +2768,30 @@ textarea::placeholder {
 
 .budget-preview-item-main {
   display: grid;
-  gap: 4px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 18px 20px;
   min-width: 0;
   align-content: start;
-  min-height: 160px;
+  min-height: 0;
 }
 
 .budget-preview-item-main > span {
   color: #74695c;
   border-top: 1px dashed rgba(188, 145, 85, 0.14);
-  padding-top: 4px;
+  padding-top: 6px;
 }
 
 .budget-preview-meta {
   display: grid;
-  gap: 4px;
+  gap: 8px;
 }
 
 .budget-preview-meta-line {
   color: #74695c;
   border-top: 1px dashed rgba(188, 145, 85, 0.14);
-  padding-top: 4px;
+  padding-top: 6px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .budget-preview-region-summary {
@@ -2811,24 +2814,29 @@ textarea::placeholder {
 
 .budget-preview-value {
   display: grid;
-  align-content: center;
+  align-content: space-between;
   justify-items: center;
   gap: 14px;
-  padding: 14px;
+  padding: 18px 16px;
   background: #53b14f;
   color: #fff;
   text-align: center;
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.18);
-  min-width: 0;
-  min-height: 160px;
+  min-width: 176px;
+  min-height: 0;
+}
+
+.budget-preview-value strong {
+  font-size: 1.22rem;
+  line-height: 1.15;
 }
 
 .budget-preview-detail-shell {
   border-top: 1px solid rgba(188, 145, 85, 0.12);
   background: #fffdfa;
-  padding: 12px 16px 14px;
-  max-height: 260px;
-  overflow: auto;
+  padding: 14px 18px 16px;
+  max-height: none;
+  overflow: visible;
 }
 
 .budget-preview-odontograma-shell {
@@ -3193,14 +3201,14 @@ textarea::placeholder {
 }
 
 .budget-preview-item-main-rich {
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
 }
 
 .budget-preview-item-top {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -3231,7 +3239,7 @@ textarea::placeholder {
 
 .budget-preview-expand-copy {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -3239,13 +3247,13 @@ textarea::placeholder {
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .budget-preview-inline-summary {
   color: #74695c;
-  font-size: 0.82rem;
-  line-height: 1.3;
+  font-size: 0.9rem;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
