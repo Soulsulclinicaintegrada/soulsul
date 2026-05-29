@@ -400,16 +400,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [canceladosIds, finalizadosIds, pipeline]
   );
   const termoBuscaLead = normalizarTexto(buscaLead);
-  const todosLeadsCrm = useMemo(() => {
-    const mapa = new Map<number, CrmPacienteItemApi>();
-    [...pipeline, ...finalizados, ...cancelados].forEach((item) => {
-      if (!mapa.has(item.id)) mapa.set(item.id, item);
-    });
-    return Array.from(mapa.values()).sort((a, b) => b.id - a.id);
-  }, [cancelados, finalizados, pipeline]);
-  const leadsFiltrados = useMemo(
-    () => todosLeadsCrm.filter((item) => correspondeBusca(item, termoBuscaLead)),
-    [termoBuscaLead, todosLeadsCrm]
+  const leadsFunilFiltrados = useMemo(
+    () => pipelineFiltrado.filter((item) => correspondeBusca(item, termoBuscaLead)),
+    [pipelineFiltrado, termoBuscaLead]
   );
   const agendadosFiltrados = useMemo(
     () =>
@@ -419,8 +412,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [pipelineFiltrado]
   );
   const leadSelecionado = useMemo(
-    () => leadsFiltrados.find((item) => item.id === leadSelecionadoId) || leadsFiltrados[0] || null,
-    [leadSelecionadoId, leadsFiltrados]
+    () => leadsFunilFiltrados.find((item) => item.id === leadSelecionadoId) || leadsFunilFiltrados[0] || null,
+    [leadSelecionadoId, leadsFunilFiltrados]
   );
   const finalizadosFiltrados = useMemo(
     () => finalizados,
@@ -581,14 +574,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   );
 
   useEffect(() => {
-    if (!leadsFiltrados.length) {
+    if (!leadsFunilFiltrados.length) {
       if (leadSelecionadoId !== null) setLeadSelecionadoId(null);
       return;
     }
     if (!leadSelecionado || leadSelecionado.id !== leadSelecionadoId) {
-      setLeadSelecionadoId(leadsFiltrados[0].id);
+      setLeadSelecionadoId(leadsFunilFiltrados[0].id);
     }
-  }, [leadSelecionado, leadSelecionadoId, leadsFiltrados]);
+  }, [leadSelecionado, leadSelecionadoId, leadsFunilFiltrados]);
 
   function atualizarItemLocal(crmId: number, parcial: Partial<CrmPacienteItemApi>) {
     const aplicar = (lista: CrmPacienteItemApi[]) =>
@@ -935,7 +928,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <span>{item.proximoContato ? `AvaliaÃ§Ã£o em ${item.proximoContato}` : "Agendado no CRM"}</span>
                   <div className="crm-inline-actions">
                     {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
-                    <button type="button" className="ghost-action" onClick={() => { setAbaAtiva("funil"); setLeadSelecionadoId(item.id); }}>
+                    <button type="button" className="ghost-action" onClick={() => { setAbaAtiva("funil"); setLeadSelecionadoId(item.id); setBuscaLead(item.nome || ""); }}>
                       Editar CRM
                     </button>
                   </div>
@@ -1548,10 +1541,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <div className="crm-selector-card">
               <div className="crm-manual-entry-header">
                 <div>
-                  <span className="panel-kicker">Buscar lead</span>
-                  <strong>Escolha um lead cadastrado para editar</strong>
+                  <span className="panel-kicker">Visualização do funil</span>
+                  <strong>Tabela dos leads em andamento</strong>
                 </div>
-                <span>Aqui aparece apenas um cadastro por vez.</span>
+                <span>Clique na linha para editar o CRM do paciente.</span>
               </div>
               <div className="crm-selector-grid">
                 <label className="crm-field-wide">
@@ -1562,23 +1555,73 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                     placeholder="Ex.: Maria, 2299..., Facebook ou Conversando"
                   />
                 </label>
-                <label className="crm-field-wide">
-                  <span>Lead selecionado</span>
-                  <select
-                    value={leadSelecionado?.id ?? ""}
-                    onChange={(event) => setLeadSelecionadoId(event.target.value ? Number(event.target.value) : null)}
-                  >
-                    {leadsFiltrados.length ? (
-                      leadsFiltrados.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome} {item.telefone ? `Â· ${item.telefone}` : ""} {item.etapaFunil ? `Â· ${item.etapaFunil}` : ""}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">Nenhum lead encontrado</option>
-                    )}
-                  </select>
-                </label>
+              </div>
+              <div className="crm-funnel-grid-shell">
+                <table className="crm-funnel-table">
+                  <thead>
+                    <tr>
+                      <th>Paciente</th>
+                      <th>Telefone</th>
+                      <th>Etapa</th>
+                      <th>Campanha</th>
+                      <th>Responsável</th>
+                      <th>Próximo contato</th>
+                      <th>Última interação</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leadsFunilFiltrados.map((item) => (
+                      <tr
+                        key={item.id}
+                        className={leadSelecionado?.id === item.id ? "active" : ""}
+                        onClick={() => setLeadSelecionadoId(item.id)}
+                      >
+                        <td>
+                          <strong>{item.nome}</strong>
+                          <span>{item.prontuario || "Sem prontuário"}</span>
+                        </td>
+                        <td>{item.telefone || "-"}</td>
+                        <td>{item.etapaFunil || "Novo lead"}</td>
+                        <td>{item.campanha || "-"}</td>
+                        <td>{item.responsavel || "-"}</td>
+                        <td>{item.proximoContato || "-"}</td>
+                        <td>{item.ultimaInteracao || "-"}</td>
+                        <td>
+                          <div className="crm-inline-actions">
+                            {item.pacienteId ? (
+                              <button
+                                type="button"
+                                className="ghost-action compact"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onAbrirPaciente?.(item.pacienteId);
+                                }}
+                              >
+                                Abrir
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="ghost-action compact"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setLeadSelecionadoId(item.id);
+                              }}
+                            >
+                              Editar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {!leadsFunilFiltrados.length ? (
+                      <tr>
+                        <td colSpan={8}>Nenhum lead encontrado para o filtro atual.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
             </div>
           ) : null}
@@ -1683,7 +1726,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </footer>
             </article>
           ) : null}
-          {!carregando && !leadsFiltrados.length ? <div className="module-subitem"><strong>Nenhum lead encontrado para ediÃ§Ã£o.</strong></div> : null}
+          {!carregando && !leadsFunilFiltrados.length ? <div className="module-subitem"><strong>Nenhum lead encontrado para edição.</strong></div> : null}
         </div>
       </section>
     </section>

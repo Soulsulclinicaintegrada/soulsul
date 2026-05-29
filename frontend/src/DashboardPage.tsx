@@ -398,6 +398,7 @@ function VendasResumoCard({
 }) {
   const itensFiltrados = itens.filter((item) => extrairMesDataBr(item.data) === mesSelecionado);
   const nomeMes = meses[mesSelecionado - 1] || "";
+  const totalMesSelecionado = itensFiltrados.reduce((total, item) => total + moedaParaNumero(item.valor || "0"), 0);
   return (
     <article className="panel summary-panel">
       <div className="section-title-row">
@@ -405,7 +406,7 @@ function VendasResumoCard({
           <span className="panel-kicker">Financeiro</span>
           <h2>Vendas do mês</h2>
         </div>
-        <span className="panel-meta">{`${itensFiltrados.length} contrato(s)`}</span>
+        <span className="panel-meta">{numeroParaMoedaBr(totalMesSelecionado)}</span>
       </div>
       <div className="finance-form-grid">
         <label>

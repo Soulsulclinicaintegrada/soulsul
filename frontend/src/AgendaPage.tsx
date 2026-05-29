@@ -2524,9 +2524,25 @@ function atualizarConfigProfissionalDia(
           {diasSemana.map((diaIso) => {
             const data = new Date(`${diaIso}T12:00:00`);
             const feriadoDia = descricaoFeriado(diaIso);
+            const profissionaisDia = profissionaisVisiveis.filter((profissional) => profissionalAtivoNoDia(profissional.id, diaIso));
             return (
               <span key={diaIso} className={diaIso === dataSelecionada ? "active" : ""}>
-                {data.getDate()} - {NOMES_DIAS_LONGOS[data.getDay()]}{feriadoDia ? ` · ${feriadoDia}` : ""}
+                <strong>{data.getDate()} - {NOMES_DIAS_LONGOS[data.getDay()]}</strong>
+                <small>{feriadoDia || ""}</small>
+                <div className="agenda-week-prof-head-list">
+                  {(profissionaisDia.length ? profissionaisDia : profissionaisVisiveis).map((profissional) => (
+                    <div
+                      key={`${diaIso}-${profissional.id}`}
+                      className="agenda-week-prof-head-item"
+                      style={{
+                        background: corSuaveProfissionalPorId(profissional.id),
+                        boxShadow: `inset 0 2px 0 ${corProfissionalPorId(profissional.id)}`
+                      }}
+                    >
+                      {nomeAgendaProfissional(profissional.id)}
+                    </div>
+                  ))}
+                </div>
               </span>
             );
           })}
@@ -2539,8 +2555,9 @@ function atualizarConfigProfissionalDia(
           </div>
           {diasSemana.map((diaIso) => {
             const eventosDiaSemana = eventosPorDia.get(diaIso) ?? [];
-            const colunas = calcularColunasSobrepostas(eventosDiaSemana);
             const feriadoDia = descricaoFeriado(diaIso);
+            const profissionaisDia = profissionaisVisiveis.filter((profissional) => profissionalAtivoNoDia(profissional.id, diaIso));
+            const profissionaisColuna = profissionaisDia.length ? profissionaisDia : profissionaisVisiveis;
             return (
                 <div
                   key={diaIso}
@@ -2555,40 +2572,59 @@ function atualizarConfigProfissionalDia(
                 {horariosAgenda.map((slot) => (
                   <div key={`${diaIso}-${slot}`} className="agenda-week-slot-line" />
                 ))}
-                {eventosDiaSemana.map((evento) => {
-                  const layout = colunas.get(evento.id) ?? { coluna: 0, totalColunas: 1 };
-                  const topo = ((paraMinutos(evento.inicio) - minutoInicialAgenda) / 15) * SLOT_HEIGHT;
-                  const altura = ((paraMinutos(evento.fim) - paraMinutos(evento.inicio)) / 15) * SLOT_HEIGHT;
-                  const largura = `calc((100% - 8px) / ${layout.totalColunas})`;
-                  const esquerda = `calc(${layout.coluna} * ((100% - 8px) / ${layout.totalColunas}))`;
-                  return (
-                    <button
-                      key={evento.id}
-                      type="button"
-                      className="agenda-week-event-block"
-                      style={{
-                        top: `${topo}px`,
-                        height: `${Math.max(altura, 18)}px`,
-                        width: largura,
-                        left: esquerda,
-                        background: corProfissionalPorId(evento.profissionalId)
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        agendarAberturaDetalhes(evento, event.currentTarget);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        if (cliqueDetalheTimer.current) {
-                          window.clearTimeout(cliqueDetalheTimer.current);
-                          cliqueDetalheTimer.current = null;
-                        }
-                        void abrirEdicaoAgendamento(evento);
-                      }}
+                <div
+                  className="agenda-week-prof-columns"
+                  style={{ gridTemplateColumns: `repeat(${Math.max(profissionaisColuna.length, 1)}, minmax(0, 1fr))` }}
+                >
+                  {profissionaisColuna.map((profissional, indiceProfissional) => (
+                    <div
+                      key={`${diaIso}-col-${profissional.id}`}
+                      className="agenda-week-prof-column"
+                      style={{ background: corSuaveProfissionalPorId(profissional.id) }}
                     >
-                      <span title={evento.paciente}>{resumoEventoAgenda(evento.paciente)}</span>
-                    </button>
-                  );
+                      {indiceProfissional < profissionaisColuna.length - 1 ? <div className="agenda-week-prof-divider" /> : null}
+                    </div>
+                  ))}
+                </div>
+                {profissionaisColuna.flatMap((profissional, indiceProfissional) => {
+                  const eventosProfissional = eventosDiaSemana.filter((evento) => evento.profissionalId === profissional.id);
+                  const colunasProfissional = calcularColunasSobrepostas(eventosProfissional);
+                  return eventosProfissional.map((evento) => {
+                    const layout = colunasProfissional.get(evento.id) ?? { coluna: 0, totalColunas: 1 };
+                    const topo = ((paraMinutos(evento.inicio) - minutoInicialAgenda) / 15) * SLOT_HEIGHT;
+                    const altura = ((paraMinutos(evento.fim) - paraMinutos(evento.inicio)) / 15) * SLOT_HEIGHT;
+                    const larguraBase = 100 / Math.max(profissionaisColuna.length, 1);
+                    const largura = `calc(${larguraBase / layout.totalColunas}% - 6px)`;
+                    const esquerda = `calc(${(indiceProfissional * larguraBase) + (layout.coluna * (larguraBase / layout.totalColunas))}% + 3px)`;
+                    return (
+                      <button
+                        key={evento.id}
+                        type="button"
+                        className="agenda-week-event-block"
+                        style={{
+                          top: `${topo}px`,
+                          height: `${Math.max(altura, 18)}px`,
+                          width: largura,
+                          left: esquerda,
+                          background: corProfissionalPorId(evento.profissionalId)
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          agendarAberturaDetalhes(evento, event.currentTarget);
+                        }}
+                        onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          if (cliqueDetalheTimer.current) {
+                            window.clearTimeout(cliqueDetalheTimer.current);
+                            cliqueDetalheTimer.current = null;
+                          }
+                          void abrirEdicaoAgendamento(evento);
+                        }}
+                      >
+                        <span title={evento.paciente}>{resumoEventoAgenda(evento.paciente)}</span>
+                      </button>
+                    );
+                  });
                 })}
               </div>
             );

@@ -4826,19 +4826,48 @@ textarea::placeholder {
 
 .agenda-week-head > span {
   min-height: 34px;
-  padding: 6px 4px;
+  padding: 6px 4px 8px;
   text-align: center;
   border-right: 1px solid rgba(173, 181, 196, 0.55);
   border-bottom: 1px solid rgba(173, 181, 196, 0.55);
   color: #5d687a;
   display: grid;
-  place-items: center;
+  align-content: start;
+  gap: 6px;
   background: #fff;
 }
 
 .agenda-week-head > span.active {
   background: #1f74d2;
   color: #fff;
+}
+
+.agenda-week-head > span strong,
+.agenda-week-head > span small {
+  display: block;
+}
+
+.agenda-week-head > span small {
+  min-height: 1.1em;
+  font-size: 0.72rem;
+  opacity: 0.82;
+}
+
+.agenda-week-prof-head-list {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+.agenda-week-prof-head-item {
+  padding: 4px 6px;
+  border-radius: 8px;
+  color: #2f241d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .agenda-week-grid-visual {
@@ -4873,6 +4902,28 @@ textarea::placeholder {
 
 .agenda-week-day-column.current {
   background: #f8f2e3;
+}
+
+.agenda-week-prof-columns {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.agenda-week-prof-column {
+  position: relative;
+  min-width: 0;
+}
+
+.agenda-week-prof-divider {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(173, 181, 196, 0.6);
 }
 
 .agenda-week-holiday-label {
@@ -6667,6 +6718,62 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.9rem 1rem;
+}
+
+.crm-funnel-grid-shell {
+  margin-top: 1rem;
+  border: 1px solid rgba(198, 176, 139, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  overflow: auto;
+}
+
+.crm-funnel-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.crm-funnel-table th,
+.crm-funnel-table td {
+  padding: 0.85rem 0.9rem;
+  border-bottom: 1px solid rgba(198, 176, 139, 0.16);
+  text-align: left;
+  vertical-align: top;
+}
+
+.crm-funnel-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6efe3;
+  color: #7a685a;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.crm-funnel-table tbody tr {
+  cursor: pointer;
+}
+
+.crm-funnel-table tbody tr:hover {
+  background: rgba(62, 113, 89, 0.05);
+}
+
+.crm-funnel-table tbody tr.active {
+  background: rgba(62, 113, 89, 0.1);
+}
+
+.crm-funnel-table td strong,
+.crm-funnel-table td span {
+  display: block;
+}
+
+.crm-funnel-table td span {
+  color: #7a685a;
+  font-size: 0.82rem;
+  margin-top: 0.18rem;
 }
 
 .crm-selector-grid label {

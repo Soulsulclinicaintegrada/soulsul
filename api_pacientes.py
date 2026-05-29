@@ -3591,11 +3591,15 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             ),
         )
     ]
-    devedores_resumo_rows = [
-        row
-        for row in recebiveis_rows
-        if normalizar_texto(row["status"]) in {"aberto", "atrasado"}
-    ]
+    devedores_resumo_rows = []
+    for row in recebiveis_rows:
+        status_normalizado = normalizar_texto(row["status"])
+        vencimento_row = str(row["vencimento"] or "").strip()
+        if status_normalizado == "atrasado":
+            devedores_resumo_rows.append(row)
+            continue
+        if status_normalizado == "aberto" and vencimento_row == hoje_iso:
+            devedores_resumo_rows.append(row)
     devedores_resumo_por_paciente: dict[str, sqlite3.Row] = {}
     for row in devedores_resumo_rows:
         paciente_id = crm_int(row["paciente_id"], 0)
