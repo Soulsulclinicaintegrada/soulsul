@@ -458,12 +458,13 @@ function normalizarPlanoPagamento(
     const forma = linhaAnterior?.forma || "PIX";
     const parcelasCartao = Math.max(1, linhaAnterior?.parcelasCartao || 1);
     const valorBase = valores[indice] || 0;
+    const dataLinha = String(linhaAnterior?.data || "").trim() || dataParcelaPagamento(dataBase, indice, entrada, forma);
     return {
       indice,
       descricao,
       forma,
       parcelasCartao,
-      data: dataParcelaPagamento(dataBase, indice, entrada, forma),
+      data: dataLinha,
       valor: forma === "CARTAO_CREDITO" ? aplicarTaxaCartaoCredito(valorBase, parcelasCartao) : valorBase
     };
   });

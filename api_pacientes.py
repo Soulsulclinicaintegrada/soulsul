@@ -163,6 +163,13 @@ def formatar_data_br_valor(valor) -> str:
     return formatar_data_br(parse_data_contrato(valor))
 
 
+def normalizar_data_contrato_iso(valor, fallback: str = "") -> str:
+    data_parse = parse_data_contrato(valor)
+    if data_parse is None:
+        return fallback
+    return data_parse.isoformat()
+
+
 def formatar_data_hora_relatorio(valor) -> str:
     texto = str(valor or "").strip()
     if not texto:
@@ -2714,9 +2721,9 @@ def salvar_orcamento_paciente(
     desconto_percentual = max(0.0, float(payload.desconto_percentual or 0))
     desconto_valor = max(0.0, float(payload.desconto_valor or 0))
     valor_total = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
-    data_base = payload.data.strip() or agora_str()
+    data_base = normalizar_data_contrato_iso(payload.data, date.today().isoformat())
     parcelas_plano = [
-        parcela
+        parcela.model_copy(update={"data": normalizar_data_contrato_iso(parcela.data, data_base)})
         for parcela in payload.plano_pagamento
         if str(parcela.forma or "").strip() and float(parcela.valor or 0) >= 0
     ]
@@ -2761,7 +2768,7 @@ def salvar_orcamento_paciente(
                 plano_pagamento_json,
                 desconto_percentual,
                 desconto_valor,
-                payload.validade_orcamento.strip(),
+                normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
             ),
         )
@@ -2791,7 +2798,7 @@ def salvar_orcamento_paciente(
                 plano_pagamento_json,
                 desconto_percentual,
                 desconto_valor,
-                payload.validade_orcamento.strip(),
+                normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
                 contrato_id,
                 paciente_id,
@@ -2853,9 +2860,9 @@ def salvar_orcamento_paciente_com_pagamento(
     desconto_percentual = max(0.0, float(payload.desconto_percentual or 0))
     desconto_valor = max(0.0, float(payload.desconto_valor or 0))
     valor_total = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
-    data_base = payload.data.strip() or agora_str()
+    data_base = normalizar_data_contrato_iso(payload.data, date.today().isoformat())
     parcelas_plano = [
-        parcela
+        parcela.model_copy(update={"data": normalizar_data_contrato_iso(parcela.data, data_base)})
         for parcela in payload.plano_pagamento
         if str(parcela.forma or "").strip() and float(parcela.valor or 0) >= 0
     ]
@@ -2900,7 +2907,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 plano_pagamento_json,
                 desconto_percentual,
                 desconto_valor,
-                payload.validade_orcamento.strip(),
+                normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
             ),
         )
@@ -2930,7 +2937,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 plano_pagamento_json,
                 desconto_percentual,
                 desconto_valor,
-                payload.validade_orcamento.strip(),
+                normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
                 contrato_id,
                 paciente_id,
@@ -8122,6 +8129,8 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
         )
         contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
         data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
+        data_orcamento = normalizar_data_contrato_iso(payload.data, "")
+        validade_orcamento = normalizar_data_contrato_iso(payload.validade_orcamento, "")
         contrato_atual = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id_salvo, paciente_id)).fetchone()
         assinatura_atual = assinatura_orcamento_atual(conn, contrato_id_salvo) if contrato_atual is not None else ""
         alteracoes: list[str] = []
@@ -8132,9 +8141,9 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
                 alteracoes.append("forma de pagamento")
             if str(contrato_anterior["data_retorno_crm"] or "").strip() != data_retorno:
                 alteracoes.append("retorno CRM")
-            if str(contrato_anterior["data_criacao"] or "").strip() != str(payload.data or "").strip():
+            if str(contrato_anterior["data_criacao"] or "").strip() != data_orcamento:
                 alteracoes.append("data do orçamento")
-            if str(contrato_anterior["validade_orcamento"] or "").strip() != str(payload.validade_orcamento or "").strip():
+            if str(contrato_anterior["validade_orcamento"] or "").strip() != validade_orcamento:
                 alteracoes.append("validade")
             if round(float(contrato_anterior["valor_total"] or 0), 2) != round(valor_total_novo, 2):
                 alteracoes.append("valor total")
