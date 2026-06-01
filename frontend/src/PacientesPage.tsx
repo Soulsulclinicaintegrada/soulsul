@@ -2424,7 +2424,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
           <strong>Digite no campo de busca para localizar um paciente.</strong>
           <span>Pesquise por nome, prontuário, telefone ou CPF.</span>
         </article>
-      ) : carregandoLista ? null : !pacienteAtivoId ? (
+      ) : busca.trim() ? (
         <div className="patient-search-dropdown">
           {pacientes.length ? pacientes.map((paciente) => (
             <button

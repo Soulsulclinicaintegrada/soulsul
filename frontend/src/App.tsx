@@ -228,7 +228,7 @@ function App() {
     if (menuAtivo === "Pacientes") {
       return (
         <PacientesPage
-          busca={navegacaoPaciente?.pacienteId ? "" : buscaGlobal}
+          busca={buscaGlobal}
           onLimparBusca={() => setBuscaGlobal("")}
           navegacao={navegacaoPaciente}
           pacientesAbas={pacientesAbasUsuario}
