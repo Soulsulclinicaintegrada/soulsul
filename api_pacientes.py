@@ -8176,17 +8176,27 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
             or formatar_prontuario_valor(existente["prontuario"])
             or proximo_prontuario(conn)
         )
+        prontuario_existente = formatar_prontuario_valor(existente["prontuario"])
+        cpf_limpo = limpar_cpf(payload.cpf)
+        cpf_existente = limpar_cpf(existente["cpf"])
+        cpf_responsavel_limpo = limpar_cpf(payload.cpf_responsavel)
+        cpf_responsavel_existente = limpar_cpf(existente["cpf_responsavel"])
         erros = validar_dados_paciente(
             payload.nome,
             prontuario,
-            payload.cpf,
+            cpf_limpo if cpf_limpo != cpf_existente else "",
             payload.menor_idade,
             payload.responsavel,
-            payload.cpf_responsavel,
+            cpf_responsavel_limpo if cpf_responsavel_limpo != cpf_responsavel_existente else "",
         )
         if erros:
             raise HTTPException(status_code=400, detail=erros)
-        erros_duplicidade = validar_duplicidade_paciente(conn, prontuario, payload.cpf, paciente_id_atual=paciente_id)
+        erros_duplicidade = validar_duplicidade_paciente(
+            conn,
+            prontuario if prontuario != prontuario_existente else "",
+            cpf_limpo if cpf_limpo != cpf_existente else "",
+            paciente_id_atual=paciente_id,
+        )
         if erros_duplicidade:
             raise HTTPException(status_code=400, detail=erros_duplicidade)
 
@@ -8203,7 +8213,7 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
                 payload.apelido.strip(),
                 payload.sexo.strip(),
                 prontuario,
-                limpar_cpf(payload.cpf),
+                cpf_limpo,
                 payload.rg.strip(),
                 payload.data_nascimento.strip(),
                 payload.telefone.strip(),
@@ -8221,7 +8231,7 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
                 payload.observacoes.strip(),
                 int(bool(payload.menor_idade)),
                 payload.responsavel.strip() if payload.menor_idade else "",
-                limpar_cpf(payload.cpf_responsavel) if payload.menor_idade else "",
+                cpf_responsavel_limpo if payload.menor_idade else "",
                 paciente_id,
             ),
         )
