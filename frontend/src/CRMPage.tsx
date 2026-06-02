@@ -811,6 +811,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       `crm-resgates-${hojeIso()}.csv`,
       [
         "Paciente",
+        "CPF",
         "Prontuario",
         "Telefone",
         "Data do orcamento",
@@ -827,6 +828,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       ],
       resgatesFiltrados.map((item) => [
         item.nome || "",
+        item.cpf || "",
         item.prontuario || "",
         item.telefone || "",
         item.dataOrcamento || "",
@@ -1198,7 +1200,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <div className="finance-receivables-grid-shell crm-rescue-grid-shell">
           <table className="finance-receivables-grid crm-rescue-grid">
             <colgroup>
-              <col style={{ width: "220px" }} />
+            <col style={{ width: "220px" }} />
+              <col style={{ width: "150px" }} />
               <col style={{ width: "110px" }} />
               <col style={{ width: "150px" }} />
               <col style={{ width: "130px" }} />
@@ -1216,6 +1219,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <thead>
               <tr>
                 <th>Paciente</th>
+                <th>CPF</th>
                 <th>ProntuÃ¡rio</th>
                 <th>Telefone</th>
                 <th>Data orÃ§amento</th>
@@ -1235,6 +1239,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               {resgatesFiltrados.map((item) => (
                 <tr key={`resgate-${item.contratoId}`}>
                   <td>{item.nome}</td>
+                  <td>{item.cpf || "-"}</td>
                   <td>{item.prontuario || "-"}</td>
                   <td>{item.telefone || "-"}</td>
                   <td>{item.dataOrcamento || "-"}</td>
@@ -1299,7 +1304,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               ))}
               {!carregando && !resgatesFiltrados.length ? (
                 <tr>
-                  <td colSpan={14}>Nenhum resgate encontrado para o filtro atual.</td>
+                  <td colSpan={15}>Nenhum resgate encontrado para o filtro atual.</td>
                 </tr>
               ) : null}
             </tbody>

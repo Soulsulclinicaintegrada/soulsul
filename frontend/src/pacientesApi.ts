@@ -741,6 +741,7 @@ export type CrmResgateItemApi = {
   contratoId: number;
   pacienteId: number;
   nome: string;
+  cpf?: string;
   prontuario?: string;
   telefone?: string;
   dataOrcamento?: string;

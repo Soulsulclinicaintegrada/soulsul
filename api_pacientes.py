@@ -1016,6 +1016,7 @@ class CrmResgateItemResposta(BaseModel):
     contratoId: int
     pacienteId: int
     nome: str
+    cpf: str = ""
     prontuario: str = ""
     telefone: str = ""
     dataOrcamento: str = ""
@@ -6654,6 +6655,7 @@ def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta
             c.paciente_id,
             COALESCE(crm.id, 0) AS crm_id,
             COALESCE(NULLIF(p.nome, ''), 'Sem nome') AS nome,
+            COALESCE(p.cpf, '') AS cpf,
             COALESCE(p.prontuario, '') AS prontuario,
             COALESCE(p.telefone, '') AS telefone,
             COALESCE(c.data_criacao, '') AS data_criacao,
@@ -6749,6 +6751,7 @@ def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta
                 contratoId=contrato_id,
                 pacienteId=paciente_id,
                 nome=str(row["nome"] or ""),
+                cpf=str(row["cpf"] or ""),
                 prontuario=formatar_prontuario_valor(row["prontuario"]),
                 telefone=str(row["telefone"] or ""),
                 dataOrcamento=formatar_data_br_valor(row["data_criacao"]),
