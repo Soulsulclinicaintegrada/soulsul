@@ -806,6 +806,46 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     );
   }
 
+  function exportarResgates() {
+    baixarCsv(
+      `crm-resgates-${hojeIso()}.csv`,
+      [
+        "Paciente",
+        "Prontuario",
+        "Telefone",
+        "Data do orcamento",
+        "Valor total",
+        "Procedimentos",
+        "Obs. avaliacao",
+        "Obs. orcamento",
+        "Status",
+        "Data de retorno",
+        "Ultimo contato em",
+        "Ultimo contato por",
+        "Observacao do ultimo contato",
+        "Historico de contatos",
+      ],
+      resgatesFiltrados.map((item) => [
+        item.nome || "",
+        item.prontuario || "",
+        item.telefone || "",
+        item.dataOrcamento || "",
+        item.valorTotal || "",
+        (item.procedimentos || []).join(" | "),
+        item.observacaoAvaliacao || "",
+        item.observacaoOrcamento || "",
+        item.statusResgate || "",
+        item.dataRetorno || "",
+        item.ultimoContatoEm || "",
+        item.ultimoContatoPor || "",
+        item.observacaoContato || "",
+        (item.historico || [])
+          .map((registro) => [registro.criadoEm || "", registro.criadoPor || "", registro.status || "", registro.observacao || ""].filter(Boolean).join(" - "))
+          .join(" | "),
+      ])
+    );
+  }
+
   function alternarRelatorio(chave: "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram") {
     setRelatorioAberto(chave);
     if (chave === "sem-agendamento") {
@@ -1088,6 +1128,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <h2>OrÃ§amentos para retorno</h2>
           </div>
           <div className="crm-inline-actions">
+            <button type="button" className="ghost-action compact" onClick={exportarResgates}>
+              <Download size={15} />
+              Baixar
+            </button>
             <span>{resgatesFiltrados.length} linha(s)</span>
           </div>
         </div>
