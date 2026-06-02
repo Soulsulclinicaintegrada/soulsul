@@ -1441,12 +1441,6 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       } else {
         setFeedback("Paciente atualizado com sucesso.");
       }
-      try {
-        await carregarLista();
-        await carregarFicha(pacienteAtivoId);
-      } catch (refreshError) {
-        console.warn("Paciente salvo, mas houve falha ao recarregar a ficha.", refreshError);
-      }
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao atualizar paciente.");
     } finally {
