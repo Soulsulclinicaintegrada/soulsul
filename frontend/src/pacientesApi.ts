@@ -286,6 +286,15 @@ export type ArquivoPacienteItemApi = {
   extensao?: string;
 };
 
+export type ImagemDocumentoPayloadApi = {
+  nome: string;
+  conteudo_base64: string;
+};
+
+export type RecebimentoBoletosPayloadApi = {
+  imagens: ImagemDocumentoPayloadApi[];
+};
+
 export type FinanceiroResumoApi = {
   total: string;
   emAberto: string;
@@ -1130,6 +1139,13 @@ export async function buscarCepApi(cep: string) {
 
 export function urlDocumentoPaciente(pacienteId: number, nomeArquivo: string, download = false) {
   return `${API_BASE_URL}/api/pacientes/${pacienteId}/documentos/${encodeURIComponent(nomeArquivo)}${download ? "?download=1" : ""}`;
+}
+
+export async function gerarRecebimentoBoletosPacienteApi(pacienteId: number, payload: RecebimentoBoletosPayloadApi) {
+  return fetchJson<ArquivoPacienteItemApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/documentos/recebimento-boletos`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
 export function urlReciboPaciente(pacienteId: number, recebivelId: number) {

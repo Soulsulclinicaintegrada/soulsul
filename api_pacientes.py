@@ -73,9 +73,11 @@ ARQUIVOS_BASE_DIR = os.path.dirname(os.path.abspath(DB_PATH)) or "."
 DOCS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "documentos")
 EXAMES_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "exames")
 FOTOS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "fotos")
+BOLETOS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "boletos")
 TEMPLATE_PATH = os.path.join(API_BASE_DIR, "modelo_documento_normalizado.docx")
 TEMPLATE_B64_PATH = os.path.join(API_BASE_DIR, "modelo_documento_normalizado.b64")
 TEMPLATE_ORDEM_SERVICO_PATH = os.path.join(API_BASE_DIR, "ORDEM DE SERVIÇO PROTÉTICO.docx")
+TEMPLATE_RECEBIMENTO_BOLETOS_PATH = os.path.join(API_BASE_DIR, "RECEBIMENTO DE BOLETOS.docx")
 CONTAS_CAIXA_MODELO = ["CAIXA", "SICOOB", "INFINITEPAY", "PAGBANK", "C6"]
 TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo") if ZoneInfo is not None else None
 
@@ -484,6 +486,12 @@ def pasta_fotos_paciente(paciente_row: sqlite3.Row | dict) -> str:
     return pasta
 
 
+def pasta_boletos_paciente(paciente_row: sqlite3.Row | dict) -> str:
+    pasta = os.path.join(BOLETOS_DIR, slug_paciente_arquivos(paciente_row))
+    os.makedirs(pasta, exist_ok=True)
+    return pasta
+
+
 def url_foto_paciente(row: sqlite3.Row) -> str:
     if not str(row["foto_path"] or "").strip():
         return ""
@@ -636,6 +644,15 @@ class ArquivoPacienteItem(BaseModel):
     caminho: str
     modificadoEm: str = ""
     extensao: str = ""
+
+
+class ImagemDocumentoPayload(BaseModel):
+    nome: str
+    conteudo_base64: str
+
+
+class RecebimentoBoletosPayload(BaseModel):
+    imagens: list[ImagemDocumentoPayload] = Field(default_factory=list)
 
 
 class FinanceiroResumo(BaseModel):
@@ -4372,6 +4389,121 @@ def obter_logo_recibo_base64() -> str:
     return LOGO_RECIBO_BASE64
 
 
+def decodificar_base64_documento(valor: str) -> bytes:
+    texto = str(valor or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Imagem do boleto vazia.")
+    if "," in texto and texto.split(",", 1)[0].lower().startswith("data:"):
+        texto = texto.split(",", 1)[1]
+    try:
+        return base64.b64decode(texto)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Falha ao ler uma das imagens do boleto.") from exc
+
+
+def nome_arquivo_recebimento_boletos(paciente_row: sqlite3.Row) -> str:
+    timestamp = agora_local().strftime("%Y%m%d_%H%M%S")
+    return f"RECEBIMENTO_BOLETOS_{slug_paciente_arquivos(paciente_row)}_{timestamp}.docx"
+
+
+def montar_texto_recebimento_boletos(paciente_row: sqlite3.Row) -> str:
+    nome = formatar_titulo(valor_row(paciente_row, "nome")) or "________________________________"
+    cpf = valor_row(paciente_row, "cpf") or "___________________"
+    endereco = montar_endereco_paciente_contrato(paciente_row) or "endereço não informado"
+    return (
+        f"Eu, {nome}, inscrito(a) sob o CPF: {cpf}, residente em {endereco}, "
+        "autorizo a empresa SOUL SUL CLINICA INTEGRADA LTDA, inscrita no CNPJ sob o nº "
+        "59.002.730/0001-74, com sede à Rua Tenente Coronel Cardoso, 812, Centro, "
+        "Campos dos Goytacazes/RJ, pessoa jurídica de direito privado, a emitir os boletos descritos abaixo:"
+    )
+
+
+def gerar_documento_recebimento_boletos(
+    paciente_row: sqlite3.Row,
+    imagens: list[ImagemDocumentoPayload],
+) -> ArquivoPacienteItem:
+    if Document is None:
+        raise HTTPException(status_code=500, detail="python-docx nao disponivel para gerar o documento.")
+    if not os.path.isfile(TEMPLATE_RECEBIMENTO_BOLETOS_PATH):
+        raise HTTPException(status_code=500, detail="Modelo de recebimento de boletos nao encontrado.")
+    if not imagens:
+        raise HTTPException(status_code=400, detail="Anexe ao menos um print do boleto.")
+
+    doc = Document(TEMPLATE_RECEBIMENTO_BOLETOS_PATH)
+    paragrafo_principal = next((p for p in doc.paragraphs if p.text.strip()), None)
+    if paragrafo_principal is None:
+        paragrafo_principal = doc.add_paragraph("")
+    paragrafo_principal.text = montar_texto_recebimento_boletos(paciente_row)
+
+    linha_assinatura = next((p for p in doc.paragraphs if "___" in p.text), None)
+    if linha_assinatura is not None:
+        indice_linha = doc.paragraphs.index(linha_assinatura)
+        for indice in range(indice_linha + 1, min(indice_linha + 3, len(doc.paragraphs))):
+            texto_atual = normalizar_texto_maiusculo(doc.paragraphs[indice].text)
+            if texto_atual.startswith("CPF"):
+                doc.paragraphs[indice].text = f"CPF: {valor_row(paciente_row, 'cpf')}"
+            elif doc.paragraphs[indice].text.strip():
+                doc.paragraphs[indice].text = formatar_titulo(valor_row(paciente_row, "nome"))
+
+    pasta_imagens = pasta_boletos_paciente(paciente_row)
+    timestamp = agora_local().strftime("%Y%m%d_%H%M%S")
+    caminhos_imagens: list[str] = []
+    for indice, imagem in enumerate(imagens, start=1):
+        nome_original = os.path.basename(str(imagem.nome or f"boleto_{indice}.png").strip()) or f"boleto_{indice}.png"
+        extensao = os.path.splitext(nome_original)[1].lower() or ".png"
+        if extensao not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise HTTPException(status_code=400, detail="Use imagens PNG, JPG, JPEG ou WEBP para os boletos.")
+        conteudo = decodificar_base64_documento(imagem.conteudo_base64)
+        if not conteudo:
+            raise HTTPException(status_code=400, detail="Uma das imagens do boleto está vazia.")
+        caminho_imagem = os.path.join(pasta_imagens, f"boleto_{timestamp}_{indice:02d}{extensao}")
+        with open(caminho_imagem, "wb") as destino:
+            destino.write(conteudo)
+        caminhos_imagens.append(caminho_imagem)
+
+    ancora_xml = paragrafo_principal._p
+    titulo_anexos = doc.add_paragraph("BOLETOS ANEXADOS")
+    if titulo_anexos.runs:
+        titulo_anexos.runs[0].bold = True
+        if Pt is not None:
+            titulo_anexos.runs[0].font.size = Pt(11)
+    inserir_bloco_apos_docx(ancora_xml, titulo_anexos._p)
+    ancora_xml = titulo_anexos._p
+
+    for indice, caminho_imagem in enumerate(caminhos_imagens, start=1):
+        legenda = doc.add_paragraph(f"Boleto {indice}")
+        if legenda.runs and Pt is not None:
+            legenda.runs[0].bold = True
+            legenda.runs[0].font.size = Pt(9)
+        inserir_bloco_apos_docx(ancora_xml, legenda._p)
+        ancora_xml = legenda._p
+
+        paragrafo_imagem = doc.add_paragraph("")
+        paragrafo_imagem.alignment = 1
+        run = paragrafo_imagem.add_run()
+        if Inches is not None:
+            run.add_picture(caminho_imagem, width=Inches(6.0))
+        else:
+            run.add_picture(caminho_imagem)
+        inserir_bloco_apos_docx(ancora_xml, paragrafo_imagem._p)
+        ancora_xml = paragrafo_imagem._p
+
+        espaco = doc.add_paragraph("")
+        inserir_bloco_apos_docx(ancora_xml, espaco._p)
+        ancora_xml = espaco._p
+
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    nome_arquivo = nome_arquivo_recebimento_boletos(paciente_row)
+    caminho_docx = os.path.join(DOCS_DIR, nome_arquivo)
+    doc.save(caminho_docx)
+    return ArquivoPacienteItem(
+        nome=nome_arquivo,
+        caminho=caminho_docx,
+        modificadoEm=formatar_data_br(agora_local().date()),
+        extensao=".docx",
+    )
+
+
 def gerar_html_recibo_manual(recibo: sqlite3.Row) -> str:
     valor = formatar_moeda_br(recibo["valor"])
     data_pagamento = formatar_data_br_valor(recibo["data_pagamento"]) or formatar_data_br(date.today())
@@ -7847,6 +7979,16 @@ def abrir_documento_paciente(paciente_id: int, nome_arquivo: str, download: int 
             media_type=media_type,
             content_disposition_type="attachment" if int(download or 0) else "inline",
         )
+    finally:
+        conn.close()
+
+
+@app.post("/api/pacientes/{paciente_id}/documentos/recebimento-boletos", response_model=ArquivoPacienteItem)
+def gerar_recebimento_boletos_paciente(paciente_id: int, payload: RecebimentoBoletosPayload):
+    conn = conectar()
+    try:
+        paciente_row = carregar_paciente_por_id(conn, paciente_id)
+        return gerar_documento_recebimento_boletos(paciente_row, payload.imagens)
     finally:
         conn.close()
 

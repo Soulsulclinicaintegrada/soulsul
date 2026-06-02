@@ -17,6 +17,7 @@ import {
   criarPacienteApi,
   enviarFotoPacienteApi,
   fichaPacienteApi,
+  gerarRecebimentoBoletosPacienteApi,
   listarPacientesApi,
   listarProcedimentosApi,
   listarOrdensServicoPacienteApi,
@@ -810,6 +811,15 @@ function formatarDataCurta(valor?: string) {
   });
 }
 
+function lerArquivoComoBase64(arquivo: File) {
+  return new Promise<string>((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result || ""));
+    leitor.onerror = () => reject(new Error(`Falha ao ler o arquivo ${arquivo.name}.`));
+    leitor.readAsDataURL(arquivo);
+  });
+}
+
 function normalizarRegiao(valor: string) {
   return valor.trim().replace(/\s+/g, " ");
 }
@@ -957,11 +967,14 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [recebivelModalModo, setRecebivelModalModo] = useState<RecebivelModalModo>("edicao");
   const [salvandoRecebivel, setSalvandoRecebivel] = useState(false);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [arquivosBoletosSelecionados, setArquivosBoletosSelecionados] = useState<File[]>([]);
+  const [gerandoRecebimentoBoletos, setGerandoRecebimentoBoletos] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
   const [fotoErro, setFotoErro] = useState(false);
   const ultimoCepNovo = useRef("");
   const ultimoCepEdicao = useRef("");
   const inputFotoPacienteRef = useRef<HTMLInputElement | null>(null);
+  const inputBoletosRef = useRef<HTMLInputElement | null>(null);
 
   const pacienteDetalhe = ficha?.paciente ?? null;
   const fotoPacienteSrc = pacienteDetalhe?.fotoUrl ? `${urlFotoPaciente(pacienteDetalhe.id)}?v=${fotoVersao}` : "";
@@ -1487,6 +1500,55 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setFotoErro(false);
     setFotoVersao(Date.now());
   }, [pacienteDetalhe?.id, pacienteDetalhe?.fotoUrl]);
+
+  function selecionarArquivosBoletos(event: ChangeEvent<HTMLInputElement>) {
+    const arquivos = Array.from(event.target.files || []).filter((arquivo) => arquivo.type.startsWith("image/"));
+    if (!arquivos.length) return;
+    setArquivosBoletosSelecionados((atual) => {
+      const vistos = new Set(atual.map((item) => `${item.name}-${item.size}-${item.lastModified}`));
+      const proximos = [...atual];
+      arquivos.forEach((arquivo) => {
+        const chave = `${arquivo.name}-${arquivo.size}-${arquivo.lastModified}`;
+        if (!vistos.has(chave)) {
+          vistos.add(chave);
+          proximos.push(arquivo);
+        }
+      });
+      return proximos;
+    });
+    event.target.value = "";
+  }
+
+  function removerArquivoBoleto(indice: number) {
+    setArquivosBoletosSelecionados((atual) => atual.filter((_, itemIndice) => itemIndice !== indice));
+  }
+
+  async function gerarRecebimentoBoletos() {
+    if (!pacienteAtivoId) return;
+    if (!arquivosBoletosSelecionados.length) {
+      setErro("Selecione ao menos um print do boleto para gerar o documento.");
+      return;
+    }
+    setGerandoRecebimentoBoletos(true);
+    setErro(null);
+    try {
+      const imagens = await Promise.all(
+        arquivosBoletosSelecionados.map(async (arquivo) => ({
+          nome: arquivo.name,
+          conteudo_base64: await lerArquivoComoBase64(arquivo)
+        }))
+      );
+      const arquivoGerado = await gerarRecebimentoBoletosPacienteApi(pacienteAtivoId, { imagens });
+      setArquivosBoletosSelecionados([]);
+      setFeedback("Recebimento de boletos gerado e salvo em Documentos.");
+      await carregarFicha(pacienteAtivoId);
+      abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivoGerado.nome, true));
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao gerar o recebimento de boletos.");
+    } finally {
+      setGerandoRecebimentoBoletos(false);
+    }
+  }
 
   async function aplicarCep(form: PacienteForm, setter: (valor: PacienteForm) => void) {
     const cep = form.cep.replace(/\D/g, "");
@@ -3183,28 +3245,82 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   </div>
 
                   {abaDocumentos === "Documentos" ? (
-                    <div className="doc-grid">
-                      {ficha?.documentos.length ? ficha.documentos.map((arquivo) => (
-                        <article
-                          key={arquivo.caminho}
-                          className="doc-card"
-                          onClick={() => pacienteAtivoId ? abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome)) : undefined}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(event) => {
-                            if ((event.key === "Enter" || event.key === " ") && pacienteAtivoId) {
-                              event.preventDefault();
-                              abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome));
-                            }
-                          }}
-                        >
-                          <FileText size={18} />
+                    <div className="documents-pane">
+                      <article className="boleto-builder-card">
+                        <div className="boleto-builder-header">
                           <div>
-                            <strong>{formatarArquivo(arquivo)}</strong>
-                            <span>{arquivo.modificadoEm || "Arquivo local"}</span>
+                            <strong>Recebimento de boletos</strong>
+                            <span>Anexe os prints dos boletos para gerar o documento pronto neste paciente.</span>
                           </div>
-                        </article>
-                      )) : <span className="empty-inline">Sem documentos encontrados.</span>}
+                          <button
+                            type="button"
+                            className="ghost-action"
+                            onClick={() => inputBoletosRef.current?.click()}
+                            disabled={gerandoRecebimentoBoletos}
+                          >
+                            Selecionar prints
+                          </button>
+                        </div>
+                        <input
+                          ref={inputBoletosRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          multiple
+                          className="patient-photo-input"
+                          onChange={selecionarArquivosBoletos}
+                        />
+                        {arquivosBoletosSelecionados.length ? (
+                          <div className="boleto-upload-list">
+                            {arquivosBoletosSelecionados.map((arquivo, indice) => (
+                              <div key={`${arquivo.name}-${arquivo.lastModified}-${indice}`} className="boleto-upload-item">
+                                <div>
+                                  <strong>{arquivo.name}</strong>
+                                  <span>{`${Math.max(1, Math.round(arquivo.size / 1024))} KB`}</span>
+                                </div>
+                                <button type="button" className="ghost-action danger compact" onClick={() => removerArquivoBoleto(indice)} disabled={gerandoRecebimentoBoletos}>
+                                  Remover
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="empty-inline">Nenhum print selecionado ainda.</span>
+                        )}
+                        <div className="patient-form-actions">
+                          <button
+                            type="button"
+                            className="primary-action"
+                            onClick={() => void gerarRecebimentoBoletos()}
+                            disabled={gerandoRecebimentoBoletos || !arquivosBoletosSelecionados.length}
+                          >
+                            {gerandoRecebimentoBoletos ? "Gerando..." : "Gerar recebimento de boletos"}
+                          </button>
+                        </div>
+                      </article>
+
+                      <div className="doc-grid">
+                        {ficha?.documentos.length ? ficha.documentos.map((arquivo) => (
+                          <article
+                            key={arquivo.caminho}
+                            className="doc-card"
+                            onClick={() => pacienteAtivoId ? abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome)) : undefined}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if ((event.key === "Enter" || event.key === " ") && pacienteAtivoId) {
+                                event.preventDefault();
+                                abrirArquivo(urlDocumentoPaciente(pacienteAtivoId, arquivo.nome));
+                              }
+                            }}
+                          >
+                            <FileText size={18} />
+                            <div>
+                              <strong>{formatarArquivo(arquivo)}</strong>
+                              <span>{arquivo.modificadoEm || "Arquivo local"}</span>
+                            </div>
+                          </article>
+                        )) : <span className="empty-inline">Sem documentos encontrados.</span>}
+                      </div>
                     </div>
                   ) : null}
 

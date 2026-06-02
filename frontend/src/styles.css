@@ -2279,6 +2279,54 @@ textarea::placeholder {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.documents-pane {
+  display: grid;
+  gap: 16px;
+}
+
+.boleto-builder-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(248, 244, 236, 0.72);
+  border: 1px solid rgba(198, 176, 139, 0.24);
+}
+
+.boleto-builder-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.boleto-builder-header strong,
+.boleto-upload-item strong {
+  display: block;
+}
+
+.boleto-builder-header span,
+.boleto-upload-item span {
+  color: #7a685a;
+  font-size: 0.84rem;
+}
+
+.boleto-upload-list {
+  display: grid;
+  gap: 10px;
+}
+
+.boleto-upload-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(198, 176, 139, 0.18);
+}
+
 .doc-card,
 .exam-card {
   display: flex;
