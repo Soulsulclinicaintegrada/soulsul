@@ -184,6 +184,17 @@ def formatar_data_hora_relatorio(valor) -> str:
         return formatar_data_br(data)
 
 
+def calcular_idade_atual(valor_data_nascimento) -> int | None:
+    nascimento = parse_data_contrato(valor_data_nascimento)
+    if nascimento is None:
+        return None
+    hoje = agora_local().date()
+    idade = hoje.year - nascimento.year
+    if (hoje.month, hoje.day) < (nascimento.month, nascimento.day):
+        idade -= 1
+    return idade if idade >= 0 else None
+
+
 def formatar_prontuario_valor(valor) -> str:
     if valor is None:
         return ""
@@ -1017,6 +1028,7 @@ class CrmResgateItemResposta(BaseModel):
     pacienteId: int
     nome: str
     cpf: str = ""
+    idadeAtual: int | None = None
     prontuario: str = ""
     telefone: str = ""
     dataOrcamento: str = ""
@@ -6656,6 +6668,7 @@ def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta
             COALESCE(crm.id, 0) AS crm_id,
             COALESCE(NULLIF(p.nome, ''), 'Sem nome') AS nome,
             COALESCE(p.cpf, '') AS cpf,
+            COALESCE(p.data_nascimento, '') AS data_nascimento,
             COALESCE(p.prontuario, '') AS prontuario,
             COALESCE(p.telefone, '') AS telefone,
             COALESCE(c.data_criacao, '') AS data_criacao,
@@ -6752,6 +6765,7 @@ def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta
                 pacienteId=paciente_id,
                 nome=str(row["nome"] or ""),
                 cpf=str(row["cpf"] or ""),
+                idadeAtual=calcular_idade_atual(row["data_nascimento"]),
                 prontuario=formatar_prontuario_valor(row["prontuario"]),
                 telefone=str(row["telefone"] or ""),
                 dataOrcamento=formatar_data_br_valor(row["data_criacao"]),

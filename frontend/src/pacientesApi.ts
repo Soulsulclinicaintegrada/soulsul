@@ -742,6 +742,7 @@ export type CrmResgateItemApi = {
   pacienteId: number;
   nome: string;
   cpf?: string;
+  idadeAtual?: number | null;
   prontuario?: string;
   telefone?: string;
   dataOrcamento?: string;
