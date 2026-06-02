@@ -5104,9 +5104,31 @@ def expandir_regiao_para_dentes_docx(regiao: str, denticao_snapshot: str | None 
         return [str(item) for item in fileiras["superior"]]
     if regiao_norm in {"ARCADA INFERIOR", "INFERIOR"}:
         return [str(item) for item in fileiras["inferior"]]
-    if regiao_norm in {"ARCADAS SUPERIOR E INFERIOR", "ARCADA COMPLETA", "BOCA TODA"}:
+    if regiao_norm in {
+        "ARCADAS SUPERIOR E INFERIOR",
+        "ARCADA SUPERIOR E INFERIOR",
+        "ARCADA COMPLETA",
+        "BOCA TODA",
+    }:
         return [str(item) for item in [*fileiras["superior"], *fileiras["inferior"]]]
     return []
+
+
+def rotulo_regiao_contrato_docx(regiao: str) -> str:
+    regiao_limpa = str(regiao or "").strip()
+    regiao_norm = normalizar_texto_maiusculo(regiao_limpa)
+    if regiao_norm in {"ARCADA SUPERIOR", "SUPERIOR"}:
+        return "Arcada Superior"
+    if regiao_norm in {"ARCADA INFERIOR", "INFERIOR"}:
+        return "Arcada Inferior"
+    if regiao_norm in {
+        "ARCADAS SUPERIOR E INFERIOR",
+        "ARCADA SUPERIOR E INFERIOR",
+        "ARCADA COMPLETA",
+        "BOCA TODA",
+    }:
+        return "Arcadas Superior e Inferior"
+    return regiao_limpa
 
 
 def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato_id: int) -> list[dict]:
@@ -5125,6 +5147,7 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
     ).fetchall()
 
     regioes_por_procedimento: dict[str, list[str]] = {}
+    regioes_texto_por_procedimento: dict[str, list[str]] = {}
     denticao_por_procedimento: dict[str, str] = {
         normalizar_texto(str(row["procedimento"] or "").strip()): str(row["denticao_snapshot"] or "")
         for row in procedimentos
@@ -5135,6 +5158,10 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
         if not valor:
             continue
         regioes_por_procedimento.setdefault(chave, [])
+        regioes_texto_por_procedimento.setdefault(chave, [])
+        rotulo_regiao = rotulo_regiao_contrato_docx(valor)
+        if rotulo_regiao and rotulo_regiao not in regioes_texto_por_procedimento[chave]:
+            regioes_texto_por_procedimento[chave].append(rotulo_regiao)
         valores_expandidos = expandir_regiao_para_dentes_docx(valor, denticao_por_procedimento.get(chave))
         if valores_expandidos:
             for item in valores_expandidos:
@@ -5149,10 +5176,15 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
         procedimento = str(row["procedimento"] or "").strip()
         chave = normalizar_texto(procedimento)
         regioes = regioes_por_procedimento.get(chave, [])
+        regioes_texto = regioes_texto_por_procedimento.get(chave, [])
         sufixo = ""
-        if regioes:
-            rotulo = "Elemento" if len(regioes) == 1 else "Elementos"
-            sufixo = f" - {rotulo}: {', '.join(regioes)}"
+        if regioes_texto:
+            somente_elementos = all(str(item).isdigit() for item in regioes_texto)
+            if somente_elementos:
+                rotulo = "Elemento" if len(regioes_texto) == 1 else "Elementos"
+            else:
+                rotulo = "Região" if len(regioes_texto) == 1 else "Regiões"
+            sufixo = f" - {rotulo}: {', '.join(regioes_texto)}"
         itens.append(
             {
                 "procedimento": f"{procedimento}{sufixo}",
