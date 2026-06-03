@@ -46,6 +46,14 @@ function textoPermissao(nivel: number) {
   return "Sem acesso";
 }
 
+function normalizarBusca(valor?: string) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   const cargo = String(usuario?.cargo || "").trim().toLowerCase();
   const perfil = String(usuario?.perfil || "").trim().toLowerCase();
@@ -155,6 +163,43 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [sidebarOverlayAberta]);
+
+  useEffect(() => {
+    function onCopy(event: ClipboardEvent) {
+      const raiz = document.getElementById("root");
+      const alvo = event.target as Node | null;
+      if (raiz && alvo && !raiz.contains(alvo)) return;
+
+      let texto = "";
+      const ativo = document.activeElement;
+      const campoAtivo =
+        ativo instanceof HTMLInputElement || ativo instanceof HTMLTextAreaElement
+          ? ativo
+          : null;
+      if (
+        alvo
+        && campoAtivo
+        && alvo === campoAtivo
+        && campoAtivo.type !== "password"
+      ) {
+        const inicio = campoAtivo.selectionStart ?? 0;
+        const fim = campoAtivo.selectionEnd ?? 0;
+        texto = String(campoAtivo.value || "").slice(inicio, fim);
+      }
+
+      if (!texto) {
+        const selecao = window.getSelection?.();
+        texto = selecao ? selecao.toString() : "";
+      }
+      if (!texto) return;
+
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", texto.toLocaleUpperCase("pt-BR"));
+    }
+
+    document.addEventListener("copy", onCopy);
+    return () => document.removeEventListener("copy", onCopy);
+  }, []);
 
   useEffect(() => {
     if (!usuarioLogado) return;
@@ -325,10 +370,10 @@ function App() {
             type="button"
             className="primary-action"
             onClick={async () => {
-              const termo = usuarioLoginDigitado.trim().toLowerCase();
+              const termo = normalizarBusca(usuarioLoginDigitado);
               const usuarioEscolhido =
-                usuariosSistema.find((item) => item.usuario.toLowerCase() === termo)
-                || usuariosSistema.find((item) => item.nome.toLowerCase() === termo)
+                usuariosSistema.find((item) => normalizarBusca(item.usuario) === termo)
+                || usuariosSistema.find((item) => normalizarBusca(item.nome) === termo)
                 || null;
               const usuarioParaLogin = usuarioEscolhido?.usuario || usuarioLoginDigitado.trim();
               if (!usuarioParaLogin) {

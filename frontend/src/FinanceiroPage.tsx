@@ -182,6 +182,14 @@ const RECIBO_INICIAL: ReciboManualForm = {
   cidade: "CAMPOS DOS GOYTACAZES/RJ"
 };
 
+function normalizarBuscaTexto(valor?: string) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 const META_FORM_INICIAL: MetaForm = {
   ano: new Date().getFullYear(),
   mes: new Date().getMonth() + 1,
@@ -429,10 +437,10 @@ export function FinanceiroPage() {
   );
 
   const recebiveisAbertosFiltrados = useMemo(() => {
-    const termo = buscaBaixaRecebivel.trim().toLowerCase();
+    const termo = normalizarBuscaTexto(buscaBaixaRecebivel);
     if (!termo) return recebiveisAbertos;
     return recebiveisAbertos.filter((item) =>
-      `${item.pacienteNome || ""} ${item.prontuario || ""} ${item.parcela || ""} ${item.vencimento || ""}`.toLowerCase().includes(termo)
+      normalizarBuscaTexto(`${item.pacienteNome || ""} ${item.prontuario || ""} ${item.parcela || ""} ${item.vencimento || ""}`).includes(termo)
     );
   }, [recebiveisAbertos, buscaBaixaRecebivel]);
 
@@ -454,9 +462,9 @@ export function FinanceiroPage() {
   );
 
   const recebiveisFiltrados = useMemo(() => {
-    const termo = buscaRecebivel.trim().toLowerCase();
+    const termo = normalizarBuscaTexto(buscaRecebivel);
     return recebiveis.filter((item) => {
-      const buscaOk = !termo || `${item.pacienteNome || ""} ${item.prontuario || ""} ${item.parcela || ""} ${item.vencimento || ""}`.toLowerCase().includes(termo);
+      const buscaOk = !termo || normalizarBuscaTexto(`${item.pacienteNome || ""} ${item.prontuario || ""} ${item.parcela || ""} ${item.vencimento || ""}`).includes(termo);
       const statusOk = !filtroStatusRecebivel || String(item.status || "") === filtroStatusRecebivel;
       const formaOk = !filtroFormaRecebivel || String(item.formaPagamento || "") === filtroFormaRecebivel;
       const vencimentoOk = dataEstaNoPeriodo(
@@ -510,9 +518,9 @@ export function FinanceiroPage() {
 
   const contasPagarFiltradas = useMemo(() => {
     return contasPagar.filter((item) => {
-      const fornecedorOk = !filtroFornecedorPagar.trim() || String(item.fornecedor || "").toLowerCase().includes(filtroFornecedorPagar.trim().toLowerCase());
+      const fornecedorOk = !filtroFornecedorPagar.trim() || normalizarBuscaTexto(item.fornecedor).includes(normalizarBuscaTexto(filtroFornecedorPagar));
       const statusOk = !filtroStatusPagar || String(item.status || "") === filtroStatusPagar;
-      const categoriaOk = !filtroCategoriaPagar.trim() || String(item.categoria || "").toLowerCase().includes(filtroCategoriaPagar.trim().toLowerCase());
+      const categoriaOk = !filtroCategoriaPagar.trim() || normalizarBuscaTexto(item.categoria).includes(normalizarBuscaTexto(filtroCategoriaPagar));
       const vencimentoOk = dataEstaNoPeriodo(
         dataBrParaIso(item.vencimento),
         filtroVencimentoPagarInicio,

@@ -1296,9 +1296,9 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }, [editForm.cep]);
 
   const procedimentosFiltrados = useMemo(() => {
-    const termo = orcamentoDraft.termoProcedimento.trim().toLowerCase();
+    const termo = normalizarTextoComparacao(orcamentoDraft.termoProcedimento);
     if (!termo) return [];
-    return procedimentosCatalogo.filter((item) => item.nome.toLowerCase().includes(termo)).slice(0, 8);
+    return procedimentosCatalogo.filter((item) => normalizarTextoComparacao(item.nome).includes(termo)).slice(0, 8);
   }, [orcamentoDraft.termoProcedimento, procedimentosCatalogo]);
   const totalOrcamento = useMemo(
     () => procedimentosOrcamento.reduce((total, item) => total + subtotalProcedimento(item), 0),

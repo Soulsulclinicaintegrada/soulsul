@@ -32,6 +32,13 @@ type ProcedimentoCatalogo = {
   ativo: boolean;
 };
 
+type ProcedimentoGuiaOpcao = {
+  value: string;
+  id: number | null;
+  nome: string;
+  etapasPadrao: string[];
+};
+
 const ORDEM_SERVICO_INICIAL: OrdemServicoForm = {
   procedimentoId: "",
   procedimentoNomeManual: "",
@@ -158,21 +165,31 @@ export function GuiasPage() {
     [ficha?.paciente, pacienteSelecionadoId, pacientes]
   );
 
-  const procedimentoSelecionado = useMemo(
-    () => procedimentosCatalogo.find((item) => item.id === Number(ordemServicoForm.procedimentoId)) || null,
-    [ordemServicoForm.procedimentoId, procedimentosCatalogo]
-  );
-
   const procedimentosContratadosPaciente = useMemo(() => {
-    const nomesContratados = new Set(
+    const nomesContratados = Array.from(new Set(
       (ficha?.contratos || [])
         .filter((contrato) => (contrato.status || "").toUpperCase() === "APROVADO")
         .flatMap((contrato) => contrato.procedimentos || [])
-        .map((nome) => normalizarTextoComparacao(nome))
+        .map((nome) => String(nome || "").trim())
         .filter(Boolean)
-    );
-    return procedimentosCatalogo.filter((item) => item.ativo !== false && nomesContratados.has(normalizarTextoComparacao(item.nome)));
+    ));
+    return nomesContratados.map<ProcedimentoGuiaOpcao>((nomeContratado) => {
+      const catalogo = procedimentosCatalogo.find((item) =>
+        item.ativo !== false && normalizarTextoComparacao(item.nome) === normalizarTextoComparacao(nomeContratado)
+      );
+      return {
+        value: catalogo ? String(catalogo.id) : `nome::${nomeContratado}`,
+        id: catalogo?.id ?? null,
+        nome: catalogo?.nome ?? nomeContratado,
+        etapasPadrao: catalogo?.etapasPadrao || []
+      };
+    });
   }, [ficha?.contratos, procedimentosCatalogo]);
+
+  const procedimentoSelecionado = useMemo(
+    () => procedimentosContratadosPaciente.find((item) => item.value === ordemServicoForm.procedimentoId) || null,
+    [ordemServicoForm.procedimentoId, procedimentosContratadosPaciente]
+  );
 
   function adicionarEtapa() {
     setOrdemServicoForm((atual) => ({
@@ -350,7 +367,7 @@ export function GuiasPage() {
                   >
                     <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Informar manualmente"}</option>
                     {procedimentosContratadosPaciente.map((item) => (
-                      <option key={item.id} value={item.id}>{item.nome}</option>
+                      <option key={item.value} value={item.value}>{item.nome}</option>
                     ))}
                   </select>
                 </label>

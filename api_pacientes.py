@@ -217,6 +217,18 @@ def normalizar_texto(valor: str) -> str:
     return re.sub(r"\s+", " ", texto)
 
 
+def textos_compativeis(valor: str, referencia: str) -> bool:
+    texto = normalizar_texto(valor)
+    base = normalizar_texto(referencia)
+    if not texto or not base:
+        return False
+    if texto == base or texto in base or base in texto:
+        return True
+    tokens_texto = {item for item in texto.split() if len(item) > 2}
+    tokens_base = {item for item in base.split() if len(item) > 2}
+    return bool(tokens_texto) and tokens_texto.issubset(tokens_base)
+
+
 def limpar_cpf(cpf: str) -> str:
     return "".join(ch for ch in str(cpf or "") if ch.isdigit())
 
@@ -2209,17 +2221,17 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             """,
             (int(paciente_id),),
         ).fetchall()
-        procedimentos_contratados = {
-            normalizar_texto(str(item["procedimento"] or ""))
+        procedimentos_contratados = [
+            str(item["procedimento"] or "").strip()
             for item in procedimentos_contratados_rows
             if str(item["procedimento"] or "").strip()
-        }
+        ]
         procedimento_nome = corrigir_texto_importado(str(payload.procedimento_nome or "").strip())
         if procedimento is not None:
             procedimento_nome = corrigir_texto_importado(str(procedimento["nome"] or "").strip())
         if not procedimento_nome:
             raise HTTPException(status_code=400, detail="Informe o procedimento da ordem de serviço.")
-        if procedimentos_contratados and normalizar_texto(procedimento_nome) not in procedimentos_contratados:
+        if procedimentos_contratados and not any(textos_compativeis(procedimento_nome, item) for item in procedimentos_contratados):
             raise HTTPException(status_code=400, detail="Selecione apenas um procedimento contratado para este paciente.")
         material = corrigir_texto_importado(str(payload.material or "").strip())
         material_outro = corrigir_texto_importado(str(payload.material_outro or "").strip())
