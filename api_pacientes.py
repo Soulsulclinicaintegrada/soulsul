@@ -2786,6 +2786,7 @@ def salvar_orcamento_paciente(
         raise HTTPException(status_code=400, detail="Informe a data de retorno do CRM para este orçamento.")
 
     if contrato_id is None:
+        contrato_aprovado = False
         cursor = conn.execute(
             """
             INSERT INTO contratos (
@@ -2819,6 +2820,7 @@ def salvar_orcamento_paciente(
         contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
         if contrato is None:
             raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
+        contrato_aprovado = normalizar_texto(contrato["status"]) == "aprovado"
         conn.execute(
             """
             UPDATE contratos
@@ -2874,7 +2876,7 @@ def salvar_orcamento_paciente(
                     dente,
                     regiao.regiao.strip(),
                     item.procedimento.strip(),
-                    "ORCAMENTO" if regiao.ativo else "EXCLUIDO",
+                    ("CONTRATADO" if contrato_aprovado else "ORCAMENTO") if regiao.ativo else "EXCLUIDO",
                     ",".join(face.strip() for face in regiao.faces if face.strip()),
                     float(regiao.valor or 0),
                     data_base,
@@ -2925,6 +2927,7 @@ def salvar_orcamento_paciente_com_pagamento(
         raise HTTPException(status_code=400, detail="Informe a data de retorno do CRM para este orçamento.")
 
     if contrato_id is None:
+        contrato_aprovado = False
         cursor = conn.execute(
             """
             INSERT INTO contratos (
@@ -2958,6 +2961,7 @@ def salvar_orcamento_paciente_com_pagamento(
         contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
         if contrato is None:
             raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
+        contrato_aprovado = normalizar_texto(contrato["status"]) == "aprovado"
         conn.execute(
             """
             UPDATE contratos
@@ -3013,7 +3017,7 @@ def salvar_orcamento_paciente_com_pagamento(
                     dente,
                     regiao.regiao.strip(),
                     item.procedimento.strip(),
-                    "ORCAMENTO" if regiao.ativo else "EXCLUIDO",
+                    ("CONTRATADO" if contrato_aprovado else "ORCAMENTO") if regiao.ativo else "EXCLUIDO",
                     ",".join(face.strip() for face in regiao.faces if face.strip()),
                     float(regiao.valor or 0),
                     data_base,
@@ -6021,7 +6025,7 @@ def gerar_documento_contrato(
     doc = None
     try:
         doc = carregar_template_contrato_docx()
-        data_documento = agora_local().date()
+        data_documento = parse_data_contrato(contrato["data_criacao"]) or parse_data_contrato(contrato["data_aprovacao"]) or agora_local().date()
         executar_ajuste_contrato("garantir_logo_no_cabecalho", lambda: garantir_logo_no_cabecalho(doc))
         termo_cirurgia = montar_termo_cirurgia_contrato(procedimentos)
         if not termo_cirurgia:
