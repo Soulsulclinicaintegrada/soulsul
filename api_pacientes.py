@@ -2231,7 +2231,12 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             procedimento_nome = corrigir_texto_importado(str(procedimento["nome"] or "").strip())
         if not procedimento_nome:
             raise HTTPException(status_code=400, detail="Informe o procedimento da ordem de serviço.")
-        if procedimentos_contratados and not any(textos_compativeis(procedimento_nome, item) for item in procedimentos_contratados):
+        procedimento_manual = procedimento is None and int(payload.procedimento_id or 0) <= 0
+        if (
+            procedimentos_contratados
+            and not procedimento_manual
+            and not any(textos_compativeis(procedimento_nome, item) for item in procedimentos_contratados)
+        ):
             raise HTTPException(status_code=400, detail="Selecione apenas um procedimento contratado para este paciente.")
         material = corrigir_texto_importado(str(payload.material or "").strip())
         material_outro = corrigir_texto_importado(str(payload.material_outro or "").strip())

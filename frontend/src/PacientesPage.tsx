@@ -3825,22 +3825,20 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
               value={ordemServicoForm.procedimentoId}
               onChange={(event) => redefinirOrdemServicoForm(event.target.value)}
             >
-              <option value="">{procedimentosContratadosPaciente.length ? "Selecione" : "Informar manualmente"}</option>
+              <option value="">Informar procedimento não listado</option>
                 {procedimentosContratadosPaciente.map((item) => (
                   <option key={item.value} value={item.value}>{item.nome}</option>
                 ))}
               </select>
             </label>
-          {!procedimentosContratadosPaciente.length ? (
-            <label className="procedures-form-wide">
-              <span>Procedimento manual</span>
-              <input
-                value={ordemServicoForm.procedimentoNomeManual}
-                onChange={(event) => setOrdemServicoForm((atual) => ({ ...atual, procedimentoNomeManual: event.target.value }))}
-                placeholder="Digite o procedimento para pacientes antigos"
-              />
-            </label>
-          ) : null}
+          <label className="procedures-form-wide">
+            <span>Procedimento não listado</span>
+            <input
+              value={ordemServicoForm.procedimentoNomeManual}
+              onChange={(event) => setOrdemServicoForm((atual) => ({ ...atual, procedimentoNomeManual: event.target.value }))}
+              placeholder="Digite aqui quando não estiver na lista"
+            />
+          </label>
 
           <label>
             <span>Elemento ou arcada</span>
