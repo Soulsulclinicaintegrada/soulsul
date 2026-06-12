@@ -364,6 +364,8 @@ const ORDEM_SERVICO_INICIAL: OrdemServicoForm = {
   etapas: [{ id: 1, etapa: "", descricaoOutro: "" }]
 };
 
+const MAX_PARCELAS_CONTRATO = 60;
+
 function normalizarTextoComparacao(valor: string) {
   return (valor || "")
     .normalize("NFD")
@@ -415,6 +417,21 @@ function dataParcelaPagamento(dataBase: string, indice: number, entrada: boolean
 function resumoFormaPagamento(plano: PlanoPagamento) {
   const linhasAtivas = plano.linhas.filter((linha) => Number(linha.valor || 0) > 0);
   if (!linhasAtivas.length) return "A Definir";
+  const entrada = linhasAtivas.find((linha) => linha.descricao.trim().toLowerCase() === "entrada");
+  const posteriores = linhasAtivas.filter((linha) => linha.descricao.trim().toLowerCase() !== "entrada");
+  if (entrada && posteriores.length) {
+    const formaEntrada = FORMAS_PAGAMENTO.find((item) => item.value === entrada.forma)?.label || entrada.forma;
+    const formasPosteriores = [...new Set(posteriores.map((linha) => linha.forma))];
+    if (formasPosteriores.length === 1) {
+      const formaPosterior = FORMAS_PAGAMENTO.find((item) => item.value === formasPosteriores[0])?.label || formasPosteriores[0];
+      const sufixoPosterior = formasPosteriores[0] === "CARTAO_CREDITO"
+        ? ` ${Math.max(1, posteriores[0].parcelasCartao || 1)}x`
+        : posteriores.length > 1 && formasPosteriores[0] === "BOLETO"
+          ? ` ${posteriores.length}x`
+          : "";
+      return `Entrada ${formaEntrada} + ${formaPosterior}${sufixoPosterior}`;
+    }
+  }
   const formasAtivas = [...new Set(linhasAtivas.map((linha) => linha.forma))];
   if (formasAtivas.length === 1) {
     const unica = formasAtivas[0];
@@ -428,8 +445,6 @@ function resumoFormaPagamento(plano: PlanoPagamento) {
     }
     return label;
   }
-  const entrada = linhasAtivas.find((linha) => linha.descricao.trim().toLowerCase() === "entrada");
-  const posteriores = linhasAtivas.filter((linha) => linha.descricao.trim().toLowerCase() !== "entrada");
   if (entrada && posteriores.length === 1) {
     const formaEntrada = FORMAS_PAGAMENTO.find((item) => item.value === entrada.forma)?.label || entrada.forma;
     const formaPosterior = FORMAS_PAGAMENTO.find((item) => item.value === posteriores[0].forma)?.label || posteriores[0].forma;
@@ -449,7 +464,7 @@ function normalizarPlanoPagamento(
   dataBase: string
 ): PlanoPagamento {
   const entrada = Boolean(plano?.entrada);
-  const parcelas = Math.max(1, plano?.parcelas || 1);
+  const parcelas = Math.min(MAX_PARCELAS_CONTRATO, Math.max(1, plano?.parcelas || 1));
   const totalLinhas = parcelas + (entrada ? 1 : 0);
   const valores = distribuirTotalParcelas(valorTotal, totalLinhas);
 
@@ -936,6 +951,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [salvandoCrmAtalho, setSalvandoCrmAtalho] = useState(false);
   const [planoPagamento, setPlanoPagamento] = useState<PlanoPagamento>(() => normalizarPlanoPagamento(null, 0, dataHojeIso()));
   const [planoPagamentoEditor, setPlanoPagamentoEditor] = useState<PlanoPagamento>(() => normalizarPlanoPagamento(null, 0, dataHojeIso()));
+  const [parcelasPagamentoTexto, setParcelasPagamentoTexto] = useState("1");
   const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
   const [valoresParcelasEditando, setValoresParcelasEditando] = useState<Record<number, string>>({});
   const [procedimentosCatalogo, setProcedimentosCatalogo] = useState<ProcedimentoCatalogo[]>([]);
@@ -1564,18 +1580,23 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   function abrirModalPagamento() {
     if (orcamentoBloqueado) return;
     setValoresParcelasEditando({});
-    setPlanoPagamentoEditor(normalizarPlanoPagamento(planoPagamento, totalOrcamentoFinal, orcamentoDraft.data));
+    const planoNormalizado = normalizarPlanoPagamento(planoPagamento, totalOrcamentoFinal, orcamentoDraft.data);
+    setPlanoPagamentoEditor(planoNormalizado);
+    setParcelasPagamentoTexto(String(planoNormalizado.parcelas));
     setModalPagamentoAberto(true);
   }
 
   function fecharModalPagamento() {
     setValoresParcelasEditando({});
+    setParcelasPagamentoTexto(String(planoPagamento.parcelas || 1));
     setModalPagamentoAberto(false);
   }
 
   function confirmarModalPagamento() {
     setValoresParcelasEditando({});
-    setPlanoPagamento(normalizarPlanoPagamento(planoPagamentoEditor, totalOrcamentoFinal, orcamentoDraft.data));
+    const planoNormalizado = normalizarPlanoPagamento(planoPagamentoEditor, totalOrcamentoFinal, orcamentoDraft.data);
+    setPlanoPagamento(planoNormalizado);
+    setParcelasPagamentoTexto(String(planoNormalizado.parcelas));
     setModalPagamentoAberto(false);
   }
 
@@ -1584,6 +1605,20 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       ...atual,
       [campo]: valor
     }, totalOrcamentoFinal, orcamentoDraft.data));
+  }
+
+  function aplicarQuantidadeParcelas(valorTexto: string) {
+    const somenteDigitos = valorTexto.replace(/\D/g, "");
+    setParcelasPagamentoTexto(somenteDigitos);
+    if (!somenteDigitos) return;
+    const parcelas = Math.min(MAX_PARCELAS_CONTRATO, Math.max(1, Number(somenteDigitos)));
+    atualizarPlanoPagamentoBase("parcelas", parcelas);
+  }
+
+  function concluirQuantidadeParcelas() {
+    const parcelas = Math.min(MAX_PARCELAS_CONTRATO, Math.max(1, Number(parcelasPagamentoTexto) || planoPagamentoEditor.parcelas || 1));
+    setParcelasPagamentoTexto(String(parcelas));
+    atualizarPlanoPagamentoBase("parcelas", parcelas);
   }
 
   function atualizarFormaParcela(indice: number, forma: FormaPagamentoOpcao) {
@@ -4687,11 +4722,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                 <label className="form-field">
                   <span>Parcelas</span>
                   <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={planoPagamentoEditor.parcelas}
-                    onChange={(e) => atualizarPlanoPagamentoBase("parcelas", Number(e.target.value) || 1)}
+                    inputMode="numeric"
+                    value={parcelasPagamentoTexto}
+                    onChange={(e) => aplicarQuantidadeParcelas(e.target.value)}
+                    onBlur={concluirQuantidadeParcelas}
+                    placeholder="Ex.: 30"
                     disabled={orcamentoBloqueado}
                   />
                 </label>
