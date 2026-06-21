@@ -291,8 +291,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setErro(null);
     try {
       const hoje = hojeIso();
-      const inicioHistorico = adicionarDias(hoje, -90);
-      const fimFuturo = adicionarDias(hoje, 180);
+      const inicioHistorico = "2000-01-01";
+      const fimFuturo = "2100-12-31";
       const resultados = await Promise.allSettled([
         listarCrmApi(),
         listarPacientesApi("", 5000),
