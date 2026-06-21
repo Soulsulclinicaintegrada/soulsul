@@ -29,14 +29,17 @@ type RelatorioCrmItem = {
   telefone: string;
   detalhe: string;
   dataIso?: string;
+  idade?: string;
   profissional?: string;
   tipoProcedimento?: string;
+  temAgendaFutura?: string;
   statusOrigem?: string;
   motivo?: string;
   usuario?: string;
 };
 
 type CrmAba = "funil" | "agendados" | "finalizados" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
+type RelatorioAberto = "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram" | "palavras-chave";
 
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   pacienteId: -1,
@@ -77,8 +80,8 @@ const ETAPAS_CRM = [
   "Contato inicial",
   "Tentando contato",
   "Conversando",
-  "Agendou avaliaÃ§Ã£o",
-  "Em negociaÃ§Ã£o",
+  "Agendou avaliação",
+  "Em negociação",
   "Convertido",
   "Perdido",
 ] as const;
@@ -160,6 +163,31 @@ function dataNascimentoDiaMes(valor?: string) {
   return null;
 }
 
+function calcularIdade(valor?: string) {
+  const nascimentoIso = extrairDataIso(valor);
+  if (!nascimentoIso) return "";
+  const hoje = new Date(`${hojeIso()}T12:00:00`);
+  const nascimento = new Date(`${nascimentoIso}T12:00:00`);
+  if (Number.isNaN(nascimento.getTime())) return "";
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aniversarioAindaNaoAconteceu =
+    hoje.getMonth() < nascimento.getMonth()
+    || (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate());
+  if (aniversarioAindaNaoAconteceu) idade -= 1;
+  return idade >= 0 ? String(idade) : "";
+}
+
+function quebrarPalavrasChave(valor: string) {
+  return Array.from(
+    new Set(
+      String(valor || "")
+        .split(";")
+        .map((item) => normalizarTexto(item))
+        .filter(Boolean)
+    )
+  );
+}
+
 function extrairDataIso(valor?: string) {
   const texto = String(valor || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
@@ -228,11 +256,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
   const [buscaLead, setBuscaLead] = useState("");
   const [leadSelecionadoId, setLeadSelecionadoId] = useState<number | null>(null);
-  const [relatorioAberto, setRelatorioAberto] = useState<"sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram">("sem-agendamento");
+  const [relatorioAberto, setRelatorioAberto] = useState<RelatorioAberto>("sem-agendamento");
   const [relatorioSemAgendamento, setRelatorioSemAgendamento] = useState<RelatorioCrmItem[]>([]);
   const [relatorioAniversariantes, setRelatorioAniversariantes] = useState<RelatorioCrmItem[]>([]);
   const [relatorioFaltaram, setRelatorioFaltaram] = useState<RelatorioCrmItem[]>([]);
   const [relatorioDesmarcaram, setRelatorioDesmarcaram] = useState<RelatorioCrmItem[]>([]);
+  const [relatorioPalavrasChave, setRelatorioPalavrasChave] = useState<RelatorioCrmItem[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -254,6 +283,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [relatorioProfissional, setRelatorioProfissional] = useState("");
   const [relatorioTipoProcedimento, setRelatorioTipoProcedimento] = useState("");
   const [relatorioStatusOrigem, setRelatorioStatusOrigem] = useState("");
+  const [relatorioPalavrasBusca, setRelatorioPalavrasBusca] = useState("");
   const [novoLeadManual, setNovoLeadManual] = useState<CrmNovoLeadPayloadApi>({ nome: "", telefone: "" });
 
   async function carregarPainel() {
@@ -275,6 +305,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         : { pipeline: [], finalizados: [], cancelados: [], avaliacoes: [], resgates: [] };
       const pacientes = pacientesResult.status === "fulfilled" ? pacientesResult.value : [];
       const agendamentos = agendamentosResult.status === "fulfilled" ? agendamentosResult.value : [];
+      const pacientesPorId = new Map(pacientes.map((item) => [item.id, item]));
 
       setPipeline((resposta.pipeline || []).map(normalizarItemCrm));
       setFinalizados((resposta.finalizados || []).map(normalizarItemCrm));
@@ -302,7 +333,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             nome: item.nome,
             prontuario: item.prontuario || "",
             telefone: item.telefone || "",
-            detalhe: "Sem agendamento futuro e nÃ£o finalizado",
+            detalhe: "Sem agendamento futuro e não finalizado",
           }))
       );
 
@@ -318,7 +349,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             nome: item.nome,
             prontuario: item.prontuario || "",
             telefone: item.telefone || "",
-            detalhe: nascimento ? `AniversÃ¡rio em ${String(nascimento.dia).padStart(2, "0")}/${String(nascimento.mes).padStart(2, "0")}` : "Sem data vÃ¡lida",
+            detalhe: nascimento ? `Aniversário em ${String(nascimento.dia).padStart(2, "0")}/${String(nascimento.mes).padStart(2, "0")}` : "Sem data válida",
           }))
       );
 
@@ -328,7 +359,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         nome: item.paciente || "Paciente",
         prontuario: item.prontuario || "",
         telefone: item.telefone || "",
-        detalhe: `${item.data || "-"} Â· ${item.inicio || "-"} Â· ${item.profissional || "-"} Â· ${(item.procedimentos || []).join(", ") || "-"}`,
+        detalhe: `${item.data || "-"} · ${item.inicio || "-"} · ${item.profissional || "-"} · ${(item.procedimentos || []).join(", ") || "-"}`,
       });
 
       setRelatorioFaltaram(
@@ -361,12 +392,36 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           }))
       );
 
+      setRelatorioPalavrasChave(
+        agendamentos
+          .map((item) => {
+            const paciente = item.pacienteId ? pacientesPorId.get(item.pacienteId) : null;
+            const procedimentos = Array.isArray(item.procedimentos) ? item.procedimentos.filter(Boolean) : [];
+            const procedimentoBase = procedimentos.length ? procedimentos : [item.tipoAtendimento || ""].filter(Boolean);
+            return {
+              chave: `palavra-chave-${item.id}`,
+              pacienteId: item.pacienteId || 0,
+              nome: item.paciente || paciente?.nome || "Paciente",
+              prontuario: item.prontuario || paciente?.prontuario || "",
+              telefone: item.telefone || paciente?.telefone || "",
+              idade: calcularIdade(paciente?.dataNascimento),
+              detalhe: `${item.data || "-"} · ${item.profissional || "-"} · ${procedimentoBase.join(", ") || "-"}`,
+              dataIso: extrairDataIso(item.data),
+              profissional: item.profissional || "",
+              tipoProcedimento: procedimentoBase.join(" | "),
+              statusOrigem: item.status || "",
+              temAgendaFutura: item.pacienteId && idsComAgendaFutura.has(item.pacienteId) ? "Sim" : "Não",
+            };
+          })
+          .sort((a, b) => `${b.dataIso || ""} ${b.nome}`.localeCompare(`${a.dataIso || ""} ${a.nome}`))
+      );
+
       const fontesComFalha: string[] = [];
       if (crmResult.status === "rejected") fontesComFalha.push("painel CRM");
       if (pacientesResult.status === "rejected") fontesComFalha.push("lista de pacientes");
       if (agendamentosResult.status === "rejected") fontesComFalha.push("agendamentos");
       if (fontesComFalha.length > 0) {
-        setErro(`Alguns dados do CRM nÃ£o carregaram: ${fontesComFalha.join(", ")}.`);
+        setErro(`Alguns dados do CRM não carregaram: ${fontesComFalha.join(", ")}.`);
       }
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar o CRM.");
@@ -550,6 +605,26 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       }),
     [relatorioDataFim, relatorioDataInicio, relatorioDesmarcaram, relatorioProfissional, relatorioStatusOrigem, relatorioTipoProcedimento]
   );
+  const palavrasChaveFiltrados = useMemo<RelatorioCrmItem[]>(() => {
+    const palavras = quebrarPalavrasChave(relatorioPalavrasBusca);
+    if (!palavras.length) return [];
+    return relatorioPalavrasChave.flatMap((item) => {
+        const procedimentos = String(item.tipoProcedimento || "")
+          .split("|")
+          .map((valor) => valor.trim())
+          .filter(Boolean);
+        const encontrados = procedimentos.filter((procedimento) => {
+          const procedimentoNormalizado = normalizarTexto(procedimento);
+          return palavras.some((palavra) => procedimentoNormalizado.includes(palavra));
+        });
+        if (!encontrados.length) return [];
+        return [{
+          ...item,
+          tipoProcedimento: encontrados.join(" | "),
+          detalhe: `${item.dataIso ? item.dataIso.split("-").reverse().join("/") : "-"} · ${item.profissional || "-"} · ${encontrados.join(", ")}`,
+        }];
+      });
+  }, [relatorioPalavrasBusca, relatorioPalavrasChave]);
   const letrasRelatorio = useMemo(() => {
     const base = relatorioSemAgendamento;
     return Array.from(new Set(base.map((item) => inicialLetra(item.nome)))).sort();
@@ -610,7 +685,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
   function indicadorOrdenacaoResgate(chave: ResgateSortKey) {
     if (resgateSortKey !== chave) return "";
-    return resgateSortDirection === "asc" ? " â†‘" : " â†“";
+    return resgateSortDirection === "asc" ? " ↑" : " ↓";
   }
 
   async function salvarItem(item: CrmPacienteItemApi) {
@@ -640,7 +715,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   async function salvarResgate(item: CrmResgateItemApi) {
     const observacaoNova = String(rascunhosObservacaoResgate[item.contratoId] || "").trim();
     if (!observacaoNova) {
-      setErro("A observaÃ§Ã£o do contato Ã© obrigatÃ³ria.");
+      setErro("A observação do contato é obrigatória.");
       return;
     }
     if (!["desistente", "convertido"].includes(normalizarTexto(item.statusResgate || "")) && !paraDataInput(item.dataRetorno)) {
@@ -670,10 +745,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setErro(null);
     try {
       await adicionarPacienteAvaliacaoCrmApi(pacienteId);
-      setFeedback("Paciente de avaliaÃ§Ã£o enviado para o CRM.");
+      setFeedback("Paciente de avaliação enviado para o CRM.");
       await carregarPainel();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao levar avaliaÃ§Ã£o para o CRM.");
+      setErro(error instanceof Error ? error.message : "Falha ao levar avaliação para o CRM.");
     } finally {
       setAdicionandoAvaliacaoId(null);
     }
@@ -684,10 +759,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setErro(null);
     try {
       await removerPacienteAvaliacaoCrmApi(pacienteId);
-      setFeedback("Paciente de avaliaÃ§Ã£o removido do CRM.");
+      setFeedback("Paciente de avaliação removido do CRM.");
       await carregarPainel();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao desfazer avaliaÃ§Ã£o no CRM.");
+      setErro(error instanceof Error ? error.message : "Falha ao desfazer avaliação no CRM.");
     } finally {
       setAdicionandoAvaliacaoId(null);
     }
@@ -736,14 +811,17 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   function exportarRelatorio(nomeBase: string, linhas: RelatorioCrmItem[]) {
     baixarCsv(
       `${nomeBase}.csv`,
-      ["Paciente", "Prontuario", "Telefone", "Data", "Profissional", "Tipo", "Origem", "Motivo", "Usuario", "Detalhe"],
+      ["Paciente", "Prontuario", "Telefone", "Idade", "Data", "Profissional", "Tipo", "Status", "Agenda futura", "Origem", "Motivo", "Usuario", "Detalhe"],
       linhas.map((item) => [
         item.nome,
         item.prontuario,
         item.telefone,
+        item.idade || "",
         item.dataIso || "",
         item.profissional || "",
         item.tipoProcedimento || "",
+        item.statusOrigem || "",
+        item.temAgendaFutura || "",
         item.statusOrigem || "",
         item.motivo || "",
         item.usuario || "",
@@ -754,7 +832,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
   function exportarRelatorioAtual() {
     if (relatorioAberto === "sem-agendamento" && relatorioLetra) {
-      const baixarAtual = window.confirm(`Clique em OK para baixar somente a letra ${relatorioLetra}.\n\nClique em Cancelar para baixar o relatÃ³rio inteiro.`);
+      const baixarAtual = window.confirm(`Clique em OK para baixar somente a letra ${relatorioLetra}.\n\nClique em Cancelar para baixar o relatório inteiro.`);
       exportarRelatorio(
         baixarAtual ? `${relatorioAtual.nomeExportacao}-${relatorioLetra.toLowerCase()}` : relatorioAtual.nomeExportacao,
         baixarAtual ? relatorioAtual.itens : relatorioSemAgendamento
@@ -797,7 +875,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           item.profissional,
           item.procedimento,
           item.status,
-          orcamento ? `#${orcamento.contratoId}` : (indice === 0 ? "Sem orÃ§amento" : ""),
+          orcamento ? `#${orcamento.contratoId}` : (indice === 0 ? "Sem orçamento" : ""),
           orcamento?.valorTotal || "",
           (orcamento?.procedimentos || []).join(" | "),
           orcamento?.observacao || "",
@@ -850,12 +928,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     );
   }
 
-  function alternarRelatorio(chave: "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram") {
+  function alternarRelatorio(chave: RelatorioAberto) {
     setRelatorioAberto(chave);
     if (chave === "sem-agendamento") {
       setRelatorioLetra("");
     }
-    if (chave === "sem-agendamento" || chave === "aniversariantes") {
+    if (chave === "sem-agendamento" || chave === "aniversariantes" || chave === "palavras-chave") {
       setRelatorioDataInicio("");
       setRelatorioDataFim("");
       setRelatorioProfissional("");
@@ -868,7 +946,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     switch (relatorioAberto) {
       case "aniversariantes":
         return {
-          titulo: "Aniversariantes do mÃªs",
+          titulo: "Aniversariantes do mês",
           nomeExportacao: "crm-aniversariantes",
           itens: aniversariantesFiltrados,
           vazio: "Nenhum aniversariante encontrado.",
@@ -887,19 +965,29 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           titulo: "Pacientes que desmarcaram",
           nomeExportacao: "crm-desmarcaram",
           itens: desmarcaramFiltrados,
-          vazio: "Nenhuma desmarcaÃ§Ã£o registrada.",
+          vazio: "Nenhuma desmarcação registrada.",
           icone: <CalendarDays size={18} />,
+        };
+      case "palavras-chave":
+        return {
+          titulo: "Agendamentos por palavras-chave",
+          nomeExportacao: "crm-agendamentos-palavras-chave",
+          itens: palavrasChaveFiltrados,
+          vazio: relatorioPalavrasBusca.trim()
+            ? "Nenhum agendamento encontrado para as palavras pesquisadas."
+            : "Digite uma ou mais palavras separadas por ; para pesquisar.",
+          icone: <Search size={18} />,
         };
       default:
         return {
-          titulo: "NÃ£o finalizados sem agendamento",
+          titulo: "Não finalizados sem agendamento",
           nomeExportacao: "crm-nao-finalizados-sem-agendamento",
           itens: semAgendamentoFiltrados,
           vazio: relatorioLetra ? "Nenhum paciente nesta condicao." : "Selecione uma letra para carregar o relatorio.",
           icone: <Search size={18} />,
         };
     }
-  }, [aniversariantesFiltrados, desmarcaramFiltrados, faltaramFiltrados, relatorioAberto, relatorioLetra, semAgendamentoFiltrados]);
+  }, [aniversariantesFiltrados, desmarcaramFiltrados, faltaramFiltrados, palavrasChaveFiltrados, relatorioAberto, relatorioLetra, relatorioPalavrasBusca, semAgendamentoFiltrados]);
 
   return (
     <section className="module-shell crm-shell">
@@ -920,7 +1008,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <span>pacientes removidos do fluxo</span>
         </article>
         <article className="panel module-kpi-card">
-          <span className="panel-kicker">AvaliaÃ§Ãµes</span>
+          <span className="panel-kicker">Avaliações</span>
           <strong>{avaliacoes.length}</strong>
           <span>detectadas pelos agendamentos</span>
         </article>
@@ -935,9 +1023,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "agendados" ? "active" : ""}`} onClick={() => setAbaAtiva("agendados")}>Agendados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizados" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizados")}>Finalizados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "cancelados" ? "active" : ""}`} onClick={() => setAbaAtiva("cancelados")}>Cancelados</button>
-          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>AvaliaÃ§Ãµes</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>Avaliações</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "resgates" ? "active" : ""}`} onClick={() => setAbaAtiva("resgates")}>Resgates</button>
-          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "relatorios" ? "active" : ""}`} onClick={() => setAbaAtiva("relatorios")}>RelatÃ³rios</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "relatorios" ? "active" : ""}`} onClick={() => setAbaAtiva("relatorios")}>Relatórios</button>
         </div>
         {abaAtiva === "relatorios" ? (
           <div className="tab-shell crm-report-tabs-shell">
@@ -945,6 +1033,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <button type="button" className={`segmented-tab ${relatorioAberto === "aniversariantes" ? "active" : ""}`} onClick={() => alternarRelatorio("aniversariantes")}>Aniversariantes</button>
             <button type="button" className={`segmented-tab ${relatorioAberto === "faltaram" ? "active" : ""}`} onClick={() => alternarRelatorio("faltaram")}>Faltaram</button>
             <button type="button" className={`segmented-tab ${relatorioAberto === "desmarcaram" ? "active" : ""}`} onClick={() => alternarRelatorio("desmarcaram")}>Desmarcaram</button>
+            <button type="button" className={`segmented-tab ${relatorioAberto === "palavras-chave" ? "active" : ""}`} onClick={() => alternarRelatorio("palavras-chave")}>Palavras-chave</button>
           </div>
         ) : null}
       </section>
@@ -954,7 +1043,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           <div className="section-title-row">
             <div>
               <span className="panel-kicker">Leads</span>
-              <h2>Leads agendados para avaliaÃ§Ã£o</h2>
+              <h2>Leads agendados para avaliação</h2>
             </div>
             <div className="crm-inline-actions">
               <Search size={18} />
@@ -966,10 +1055,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={`agendado-${item.id}`} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
-                  <span>{item.proximoContato ? `AvaliaÃ§Ã£o em ${item.proximoContato}` : "Agendado no CRM"}</span>
+                  <span>{item.proximoContato ? `Avaliação em ${item.proximoContato}` : "Agendado no CRM"}</span>
                   <div className="crm-inline-actions">
                     {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
                     <button type="button" className="ghost-action" onClick={() => { setAbaAtiva("funil"); setLeadSelecionadoId(item.id); setBuscaLead(item.nome || ""); }}>
@@ -979,7 +1068,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
               </article>
             ))}
-            {!carregando && !agendadosFiltrados.length ? <div className="module-subitem"><strong>Nenhum lead com avaliaÃ§Ã£o agendada.</strong></div> : null}
+            {!carregando && !agendadosFiltrados.length ? <div className="module-subitem"><strong>Nenhum lead com avaliação agendada.</strong></div> : null}
           </div>
         </article>
 
@@ -1003,7 +1092,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={`finalizado-${item.id}`} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.finalizadoEm ? `Finalizado em ${item.finalizadoEm}` : "No CRM"}</span>
@@ -1035,7 +1124,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={`cancelado-${item.id}`} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.canceladoEm ? `Cancelado em ${item.canceladoEm}` : "No CRM"}</span>
@@ -1060,8 +1149,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <article className={abaAtiva === "avaliacoes" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">Entrada automÃ¡tica</span>
-              <h2>Pacientes que fizeram avaliaÃ§Ã£o</h2>
+              <span className="panel-kicker">Entrada automática</span>
+              <h2>Pacientes que fizeram avaliação</h2>
             </div>
             <div className="crm-inline-actions">
               <button
@@ -1087,7 +1176,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             </label>
           </div>
           {!periodoAvaliacaoInicio || !periodoAvaliacaoFim ? (
-            <div className="module-subitem"><strong>Selecione a data inicial e final para carregar o relatÃ³rio.</strong></div>
+            <div className="module-subitem"><strong>Selecione a data inicial e final para carregar o relatório.</strong></div>
           ) : null}
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
@@ -1095,10 +1184,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               item.pacienteId < 0 ? null : <article key={`avaliacao-${item.pacienteId}`} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.dataAvaliacao || "-"} Â· {item.procedimento || "AvaliaÃ§Ã£o"} Â· {item.profissional || "-"}</span>
+                  <span>{item.dataAvaliacao || "-"} · {item.procedimento || "Avaliação"} · {item.profissional || "-"}</span>
                 </div>
                 <div className="crm-list-item-meta">
-                  <span>{item.jaNoCrm ? "JÃ¡ estÃ¡ no CRM" : item.telefone || "Sem telefone"}</span>
+                  <span>{item.jaNoCrm ? "Já está no CRM" : item.telefone || "Sem telefone"}</span>
                   <div className="crm-inline-actions">
                     <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
                     <button
@@ -1120,7 +1209,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
               </article>
             ))}
-            {!carregando && !avaliacoesFiltradas.length ? <div className="module-subitem"><strong>Nenhuma avaliaÃ§Ã£o encontrada.</strong></div> : null}
+            {!carregando && !avaliacoesFiltradas.length ? <div className="module-subitem"><strong>Nenhuma avaliação encontrada.</strong></div> : null}
           </div>
         </article>
       </section>
@@ -1129,7 +1218,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <div className="section-title-row">
           <div>
             <span className="panel-kicker">Resgates</span>
-            <h2>OrÃ§amentos para retorno</h2>
+            <h2>Orçamentos para retorno</h2>
           </div>
           <div className="crm-inline-actions">
             <button type="button" className="ghost-action compact" onClick={exportarResgates}>
@@ -1145,7 +1234,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <input
               type="text"
               value={filtroResgateBusca}
-              placeholder="Digite nome, telefone ou prontuÃ¡rio"
+              placeholder="Digite nome, telefone ou prontuário"
               onChange={(event) => setFiltroResgateBusca(event.target.value)}
             />
           </label>
@@ -1183,16 +1272,16 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             <span>Ordenar por</span>
             <select value={resgateSortKey} onChange={(event) => setResgateSortKey(event.target.value as ResgateSortKey)}>
               <option value="nome">Paciente</option>
-              <option value="prontuario">ProntuÃ¡rio</option>
+              <option value="prontuario">Prontuário</option>
               <option value="telefone">Telefone</option>
-              <option value="dataOrcamento">Data do orÃ§amento</option>
+              <option value="dataOrcamento">Data do orçamento</option>
               <option value="valorTotal">Valor total</option>
               <option value="statusResgate">Status</option>
               <option value="dataRetorno">Retorno</option>
             </select>
           </label>
           <label>
-            <span>DireÃ§Ã£o</span>
+            <span>Direção</span>
             <select value={resgateSortDirection} onChange={(event) => setResgateSortDirection(event.target.value as "asc" | "desc")}>
               <option value="asc">Crescente</option>
               <option value="desc">Decrescente</option>
@@ -1224,19 +1313,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 <th>Paciente</th>
                 <th>CPF</th>
                 <th>Idade</th>
-                <th>ProntuÃ¡rio</th>
+                <th>Prontuário</th>
                 <th>Telefone</th>
-                <th>Data orÃ§amento</th>
+                <th>Data orçamento</th>
                 <th>Valor total</th>
                 <th>Procedimentos</th>
-                <th>Obs. avaliaÃ§Ã£o</th>
-                <th>Obs. orÃ§amento</th>
+                <th>Obs. avaliação</th>
+                <th>Obs. orçamento</th>
                 <th>Status</th>
                 <th>Retorno</th>
-                <th>Nova observaÃƒÂ§ÃƒÂ£o</th>
-                <th>HistÃƒÂ³rico de contatos</th>
-                <th>Ãšltimo registro</th>
-                <th>AÃ§Ãµes</th>
+                <th>Nova observação</th>
+                <th>Histórico de contatos</th>
+                <th>Último registro</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -1276,19 +1365,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                     <textarea
                       rows={2}
                       value={rascunhosObservacaoResgate[item.contratoId] || ""}
-                      placeholder="Escreva a nova evoluÃƒÂ§ÃƒÂ£o deste contato..."
+                      placeholder="Escreva a nova evolução deste contato..."
                       onChange={(event) => atualizarRascunhoObservacaoResgate(item.contratoId, event.target.value)}
                     />
                   </td>
                   <td className="crm-rescue-text-cell crm-rescue-history-cell">
                     {(item.historico?.length ? item.historico : []).map((registro) => (
                       <div key={registro.id} className="crm-rescue-history-item">
-                        <strong>{registro.criadoEm || "Sem data"} Â· {registro.criadoPor || "-"}</strong>
+                        <strong>{registro.criadoEm || "Sem data"} · {registro.criadoPor || "-"}</strong>
                         <span>{registro.status || "-"}</span>
                         <span>{registro.observacao || "-"}</span>
                       </div>
                     ))}
-                    {!item.historico?.length ? <span>Sem histÃƒÂ³rico ainda.</span> : null}
+                    {!item.historico?.length ? <span>Sem histórico ainda.</span> : null}
                   </td>
                   <td className="crm-rescue-text-cell">
                     <strong>{item.ultimoContatoEm || "Sem registro"}</strong>
@@ -1321,7 +1410,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">RelatÃ³rio</span>
+              <span className="panel-kicker">Relatório</span>
               <h2>{relatorioAtual.titulo}</h2>
             </div>
             <div className="crm-inline-actions">
@@ -1393,17 +1482,37 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               ) : null}
             </div>
           ) : null}
+          {relatorioAberto === "palavras-chave" ? (
+            <div className="crm-filter-row crm-filter-row-report">
+              <label>
+                <span>Palavras-chave</span>
+                <input
+                  type="text"
+                  value={relatorioPalavrasBusca}
+                  placeholder="Ex.: implante; entrega; protocolo"
+                  onChange={(event) => setRelatorioPalavrasBusca(event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
           <div className="crm-list">
             {!carregando && relatorioAtual.itens.map((item) => (
               <article key={item.chave} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}{relatorioAberto === "palavras-chave" ? ` · ${item.idade || "-"} anos` : ""}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
+                  {relatorioAberto === "palavras-chave" ? (
+                    <span>
+                      {[item.tipoProcedimento ? `Procedimento: ${item.tipoProcedimento}` : "", item.statusOrigem ? `Status: ${item.statusOrigem}` : "", `Agenda futura: ${item.temAgendaFutura || "Não"}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  ) : null}
                   {relatorioAberto === "desmarcaram" && (item.statusOrigem || item.motivo) ? (
-                    <span>{[item.statusOrigem ? `Origem: ${item.statusOrigem}` : "", item.motivo ? `Motivo: ${item.motivo}` : ""].filter(Boolean).join(" Â· ")}</span>
+                    <span>{[item.statusOrigem ? `Origem: ${item.statusOrigem}` : "", item.motivo ? `Motivo: ${item.motivo}` : ""].filter(Boolean).join(" · ")}</span>
                   ) : null}
                   {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
                 </div>
@@ -1418,8 +1527,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">RelatÃ³rio</span>
-              <h2>NÃ£o finalizados sem agendamento</h2>
+              <span className="panel-kicker">Relatório</span>
+              <h2>Não finalizados sem agendamento</h2>
             </div>
             <div className="crm-inline-actions">
               <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio("crm-nao-finalizados-sem-agendamento", semAgendamentoFiltrados)}>
@@ -1434,7 +1543,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={item.chave} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
@@ -1442,15 +1551,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
               </article>
             ))}
-            {!carregando && !semAgendamentoFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente nesta condiÃ§Ã£o.</strong></div> : null}
+            {!carregando && !semAgendamentoFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente nesta condição.</strong></div> : null}
           </div> : null}
         </article>
 
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">RelatÃ³rio</span>
-              <h2>Aniversariantes do mÃªs</h2>
+              <span className="panel-kicker">Relatório</span>
+              <h2>Aniversariantes do mês</h2>
             </div>
             <div className="crm-inline-actions">
               <button type="button" className="ghost-action compact" onClick={() => exportarRelatorio("crm-aniversariantes", aniversariantesFiltrados)}>
@@ -1465,7 +1574,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={item.chave} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
@@ -1482,7 +1591,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">RelatÃ³rio</span>
+              <span className="panel-kicker">Relatório</span>
               <h2>Pacientes que faltaram</h2>
             </div>
             <div className="crm-inline-actions">
@@ -1498,7 +1607,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={item.chave} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
@@ -1513,7 +1622,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <article className="panel crm-panel">
           <div className="section-title-row">
             <div>
-              <span className="panel-kicker">RelatÃ³rio</span>
+              <span className="panel-kicker">Relatório</span>
               <h2>Pacientes que desmarcaram</h2>
             </div>
             <div className="crm-inline-actions">
@@ -1529,7 +1638,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <article key={item.chave} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
-                  <span>{item.prontuario || "Sem prontuÃ¡rio"} Â· {item.telefone || "Sem telefone"}</span>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
@@ -1537,7 +1646,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
               </article>
             ))}
-            {!carregando && !desmarcaramFiltrados.length ? <div className="module-subitem"><strong>Nenhuma desmarcaÃ§Ã£o registrada.</strong></div> : null}
+            {!carregando && !desmarcaramFiltrados.length ? <div className="module-subitem"><strong>Nenhuma desmarcação registrada.</strong></div> : null}
           </div> : null}
         </article>
       </section>
@@ -1687,7 +1796,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <span>{telefoneLeadManual || "Sem telefone informado"}</span>
                 </div>
                 <div className="crm-origin-tags">
-                  <span className="crm-tag">PrÃ©via do novo lead</span>
+                  <span className="crm-tag">Prévia do novo lead</span>
                 </div>
               </header>
               <div className="crm-form-grid">
@@ -1700,8 +1809,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <input value="Facebook" readOnly />
                 </label>
                 <label className="crm-field-wide">
-                  <span>ObservaÃ§Ãµes</span>
-                  <textarea rows={3} readOnly value="Ao clicar em Adicionar ao CRM, esta ficha serÃ¡ criada com o nome e o telefone digitados acima." />
+                  <span>Observações</span>
+                  <textarea rows={3} readOnly value="Ao clicar em Adicionar ao CRM, esta ficha será criada com o nome e o telefone digitados acima." />
                 </label>
               </div>
             </article>
@@ -1711,11 +1820,11 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <header className="crm-pipeline-card-header">
                 <div>
                   <strong>{leadSelecionado.nome}</strong>
-                  <span>{leadSelecionado.prontuario || "Sem prontuÃ¡rio"} Â· {leadSelecionado.telefone || "Sem telefone"}</span>
+                  <span>{leadSelecionado.prontuario || "Sem prontuário"} · {leadSelecionado.telefone || "Sem telefone"}</span>
                 </div>
                 <div className="crm-origin-tags">
                   {leadSelecionado.origemFinalizado ? <span className="crm-tag">Finalizado</span> : null}
-                  {leadSelecionado.origemAvaliacao ? <span className="crm-tag">AvaliaÃ§Ã£o</span> : null}
+                  {leadSelecionado.origemAvaliacao ? <span className="crm-tag">Avaliação</span> : null}
                 </div>
               </header>
 
@@ -1741,31 +1850,31 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <input value={leadSelecionado.conjuntoAnuncio || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { conjuntoAnuncio: event.target.value })} />
                 </label>
                 <label>
-                  <span>AnÃºncio</span>
+                  <span>Anúncio</span>
                   <input value={leadSelecionado.anuncio || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { anuncio: event.target.value })} />
                 </label>
                 <label>
-                  <span>ResponsÃ¡vel</span>
+                  <span>Responsável</span>
                   <input value={leadSelecionado.responsavel || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { responsavel: event.target.value })} />
                 </label>
                 <label>
-                  <span>PrÃ³ximo contato</span>
+                  <span>Próximo contato</span>
                   <input type="date" value={leadSelecionado.proximoContato || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { proximoContato: event.target.value })} />
                 </label>
                 <label>
-                  <span>Ãšltima interaÃ§Ã£o</span>
+                  <span>Última interação</span>
                   <input type="date" value={leadSelecionado.ultimaInteracao || ""} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { ultimaInteracao: event.target.value })} />
                 </label>
                 <label className="crm-field-wide">
-                  <span>ObservaÃ§Ãµes da campanha</span>
+                  <span>Observações da campanha</span>
                   <textarea value={leadSelecionado.observacao || ""} rows={4} onChange={(event) => atualizarItemLocal(leadSelecionado.id, { observacao: event.target.value })} />
                 </label>
               </div>
 
               <footer className="crm-pipeline-card-footer">
                 <div className="crm-footer-meta">
-                  <span>{leadSelecionado.ultimaAvaliacaoEm ? `AvaliaÃ§Ã£o: ${leadSelecionado.ultimaAvaliacaoEm}` : "Sem avaliaÃ§Ã£o registrada"}</span>
-                  <span>{leadSelecionado.finalizadoEm ? `Finalizado: ${leadSelecionado.finalizadoEm}` : "Sem finalizaÃ§Ã£o registrada"}</span>
+                  <span>{leadSelecionado.ultimaAvaliacaoEm ? `Avaliação: ${leadSelecionado.ultimaAvaliacaoEm}` : "Sem avaliação registrada"}</span>
+                  <span>{leadSelecionado.finalizadoEm ? `Finalizado: ${leadSelecionado.finalizadoEm}` : "Sem finalização registrada"}</span>
                 </div>
                 <div className="crm-inline-actions">
                   <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(leadSelecionado.pacienteId)}>
