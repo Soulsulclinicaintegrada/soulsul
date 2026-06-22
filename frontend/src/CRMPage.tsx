@@ -322,19 +322,39 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         return dataIso >= hoje;
       });
       const idsComAgendaFutura = new Set(futurosAtivos.map((item) => item.pacienteId).filter((id): id is number => Boolean(id)));
+      const ultimoAtendimentoPorPaciente = new Map<number, AgendaApiAgendamento>();
+      agendamentos
+        .filter((item) => Boolean(item.pacienteId) && extrairDataIso(item.data) && extrairDataIso(item.data) <= hoje)
+        .sort((a, b) => `${extrairDataIso(b.data)} ${b.inicio || ""}`.localeCompare(`${extrairDataIso(a.data)} ${a.inicio || ""}`))
+        .forEach((item) => {
+          const pacienteId = Number(item.pacienteId || 0);
+          if (pacienteId > 0 && !ultimoAtendimentoPorPaciente.has(pacienteId)) {
+            ultimoAtendimentoPorPaciente.set(pacienteId, item);
+          }
+        });
 
       setRelatorioSemAgendamento(
         pacientes
           .filter((item) => !finalizadosIds.has(item.id) && !canceladosIds.has(item.id) && !idsComAgendaFutura.has(item.id))
           .sort((a, b) => a.nome.localeCompare(b.nome))
-          .map((item) => ({
-            chave: `sem-agenda-${item.id}`,
-            pacienteId: item.id,
-            nome: item.nome,
-            prontuario: item.prontuario || "",
-            telefone: item.telefone || "",
-            detalhe: "Sem agendamento futuro e não finalizado",
-          }))
+          .map((item) => {
+            const ultimoAtendimento = ultimoAtendimentoPorPaciente.get(item.id);
+            const tipoAtendimento = ultimoAtendimento?.tipoAtendimento || ultimoAtendimento?.procedimentos?.[0] || "";
+            return {
+              chave: `sem-agenda-${item.id}`,
+              pacienteId: item.id,
+              nome: item.nome,
+              prontuario: item.prontuario || "",
+              telefone: item.telefone || "",
+              dataIso: extrairDataIso(ultimoAtendimento?.data),
+              profissional: ultimoAtendimento?.profissional || "",
+              statusOrigem: ultimoAtendimento?.status || "",
+              tipoProcedimento: tipoAtendimento,
+              detalhe: ultimoAtendimento
+                ? `${ultimoAtendimento.data || "-"} · ${ultimoAtendimento.profissional || "-"} · ${ultimoAtendimento.status || "-"} · ${tipoAtendimento || "-"}`
+                : "Sem atendimento anterior registrado",
+            };
+          })
       );
 
       const mesAtual = Number(hoje.split("-")[1]);
