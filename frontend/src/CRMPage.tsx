@@ -277,7 +277,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [rascunhosObservacaoResgate, setRascunhosObservacaoResgate] = useState<Record<number, string>>({});
   const [resgateSortKey, setResgateSortKey] = useState<ResgateSortKey>("nome");
   const [resgateSortDirection, setResgateSortDirection] = useState<"asc" | "desc">("asc");
-  const [relatorioLetra, setRelatorioLetra] = useState("");
+  const [relatorioLetra, setRelatorioLetra] = useState("TODAS");
   const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
   const [relatorioDataFim, setRelatorioDataFim] = useState("");
   const [relatorioProfissional, setRelatorioProfissional] = useState("");
@@ -575,7 +575,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   );
   const semAgendamentoFiltrados = useMemo(
     () => {
-      if (!relatorioLetra) return [];
+      if (!relatorioLetra || relatorioLetra === "TODAS") return relatorioSemAgendamento;
       return aplicarFiltroRelatorio(relatorioSemAgendamento, { letra: relatorioLetra });
     },
     [relatorioLetra, relatorioSemAgendamento]
@@ -831,7 +831,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   }
 
   function exportarRelatorioAtual() {
-    if (relatorioAberto === "sem-agendamento" && relatorioLetra) {
+    if (relatorioAberto === "sem-agendamento" && relatorioLetra && relatorioLetra !== "TODAS") {
       const baixarAtual = window.confirm(`Clique em OK para baixar somente a letra ${relatorioLetra}.\n\nClique em Cancelar para baixar o relatório inteiro.`);
       exportarRelatorio(
         baixarAtual ? `${relatorioAtual.nomeExportacao}-${relatorioLetra.toLowerCase()}` : relatorioAtual.nomeExportacao,
@@ -931,7 +931,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   function alternarRelatorio(chave: RelatorioAberto) {
     setRelatorioAberto(chave);
     if (chave === "sem-agendamento") {
-      setRelatorioLetra("");
+      setRelatorioLetra("TODAS");
     }
     if (chave === "sem-agendamento" || chave === "aniversariantes" || chave === "palavras-chave") {
       setRelatorioDataInicio("");
@@ -983,7 +983,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           titulo: "Não finalizados sem agendamento",
           nomeExportacao: "crm-nao-finalizados-sem-agendamento",
           itens: semAgendamentoFiltrados,
-          vazio: relatorioLetra ? "Nenhum paciente nesta condicao." : "Selecione uma letra para carregar o relatorio.",
+          vazio: relatorioLetra && relatorioLetra !== "TODAS" ? "Nenhum paciente nesta condição." : "Nenhum paciente encontrado.",
           icone: <Search size={18} />,
         };
     }
@@ -1423,6 +1423,13 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           </div>
           {relatorioAberto === "sem-agendamento" ? (
             <div className="crm-report-letter-bar">
+              <button
+                type="button"
+                className={`segmented-tab ${relatorioLetra === "TODAS" ? "active" : ""}`}
+                onClick={() => setRelatorioLetra("TODAS")}
+              >
+                Todos
+              </button>
               {letrasRelatorio.map((letra) => (
                 <button
                   key={letra}
