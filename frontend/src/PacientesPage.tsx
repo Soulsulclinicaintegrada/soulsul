@@ -174,6 +174,7 @@ const FORMAS_PAGAMENTO: Array<{ value: FormaPagamentoOpcao; label: string }> = [
   { value: "DINHEIRO", label: "Dinheiro" }
 ];
 const FORMAS_A_VISTA = new Set<FormaPagamentoOpcao>(["PIX", "CARTAO_DEBITO", "DINHEIRO"]);
+const MAX_PARCELAS_CARTAO_CREDITO = 18;
 const TAXA_CARTAO_CREDITO: Record<number, number> = {
   1: 1,
   2: 1,
@@ -186,7 +187,13 @@ const TAXA_CARTAO_CREDITO: Record<number, number> = {
   9: 1,
   10: 1,
   11: 1,
-  12: 1
+  12: 1,
+  13: 1,
+  14: 1,
+  15: 1,
+  16: 1,
+  17: 1,
+  18: 1
 };
 const STATUS_RESGATE_ORCAMENTO = ["Em tratativa", "Ligar novamente", "Desistente", "Convertido"] as const;
 
@@ -1638,7 +1645,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   function atualizarParcelasCartao(indice: number, parcelasCartao: number) {
     setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
       ...atual,
-      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, parcelasCartao: Math.max(1, parcelasCartao) } : linha)
+      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, parcelasCartao: Math.min(MAX_PARCELAS_CARTAO_CREDITO, Math.max(1, parcelasCartao)) } : linha)
     }, totalOrcamentoFinal, orcamentoDraft.data, indice));
   }
 
@@ -4767,7 +4774,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             <div className="payment-card-detail">
                               <span>Parcelas no cartao</span>
                               <select value={linha.parcelasCartao} onChange={(e) => atualizarParcelasCartao(indice, Number(e.target.value) || 1)} disabled={orcamentoBloqueado}>
-                                {Array.from({ length: 12 }, (_, itemIndice) => itemIndice + 1).map((opcao) => (
+                                {Array.from({ length: MAX_PARCELAS_CARTAO_CREDITO }, (_, itemIndice) => itemIndice + 1).map((opcao) => (
                                   <option key={opcao} value={opcao}>{`${opcao}x`}</option>
                                 ))}
                               </select>
