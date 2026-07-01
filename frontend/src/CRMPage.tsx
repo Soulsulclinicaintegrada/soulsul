@@ -1567,7 +1567,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                         onClick={() => void finalizarPacienteDoRelatorio(item)}
                         disabled={finalizandoPacienteId === item.pacienteId}
                       >
-                        {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar"}
+                        {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar CRM"}
                       </button>
                     ) : null}
                   </div>
@@ -1611,7 +1611,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                       onClick={() => void finalizarPacienteDoRelatorio(item)}
                       disabled={finalizandoPacienteId === item.pacienteId}
                     >
-                      {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar"}
+                      {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar CRM"}
                     </button>
                   </div>
                 </div>
