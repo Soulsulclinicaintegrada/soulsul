@@ -472,7 +472,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const pipelineFiltrado = useMemo(
     () =>
       [...pipeline]
-        .filter((item) => !item.origemFinalizado && !item.origemCancelado && !finalizadosIds.has(item.id) && !canceladosIds.has(item.id))
+        .filter(
+          (item) =>
+            !item.origemFinalizado &&
+            !item.origemCancelado &&
+            !item.origemAvaliacao &&
+            !finalizadosIds.has(item.id) &&
+            !canceladosIds.has(item.id)
+        )
         .sort((a, b) => b.id - a.id),
     [canceladosIds, finalizadosIds, pipeline]
   );
