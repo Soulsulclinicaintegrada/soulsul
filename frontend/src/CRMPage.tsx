@@ -132,6 +132,16 @@ function normalizarTexto(valor: string) {
     .trim();
 }
 
+function agendamentoEhAvaliacao(item: AgendaApiAgendamento) {
+  const blocos = [
+    item.tipoAtendimento || "",
+    ...(Array.isArray(item.procedimentos) ? item.procedimentos : []),
+    item.observacoes || "",
+  ];
+  const texto = normalizarTexto(blocos.filter(Boolean).join(" "));
+  return texto.includes("avaliacao") || /\baval\b/.test(texto);
+}
+
 function correspondeBusca(item: { nome?: string; prontuario?: string; telefone?: string; campanha?: string; etapaFunil?: string }, termo: string) {
   if (!termo) return true;
   const alvo = normalizarTexto([
@@ -287,6 +297,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [relatorioStatusOrigem, setRelatorioStatusOrigem] = useState("");
   const [relatorioPalavrasBusca, setRelatorioPalavrasBusca] = useState("");
   const [novoLeadManual, setNovoLeadManual] = useState<CrmNovoLeadPayloadApi>({ nome: "", telefone: "" });
+  const [pacientesSomenteAvaliacaoIds, setPacientesSomenteAvaliacaoIds] = useState<number[]>([]);
 
   async function carregarPainel() {
     setCarregando(true);
@@ -308,12 +319,29 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       const pacientes = pacientesResult.status === "fulfilled" ? pacientesResult.value : [];
       const agendamentos = agendamentosResult.status === "fulfilled" ? agendamentosResult.value : [];
       const pacientesPorId = new Map(pacientes.map((item) => [item.id, item]));
+      const historicoPorPaciente = new Map<number, AgendaApiAgendamento[]>();
+
+      agendamentos.forEach((item) => {
+        const pacienteId = Number(item.pacienteId || 0);
+        if (pacienteId <= 0) return;
+        const historico = historicoPorPaciente.get(pacienteId) || [];
+        historico.push(item);
+        historicoPorPaciente.set(pacienteId, historico);
+      });
+
+      const somenteAvaliacaoIds = new Set<number>();
+      historicoPorPaciente.forEach((historico, pacienteId) => {
+        if (historico.length > 0 && historico.every((item) => agendamentoEhAvaliacao(item))) {
+          somenteAvaliacaoIds.add(pacienteId);
+        }
+      });
 
       setPipeline((resposta.pipeline || []).map(normalizarItemCrm));
       setFinalizados((resposta.finalizados || []).map(normalizarItemCrm));
       setCancelados((resposta.cancelados || []).map(normalizarItemCrm));
       setAvaliacoes(resposta.avaliacoes || []);
       setResgates(resposta.resgates || []);
+      setPacientesSomenteAvaliacaoIds(Array.from(somenteAvaliacaoIds));
 
       const finalizadosIds = new Set((resposta.finalizados || []).map((item) => item.pacienteId));
       const canceladosIds = new Set((resposta.cancelados || []).map((item) => item.pacienteId));
@@ -337,7 +365,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
       setRelatorioSemAgendamento(
         pacientes
-          .filter((item) => !finalizadosIds.has(item.id) && !canceladosIds.has(item.id) && !idsComAgendaFutura.has(item.id))
+          .filter((item) => !somenteAvaliacaoIds.has(item.id) && !finalizadosIds.has(item.id) && !canceladosIds.has(item.id) && !idsComAgendaFutura.has(item.id))
           .sort((a, b) => a.nome.localeCompare(b.nome))
           .map((item) => {
             const ultimoAtendimento = ultimoAtendimentoPorPaciente.get(item.id);
@@ -363,7 +391,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       setRelatorioAniversariantes(
         pacientes
           .map((item) => ({ item, nascimento: dataNascimentoDiaMes(item.dataNascimento) }))
-          .filter((item) => item.nascimento?.mes === mesAtual)
+          .filter((item) => !somenteAvaliacaoIds.has(item.item.id) && item.nascimento?.mes === mesAtual)
           .sort((a, b) => (a.nascimento?.dia || 0) - (b.nascimento?.dia || 0))
           .map(({ item, nascimento }) => ({
             chave: `aniversario-${item.id}`,
@@ -386,7 +414,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
       setRelatorioFaltaram(
         agendamentos
-          .filter((item) => normalizarTexto(item.status || "") === "faltou")
+          .filter((item) => !somenteAvaliacaoIds.has(Number(item.pacienteId || 0)) && normalizarTexto(item.status || "") === "faltou")
           .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
           .map((item) => ({
             ...mapearAgendamentoRelatorio("faltou", item),
@@ -401,7 +429,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
       setRelatorioDesmarcaram(
         agendamentos
-          .filter((item) => normalizarTexto(item.status || "") === "desmarcado")
+          .filter((item) => !somenteAvaliacaoIds.has(Number(item.pacienteId || 0)) && normalizarTexto(item.status || "") === "desmarcado")
           .sort((a, b) => `${b.data} ${b.inicio}`.localeCompare(`${a.data} ${a.inicio}`))
           .map((item) => ({
             ...mapearAgendamentoRelatorio("desmarcou", item),
@@ -416,6 +444,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
       setRelatorioPalavrasChave(
         agendamentos
+          .filter((item) => !somenteAvaliacaoIds.has(Number(item.pacienteId || 0)))
           .map((item) => {
             const paciente = item.pacienteId ? pacientesPorId.get(item.pacienteId) : null;
             const procedimentos = Array.isArray(item.procedimentos) ? item.procedimentos.filter(Boolean) : [];
@@ -468,6 +497,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const previewLeadManualVisivel = Boolean(nomeLeadManual || telefoneLeadManual);
   const finalizadosIds = useMemo(() => new Set(finalizados.map((item) => item.id)), [finalizados]);
   const canceladosIds = useMemo(() => new Set(cancelados.map((item) => item.id)), [cancelados]);
+  const pacientesSomenteAvaliacaoSet = useMemo(() => new Set(pacientesSomenteAvaliacaoIds), [pacientesSomenteAvaliacaoIds]);
 
   const pipelineFiltrado = useMemo(
     () =>
@@ -477,11 +507,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             !item.origemFinalizado &&
             !item.origemCancelado &&
             !item.origemAvaliacao &&
+            !pacientesSomenteAvaliacaoSet.has(item.pacienteId) &&
             !finalizadosIds.has(item.id) &&
             !canceladosIds.has(item.id)
         )
         .sort((a, b) => b.id - a.id),
-    [canceladosIds, finalizadosIds, pipeline]
+    [canceladosIds, finalizadosIds, pacientesSomenteAvaliacaoSet, pipeline]
   );
   const termoBuscaLead = normalizarTexto(buscaLead);
   const leadsFunilFiltrados = useMemo(
@@ -500,12 +531,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     [leadSelecionadoId, leadsFunilFiltrados]
   );
   const finalizadosFiltrados = useMemo(
-    () => finalizados,
-    [finalizados]
+    () => finalizados.filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId)),
+    [finalizados, pacientesSomenteAvaliacaoSet]
   );
   const canceladosFiltrados = useMemo(
-    () => cancelados,
-    [cancelados]
+    () => cancelados.filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId)),
+    [cancelados, pacientesSomenteAvaliacaoSet]
   );
   const avaliacoesFiltradas = useMemo(
     () => {
