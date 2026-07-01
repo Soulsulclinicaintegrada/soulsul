@@ -809,9 +809,11 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     setFinalizandoPacienteId(item.pacienteId);
     setErro(null);
     try {
-      await marcarPacienteFinalizadoCrmApi(item.pacienteId);
+      const finalizado = normalizarItemCrm(await marcarPacienteFinalizadoCrmApi(item.pacienteId));
+      setFinalizados((atual) => [finalizado, ...atual.filter((registro) => registro.pacienteId !== item.pacienteId)]);
+      setRelatorioSemAgendamento((atual) => atual.filter((registro) => registro.pacienteId !== item.pacienteId));
+      setPipeline((atual) => atual.filter((registro) => registro.pacienteId !== item.pacienteId && registro.id !== item.pacienteId));
       setFeedback(`Paciente ${item.nome} finalizado no CRM.`);
-      await carregarPainel();
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao finalizar o paciente no CRM.");
     } finally {
