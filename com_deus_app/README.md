@@ -27,15 +27,14 @@ lib/
 Entrega atual:
 
 - onboarding completo
-- splash com fade in
-- boas-vindas
-- escolha de caminhada
-- privacidade
-- nome
-- proposito
-- jejum
-- horario
-- home inicial enxuta
+- modo Respire
+- home redesenhada como capa de livro
+- animacoes suaves
+- design system proprio
+- selecao de jornadas por categoria
+- espaco Familia preparado
+- placeholders para Infantil, Familia e Casais
+- suporte a cenas isoladas para screenshots via `--dart-define`
 
 Tudo organizado em Clean Architecture dentro da feature `onboarding`.
 

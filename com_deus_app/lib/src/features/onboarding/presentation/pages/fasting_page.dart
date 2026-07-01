@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:com_deus_app/src/core/design_system/components/entrance_transition.dart';
+import 'package:com_deus_app/src/core/design_system/components/section_title.dart';
 import 'package:com_deus_app/src/core/di/service_locator.dart';
 import 'package:com_deus_app/src/features/onboarding/presentation/widgets/onboarding_scaffold.dart';
 
@@ -14,35 +16,34 @@ class FastingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return OnboardingScaffold(
       onBack: onBack,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const SizedBox(height: 18),
-          Text(
-            'Deseja incluir um jejum alimentar nesta caminhada?',
-            style: theme.textTheme.headlineLarge,
-          ),
-          const SizedBox(height: 30),
-          _OptionTile(
-            label: 'Sim',
-            isSelected: selectedValue == true,
-            onTap: () {
-              onboardingController.setFasting(true);
-            },
-          ),
-          const SizedBox(height: 14),
-          _OptionTile(
-            label: 'Agora não',
-            isSelected: selectedValue == false,
-            onTap: () {
-              onboardingController.setFasting(false);
-            },
-          ),
-        ],
+      child: EntranceTransition(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const SizedBox(height: 18),
+            const SectionTitle(
+              title: 'Deseja incluir um jejum alimentar nesta caminhada?',
+            ),
+            const SizedBox(height: 30),
+            _OptionTile(
+              label: 'Sim',
+              isSelected: selectedValue == true,
+              onTap: () {
+                onboardingController.setFasting(true);
+              },
+            ),
+            const SizedBox(height: 14),
+            _OptionTile(
+              label: 'Agora não',
+              isSelected: selectedValue == false,
+              onTap: () {
+                onboardingController.setFasting(false);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

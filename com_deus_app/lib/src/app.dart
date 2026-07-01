@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:com_deus_app/src/features/experience/presentation/pages/app_entry_page.dart';
 import 'package:com_deus_app/src/core/theme/app_theme.dart';
-import 'package:com_deus_app/src/features/onboarding/presentation/pages/onboarding_flow_page.dart';
 
 class ComDeusApp extends StatelessWidget {
   const ComDeusApp({super.key});
@@ -11,7 +11,7 @@ class ComDeusApp extends StatelessWidget {
       title: 'Com Deus',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
-      home: const OnboardingFlowPage(),
+      home: const AppEntryPage(),
     );
   }
 }

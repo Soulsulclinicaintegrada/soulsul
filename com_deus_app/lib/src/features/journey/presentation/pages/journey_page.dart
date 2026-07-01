@@ -103,7 +103,7 @@ class _JourneyHeader extends StatelessWidget {
           Text(
             '$completedDays de $totalDays dias concluidos',
             style: theme.textTheme.bodyLarge?.copyWith(
-              color: Colors.white.withValues(alpha: 0.9),
+              color: Colors.white.withOpacity(0.9),
             ),
           ),
           const SizedBox(height: 18),
@@ -112,7 +112,7 @@ class _JourneyHeader extends StatelessWidget {
             child: LinearProgressIndicator(
               minHeight: 10,
               value: progress,
-              backgroundColor: Colors.white.withValues(alpha: 0.18),
+              backgroundColor: Colors.white.withOpacity(0.18),
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
             ),
           ),

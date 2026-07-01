@@ -33,7 +33,7 @@ class OnboardingScaffold extends StatelessWidget {
                         child: IconButton.filledTonal(
                           onPressed: onBack,
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.72),
+                            backgroundColor: Colors.white.withOpacity(0.72),
                           ),
                           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                         ),
@@ -68,7 +68,7 @@ class _AmbientBackground extends StatelessWidget {
               height: 220,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFFE5DEC9).withValues(alpha: 0.55),
+                color: const Color(0xFFE5DEC9).withOpacity(0.55),
               ),
             ),
           ),
@@ -80,7 +80,7 @@ class _AmbientBackground extends StatelessWidget {
               height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFFDCE5D2).withValues(alpha: 0.5),
+                color: const Color(0xFFDCE5D2).withOpacity(0.5),
               ),
             ),
           ),

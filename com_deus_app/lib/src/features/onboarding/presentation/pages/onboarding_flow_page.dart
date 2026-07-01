@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:com_deus_app/src/core/di/service_locator.dart';
+import 'package:com_deus_app/src/features/journeys/presentation/pages/family_age_page.dart';
+import 'package:com_deus_app/src/features/journeys/presentation/pages/family_companion_page.dart';
+import 'package:com_deus_app/src/features/journeys/presentation/pages/journey_catalog_page.dart';
+import 'package:com_deus_app/src/features/journeys/presentation/pages/mode_placeholder_page.dart';
 import 'package:com_deus_app/src/features/onboarding/presentation/controllers/onboarding_controller.dart';
 import 'package:com_deus_app/src/features/onboarding/presentation/pages/fasting_page.dart';
 import 'package:com_deus_app/src/features/onboarding/presentation/pages/home_page.dart';
@@ -31,6 +35,7 @@ class OnboardingFlowPage extends StatelessWidget {
 
   Widget _buildStep(OnboardingStep step) {
     return switch (step) {
+      OnboardingStep.respire => const SizedBox.shrink(),
       OnboardingStep.splash => SplashPage(
           key: const ValueKey<String>('splash'),
           onCompleted: onboardingController.completeSplash,
@@ -70,7 +75,45 @@ class OnboardingFlowPage extends StatelessWidget {
         ),
       OnboardingStep.home => HomePage(
           key: const ValueKey<String>('home'),
-          name: onboardingController.profile.greetingName,
+          profile: onboardingController.profile,
+        ),
+      OnboardingStep.journeyCatalog => JourneyCatalogPage(
+          key: const ValueKey<String>('journey-catalog'),
+          selectedCategoryId: onboardingController.selectedJourneyCategoryId,
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.familyCompanion => FamilyCompanionPage(
+          key: const ValueKey<String>('family-companion'),
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.familyAge => FamilyAgePage(
+          key: const ValueKey<String>('family-age'),
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.familyPlaceholder => ModePlaceholderPage(
+          key: const ValueKey<String>('family-placeholder'),
+          title: 'Modo Família',
+          message:
+              'Estamos preparando um espaço para caminhar em casa com suavidade, ritual e conversas possíveis.',
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.kidsPlaceholder => ModePlaceholderPage(
+          key: const ValueKey<String>('kids-placeholder'),
+          title: onboardingController.selectedPlaceholderTitle,
+          message: onboardingController.selectedPlaceholderMessage,
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.couplesPlaceholder => ModePlaceholderPage(
+          key: const ValueKey<String>('couples-placeholder'),
+          title: onboardingController.selectedPlaceholderTitle,
+          message: onboardingController.selectedPlaceholderMessage,
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.comingSoonPlaceholder => ModePlaceholderPage(
+          key: const ValueKey<String>('coming-soon-placeholder'),
+          title: onboardingController.selectedPlaceholderTitle,
+          message: onboardingController.selectedPlaceholderMessage,
+          onBack: onboardingController.goBack,
         ),
     };
   }
