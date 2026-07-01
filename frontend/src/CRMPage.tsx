@@ -1563,7 +1563,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                     {relatorioAberto === "sem-agendamento" && item.pacienteId ? (
                       <button
                         type="button"
-                        className="primary-action"
+                        className="ghost-action"
                         onClick={() => void finalizarPacienteDoRelatorio(item)}
                         disabled={finalizandoPacienteId === item.pacienteId}
                       >
@@ -1607,7 +1607,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                     <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
                     <button
                       type="button"
-                      className="primary-action"
+                      className="ghost-action"
                       onClick={() => void finalizarPacienteDoRelatorio(item)}
                       disabled={finalizandoPacienteId === item.pacienteId}
                     >
