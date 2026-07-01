@@ -1,0 +1,237 @@
+{
+  "categories": [
+    {
+      "id": "encounter",
+      "emoji": "🌿",
+      "title": "Meu Encontro",
+      "subtitle": "Experiência personalizada"
+    },
+    {
+      "id": "biblical",
+      "emoji": "📖",
+      "title": "Jornadas Bíblicas",
+      "subtitle": "Leituras e trilhas guiadas pela Palavra"
+    },
+    {
+      "id": "emotional",
+      "emoji": "❤️",
+      "title": "Vida Emocional",
+      "subtitle": "Jornadas para dias sensíveis e processos interiores"
+    },
+    {
+      "id": "family",
+      "emoji": "👨‍👩‍👧",
+      "title": "Família",
+      "subtitle": "Caminhadas espirituais para viver em casa"
+    },
+    {
+      "id": "kids",
+      "emoji": "👶",
+      "title": "Crianças",
+      "subtitle": "Descobertas espirituais para cada fase"
+    },
+    {
+      "id": "couples",
+      "emoji": "💍",
+      "title": "Casais",
+      "subtitle": "Jornadas para caminhar a dois"
+    },
+    {
+      "id": "soon",
+      "emoji": "✨",
+      "title": "Em breve",
+      "subtitle": "Novas jornadas estão chegando"
+    }
+  ],
+  "journeys": [
+    {
+      "id": "30-dias-com-deus",
+      "title": "30 Dias com Deus",
+      "subtitle": "Uma rotina breve de encontro, silêncio e oração.",
+      "description": "Uma jornada de 30 dias para começar e terminar o dia com mais presença, escuta e constância diante de Deus.",
+      "coverImage": "assets/covers/30-dias-com-deus.png",
+      "category": "encounter",
+      "days": 30,
+      "estimatedMinutes": 8,
+      "themeColor": "#B8CC9D",
+      "recommendedAge": null,
+      "isPremium": false,
+      "tags": ["encontro", "oração", "rotina"],
+      "objective": "Criar constância espiritual com poucos minutos por dia."
+    },
+    {
+      "id": "ansiedade",
+      "title": "Ansiedade",
+      "subtitle": "Versos e pausas para corações inquietos.",
+      "description": "Uma jornada para desacelerar a mente, respirar e lembrar da presença fiel de Deus em dias de apreensão.",
+      "coverImage": "assets/covers/ansiedade.png",
+      "category": "emotional",
+      "days": 21,
+      "estimatedMinutes": 10,
+      "themeColor": "#C7D9D1",
+      "recommendedAge": null,
+      "isPremium": false,
+      "tags": ["ansiedade", "calma", "presença"],
+      "objective": "Oferecer consolo bíblico e práticas suaves para atravessar dias ansiosos."
+    },
+    {
+      "id": "mulheres-da-biblia",
+      "title": "Mulheres da Bíblia",
+      "subtitle": "Coragem, fé e delicadeza em cada história.",
+      "description": "Encontros com mulheres da Bíblia para inspirar oração, identidade e firmeza em Deus.",
+      "coverImage": "assets/covers/mulheres-da-biblia.png",
+      "category": "biblical",
+      "days": 14,
+      "estimatedMinutes": 12,
+      "themeColor": "#E4C2B3",
+      "recommendedAge": null,
+      "isPremium": true,
+      "tags": ["bíblia", "mulheres", "identidade"],
+      "objective": "Aproximar o coração de exemplos femininos de fé e coragem."
+    },
+    {
+      "id": "evangelho-de-joao",
+      "title": "Evangelho de João",
+      "subtitle": "Contemplar Jesus com profundidade e calma.",
+      "description": "Uma caminhada pelos textos de João para permanecer em Jesus e entender Seu amor de forma mais íntima.",
+      "coverImage": "assets/covers/evangelho-de-joao.png",
+      "category": "biblical",
+      "days": 30,
+      "estimatedMinutes": 14,
+      "themeColor": "#D8D0B4",
+      "recommendedAge": null,
+      "isPremium": false,
+      "tags": ["evangelho", "jesus", "bíblia"],
+      "objective": "Ler João com profundidade, simplicidade e devoção."
+    },
+    {
+      "id": "genesis",
+      "title": "Gênesis",
+      "subtitle": "Começos, promessas e fundamentos da fé.",
+      "description": "Uma trilha pelo livro de Gênesis para revisitar criação, promessas e a fidelidade de Deus ao longo da história.",
+      "coverImage": "assets/covers/genesis.png",
+      "category": "biblical",
+      "days": 20,
+      "estimatedMinutes": 13,
+      "themeColor": "#D8C7AA",
+      "recommendedAge": null,
+      "isPremium": false,
+      "tags": ["gênesis", "promessas", "origens"],
+      "objective": "Reconhecer os fundamentos da fé nas primeiras histórias bíblicas."
+    },
+    {
+      "id": "salmos",
+      "title": "Salmos",
+      "subtitle": "Orações para dias de alegria, espera e cansaço.",
+      "description": "Uma seleção de salmos para ajudar você a encontrar palavras quando o coração precisa orar.",
+      "coverImage": "assets/covers/salmos.png",
+      "category": "biblical",
+      "days": 18,
+      "estimatedMinutes": 9,
+      "themeColor": "#E2D8C9",
+      "recommendedAge": null,
+      "isPremium": false,
+      "tags": ["salmos", "oração", "adoração"],
+      "objective": "Transformar os Salmos em companhia diária para a oração."
+    },
+    {
+      "id": "casamento-restaurado",
+      "title": "Casamento Restaurado",
+      "subtitle": "Reconstruir diálogo, mansidão e esperança.",
+      "description": "Uma jornada pensada para casais que desejam reencontrar a presença de Deus na relação e recomeçar com leveza.",
+      "coverImage": "assets/covers/casamento-restaurado.png",
+      "category": "couples",
+      "days": 21,
+      "estimatedMinutes": 11,
+      "themeColor": "#D9B7AE",
+      "recommendedAge": null,
+      "isPremium": true,
+      "tags": ["casamento", "restauração", "casais"],
+      "objective": "Criar conversas espirituais e afetivas para restaurar a caminhada a dois."
+    },
+    {
+      "id": "meu-filho-e-eu",
+      "title": "Meu Filho e Eu",
+      "subtitle": "Rituais simples para viver a fé em casa.",
+      "description": "Uma jornada feita para mães, pais ou cuidadores que desejam caminhar com as crianças diante de Deus.",
+      "coverImage": "assets/covers/meu-filho-e-eu.png",
+      "category": "family",
+      "days": 14,
+      "estimatedMinutes": 7,
+      "themeColor": "#C8D7B8",
+      "recommendedAge": null,
+      "isPremium": false,
+      "tags": ["família", "filhos", "casa"],
+      "objective": "Criar pequenos rituais espirituais em família com ternura e constância."
+    },
+    {
+      "id": "pequenos-discipulos",
+      "title": "Pequenos Discípulos",
+      "subtitle": "Primeiras descobertas com ternura e repetição.",
+      "description": "Uma jornada para crianças pequenas com linguagem simples, gesto prático e participação dos pais.",
+      "coverImage": "assets/covers/pequenos-discipulos.png",
+      "category": "kids",
+      "days": 10,
+      "estimatedMinutes": 6,
+      "themeColor": "#F0D8A8",
+      "recommendedAge": "3-5",
+      "isPremium": false,
+      "tags": ["crianças", "3-5", "discipulado"],
+      "objective": "Apresentar verdades simples da fé para crianças em fase inicial.",
+      "kidsMetadata": {
+        "minimumAge": 3,
+        "maximumAge": 5,
+        "activityType": "História curta com gesto",
+        "dailyChallenge": "",
+        "practicalActivity": "",
+        "questionForParents": ""
+      }
+    },
+    {
+      "id": "herois-da-biblia",
+      "title": "Heróis da Bíblia",
+      "subtitle": "Histórias de coragem para pequenos exploradores.",
+      "description": "Uma jornada para crianças curiosas que gostam de histórias, missões e personagens bíblicos marcantes.",
+      "coverImage": "assets/covers/herois-da-biblia.png",
+      "category": "kids",
+      "days": 12,
+      "estimatedMinutes": 8,
+      "themeColor": "#AFCFE4",
+      "recommendedAge": "6-8",
+      "isPremium": false,
+      "tags": ["crianças", "6-8", "heróis"],
+      "objective": "Conectar histórias bíblicas a atitudes de coragem no cotidiano.",
+      "kidsMetadata": {
+        "minimumAge": 6,
+        "maximumAge": 8,
+        "activityType": "Missão do dia",
+        "dailyChallenge": "",
+        "practicalActivity": "",
+        "questionForParents": ""
+      }
+    },
+    {
+      "id": "descobrindo-a-biblia",
+      "title": "Descobrindo a Bíblia",
+      "subtitle": "Leitura guiada para crianças que já fazem perguntas grandes.",
+      "description": "Uma trilha para crianças em fase de compreensão mais ampla, com espaço para conversa, reflexão e prática.",
+      "coverImage": "assets/covers/descobrindo-a-biblia.png",
+      "category": "kids",
+      "days": 15,
+      "estimatedMinutes": 10,
+      "themeColor": "#C7C5E8",
+      "recommendedAge": "9-12",
+      "isPremium": true,
+      "tags": ["crianças", "9-12", "bíblia"],
+      "objective": "Ajudar crianças maiores a ler e interpretar a Bíblia com acompanhamento.",
+      "kidsMetadata": {
+        "minimumAge": 9,
+        "maximumAge": 12,
+        "activityType": "Leitura guiada",
+        "dailyChallenge": "",
+        "practicalActivity": "",
+        "questionForParents": ""
+      }
+    }
+  ]
+}

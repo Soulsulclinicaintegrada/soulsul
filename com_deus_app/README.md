@@ -26,17 +26,18 @@ lib/
 
 Entrega atual:
 
-- onboarding completo
+- explorar jornadas com carregamento por JSON
+- categorias elegantes no estilo biblioteca
+- detalhe bonito de jornada
+- suporte estrutural para jornadas infantis
 - modo Respire
-- home redesenhada como capa de livro
-- animacoes suaves
+- home editorial
 - design system proprio
-- selecao de jornadas por categoria
 - espaco Familia preparado
 - placeholders para Infantil, Familia e Casais
 - suporte a cenas isoladas para screenshots via `--dart-define`
 
-Tudo organizado em Clean Architecture dentro da feature `onboarding`.
+Tudo organizado em Clean Architecture nas features `onboarding`, `journeys` e `experience`.
 
 ## Como continuar localmente
 

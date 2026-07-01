@@ -1,21 +1,13 @@
-enum JourneyCategoryAction {
-  openCatalog,
-  openFamilyFlow,
-  openKidsPlaceholder,
-  openCouplesPlaceholder,
-  openComingSoon,
-}
-
 class JourneyCategory {
   const JourneyCategory({
     required this.id,
     required this.emoji,
     required this.title,
-    required this.action,
+    required this.subtitle,
   });
 
   final String id;
   final String emoji;
   final String title;
-  final JourneyCategoryAction action;
+  final String subtitle;
 }

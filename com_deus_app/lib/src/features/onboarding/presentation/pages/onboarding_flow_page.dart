@@ -3,6 +3,7 @@ import 'package:com_deus_app/src/core/di/service_locator.dart';
 import 'package:com_deus_app/src/features/journeys/presentation/pages/family_age_page.dart';
 import 'package:com_deus_app/src/features/journeys/presentation/pages/family_companion_page.dart';
 import 'package:com_deus_app/src/features/journeys/presentation/pages/journey_catalog_page.dart';
+import 'package:com_deus_app/src/features/journeys/presentation/pages/journey_details_page.dart';
 import 'package:com_deus_app/src/features/journeys/presentation/pages/mode_placeholder_page.dart';
 import 'package:com_deus_app/src/features/onboarding/presentation/controllers/onboarding_controller.dart';
 import 'package:com_deus_app/src/features/onboarding/presentation/pages/fasting_page.dart';
@@ -80,6 +81,10 @@ class OnboardingFlowPage extends StatelessWidget {
       OnboardingStep.journeyCatalog => JourneyCatalogPage(
           key: const ValueKey<String>('journey-catalog'),
           selectedCategoryId: onboardingController.selectedJourneyCategoryId,
+          onBack: onboardingController.goBack,
+        ),
+      OnboardingStep.journeyDetails => JourneyDetailsPage(
+          key: const ValueKey<String>('journey-details'),
           onBack: onboardingController.goBack,
         ),
       OnboardingStep.familyCompanion => FamilyCompanionPage(

@@ -1,4 +1,4 @@
-# Sprint 2: captura local de screenshots
+# Sprint 3: captura local de screenshots
 
 Este ambiente nao possui Flutter SDK disponivel no `PATH`, entao as imagens nao puderam ser geradas aqui.
 
@@ -28,6 +28,11 @@ flutter run -d windows --dart-define=SCREENSHOT_TARGET=schedule
 flutter run -d windows --dart-define=SCREENSHOT_TARGET=home
 flutter run -d windows --dart-define=SCREENSHOT_TARGET=journeys
 flutter run -d windows --dart-define=SCREENSHOT_TARGET=journeys-biblical
+flutter run -d windows --dart-define=SCREENSHOT_TARGET=journeys-emotional
+flutter run -d windows --dart-define=SCREENSHOT_TARGET=journeys-family
+flutter run -d windows --dart-define=SCREENSHOT_TARGET=journeys-kids
+flutter run -d windows --dart-define=SCREENSHOT_TARGET=journeys-couples
+flutter run -d windows --dart-define=SCREENSHOT_TARGET=journey-details
 flutter run -d windows --dart-define=SCREENSHOT_TARGET=family-companion
 flutter run -d windows --dart-define=SCREENSHOT_TARGET=family-age
 flutter run -d windows --dart-define=SCREENSHOT_TARGET=family-placeholder

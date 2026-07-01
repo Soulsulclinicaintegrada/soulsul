@@ -55,6 +55,7 @@ class HomePage extends StatelessWidget {
             PrimaryButton(
               label: 'Continuar caminhada',
               onPressed: () {
+                journeyCatalogController.selectCategory('encounter');
                 onboardingController.openJourneyCatalog();
               },
             ),

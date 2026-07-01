@@ -15,6 +15,7 @@ enum OnboardingStep {
   schedule,
   home,
   journeyCatalog,
+  journeyDetails,
   familyCompanion,
   familyAge,
   familyPlaceholder,
@@ -100,6 +101,9 @@ class OnboardingController extends ChangeNotifier {
       case OnboardingStep.journeyCatalog:
         _currentStep = OnboardingStep.home;
         break;
+      case OnboardingStep.journeyDetails:
+        _currentStep = OnboardingStep.journeyCatalog;
+        break;
       case OnboardingStep.familyCompanion:
         _currentStep = OnboardingStep.journeyCatalog;
         break;
@@ -171,6 +175,11 @@ class OnboardingController extends ChangeNotifier {
 
   void selectJourneyCategory(String categoryId) {
     _selectedJourneyCategoryId = categoryId;
+    notifyListeners();
+  }
+
+  void openJourneyDetails() {
+    _currentStep = OnboardingStep.journeyDetails;
     notifyListeners();
   }
 
@@ -259,6 +268,26 @@ class OnboardingController extends ChangeNotifier {
       case 'journeys-biblical':
         _selectedJourneyCategoryId = 'biblical';
         _currentStep = OnboardingStep.journeyCatalog;
+        return;
+      case 'journeys-emotional':
+        _selectedJourneyCategoryId = 'emotional';
+        _currentStep = OnboardingStep.journeyCatalog;
+        return;
+      case 'journeys-family':
+        _selectedJourneyCategoryId = 'family';
+        _currentStep = OnboardingStep.journeyCatalog;
+        return;
+      case 'journeys-kids':
+        _selectedJourneyCategoryId = 'kids';
+        _currentStep = OnboardingStep.journeyCatalog;
+        return;
+      case 'journeys-couples':
+        _selectedJourneyCategoryId = 'couples';
+        _currentStep = OnboardingStep.journeyCatalog;
+        return;
+      case 'journey-details':
+        _selectedJourneyCategoryId = 'biblical';
+        _currentStep = OnboardingStep.journeyDetails;
         return;
       case 'family-companion':
         _currentStep = OnboardingStep.familyCompanion;

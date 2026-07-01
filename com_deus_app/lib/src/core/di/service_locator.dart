@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:com_deus_app/src/core/config/supabase_config.dart';
 import 'package:com_deus_app/src/features/journey/data/datasources/journey_remote_data_source.dart';
@@ -5,6 +6,12 @@ import 'package:com_deus_app/src/features/journey/data/repositories/journey_repo
 import 'package:com_deus_app/src/features/journey/domain/repositories/journey_repository.dart';
 import 'package:com_deus_app/src/features/journey/domain/usecases/get_thirty_day_journey.dart';
 import 'package:com_deus_app/src/features/journey/presentation/controllers/journey_controller.dart';
+import 'package:com_deus_app/src/features/journeys/data/datasources/journey_catalog_local_data_source.dart';
+import 'package:com_deus_app/src/features/journeys/data/repositories/journey_catalog_repository_impl.dart';
+import 'package:com_deus_app/src/features/journeys/domain/repositories/journey_catalog_repository.dart';
+import 'package:com_deus_app/src/features/journeys/domain/usecases/get_journey_catalog.dart';
+import 'package:com_deus_app/src/features/journeys/domain/usecases/get_journey_details.dart';
+import 'package:com_deus_app/src/features/journeys/presentation/controllers/journey_catalog_controller.dart';
 import 'package:com_deus_app/src/features/onboarding/data/datasources/onboarding_local_data_source.dart';
 import 'package:com_deus_app/src/features/onboarding/data/repositories/onboarding_repository_impl.dart';
 import 'package:com_deus_app/src/features/onboarding/domain/repositories/onboarding_repository.dart';
@@ -13,6 +20,7 @@ import 'package:com_deus_app/src/features/onboarding/domain/usecases/save_onboar
 import 'package:com_deus_app/src/features/onboarding/presentation/controllers/onboarding_controller.dart';
 
 late final JourneyController journeyController;
+late final JourneyCatalogController journeyCatalogController;
 late final OnboardingController onboardingController;
 
 Future<void> setupDependencies() async {
@@ -38,6 +46,19 @@ Future<void> setupDependencies() async {
     getThirtyDayJourney: GetThirtyDayJourney(journeyRepository),
   );
 
+  final JourneyCatalogLocalDataSource journeyCatalogLocalDataSource =
+      AssetJourneyCatalogLocalDataSource(assetBundle: rootBundle);
+
+  final JourneyCatalogRepository journeyCatalogRepository =
+      JourneyCatalogRepositoryImpl(
+    localDataSource: journeyCatalogLocalDataSource,
+  );
+
+  journeyCatalogController = JourneyCatalogController(
+    getJourneyCatalog: GetJourneyCatalog(journeyCatalogRepository),
+    getJourneyDetails: GetJourneyDetails(journeyCatalogRepository),
+  );
+
   final OnboardingLocalDataSource onboardingLocalDataSource =
       InMemoryOnboardingLocalDataSource();
 
@@ -50,5 +71,6 @@ Future<void> setupDependencies() async {
     saveOnboardingDraft: SaveOnboardingDraft(onboardingRepository),
   );
 
+  await journeyCatalogController.bootstrap();
   await onboardingController.bootstrap();
 }
