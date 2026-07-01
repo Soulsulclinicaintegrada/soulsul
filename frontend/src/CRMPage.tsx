@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   adicionarPacienteManualCrmApi,
   adicionarPacienteAvaliacaoCrmApi,
+  marcarPacienteFinalizadoCrmApi,
   removerPacienteCanceladoCrmApi,
   removerPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
@@ -267,6 +268,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [salvandoId, setSalvandoId] = useState<number | null>(null);
   const [adicionandoAvaliacaoId, setAdicionandoAvaliacaoId] = useState<number | null>(null);
+  const [finalizandoPacienteId, setFinalizandoPacienteId] = useState<number | null>(null);
   const [criandoManual, setCriandoManual] = useState(false);
   const [periodoAvaliacaoInicio, setPeriodoAvaliacaoInicio] = useState("");
   const [periodoAvaliacaoFim, setPeriodoAvaliacaoFim] = useState("");
@@ -799,6 +801,21 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       setErro(error instanceof Error ? error.message : "Falha ao remover paciente cancelado do CRM.");
     } finally {
       setAdicionandoAvaliacaoId(null);
+    }
+  }
+
+  async function finalizarPacienteDoRelatorio(item: RelatorioCrmItem) {
+    if (!item.pacienteId) return;
+    setFinalizandoPacienteId(item.pacienteId);
+    setErro(null);
+    try {
+      await marcarPacienteFinalizadoCrmApi(item.pacienteId);
+      setFeedback(`Paciente ${item.nome} finalizado no CRM.`);
+      await carregarPainel();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao finalizar o paciente no CRM.");
+    } finally {
+      setFinalizandoPacienteId(null);
     }
   }
 
@@ -1541,7 +1558,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   {relatorioAberto === "desmarcaram" && (item.statusOrigem || item.motivo) ? (
                     <span>{[item.statusOrigem ? `Origem: ${item.statusOrigem}` : "", item.motivo ? `Motivo: ${item.motivo}` : ""].filter(Boolean).join(" · ")}</span>
                   ) : null}
-                  {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
+                  <div className="crm-inline-actions">
+                    {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}
+                    {relatorioAberto === "sem-agendamento" && item.pacienteId ? (
+                      <button
+                        type="button"
+                        className="primary-action"
+                        onClick={() => void finalizarPacienteDoRelatorio(item)}
+                        disabled={finalizandoPacienteId === item.pacienteId}
+                      >
+                        {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar"}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </article>
             ))}
@@ -1574,7 +1603,17 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.detalhe}</span>
-                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                  <div className="crm-inline-actions">
+                    <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                    <button
+                      type="button"
+                      className="primary-action"
+                      onClick={() => void finalizarPacienteDoRelatorio(item)}
+                      disabled={finalizandoPacienteId === item.pacienteId}
+                    >
+                      {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar"}
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
