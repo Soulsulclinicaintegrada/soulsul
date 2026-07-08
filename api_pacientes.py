@@ -106,7 +106,7 @@ def carregar_template_contrato_docx():
 
 
 def agora_str() -> str:
-    return datetime.now().isoformat(sep=" ", timespec="seconds")
+    return agora_local().replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
 
 
 def agora_local() -> datetime:
