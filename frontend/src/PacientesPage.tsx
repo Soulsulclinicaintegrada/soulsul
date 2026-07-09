@@ -728,6 +728,28 @@ function apenasDigitos(texto: string) {
   return texto.replace(/\D/g, "");
 }
 
+function cpfValido(valor: string) {
+  const numero = apenasDigitos(valor);
+  if (!numero) return true;
+  if (numero.length !== 11 || /^(\d)\1{10}$/.test(numero)) return false;
+  let soma = 0;
+  for (let indice = 0; indice < 9; indice += 1) soma += Number(numero[indice]) * (10 - indice);
+  const digito1 = (soma * 10 % 11) % 10;
+  if (digito1 !== Number(numero[9])) return false;
+  soma = 0;
+  for (let indice = 0; indice < 10; indice += 1) soma += Number(numero[indice]) * (11 - indice);
+  const digito2 = (soma * 10 % 11) % 10;
+  return digito2 === Number(numero[10]);
+}
+
+function validarPacienteForm(form: PacienteForm) {
+  if (!form.nome.trim()) return "Informe o nome do paciente.";
+  if (form.cpf.trim() && !cpfValido(form.cpf)) return "O CPF do paciente é inválido.";
+  if (form.menorIdade && !form.responsavel.trim()) return "Informe o responsável legal para paciente menor de idade.";
+  if (form.cpfResponsavel.trim() && !cpfValido(form.cpfResponsavel)) return "O CPF do responsável é inválido.";
+  return null;
+}
+
 function formatarDataNascimentoInput(valor: string) {
   const digitos = apenasDigitos(valor).slice(0, 8);
   if (!digitos) return "";
@@ -923,6 +945,7 @@ function mapProcedimentoCatalogoApi(item: ProcedimentoResumoApi): ProcedimentoCa
 }
 
 export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas = {} }: PacientesPageProps) {
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
   const [pacientes, setPacientes] = useState<PacienteResumoApi[]>([]);
   const [pacienteAtivoId, setPacienteAtivoId] = useState<number | null>(null);
   const [ficha, setFicha] = useState<FichaPacienteApi | null>(null);
@@ -1243,6 +1266,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
+  useEffect(() => {
+    if (!erro && !feedback) return;
+    feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [erro, feedback]);
+
   function agoraBr() {
     const agora = new Date();
     return `${String(agora.getDate()).padStart(2, "0")}/${String(agora.getMonth() + 1).padStart(2, "0")}/${agora.getFullYear()} ${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
@@ -1395,6 +1423,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }, [modalPagamentoAberto, totalOrcamentoFinal, orcamentoDraft.data]);
 
   async function salvarNovoPaciente(agendarAvaliacao = false) {
+    const erroValidacao = validarPacienteForm(novoForm);
+    if (erroValidacao) {
+      setErro(erroValidacao);
+      return;
+    }
     setSalvandoNovo(true);
     setAgendandoAvaliacao(agendarAvaliacao);
     setErro(null);
@@ -1417,9 +1450,29 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       setModalNovoAberto(false);
       setNovoForm(FORM_INICIAL);
       setAgendamentoAvaliacaoNovo(AGENDAMENTO_AVALIACAO_INICIAL());
+      setEditForm(mapPacienteParaForm(criado));
+      setFicha((atual) => (
+        atual && atual.paciente.id === criado.id
+          ? { ...atual, paciente: criado }
+          : atual
+      ));
+      setPacientes((atual) => {
+        const resumoCriado = mapPacienteDetalheParaResumo(criado);
+        const indice = atual.findIndex((item) => item.id === criado.id);
+        if (indice >= 0) {
+          const proximo = [...atual];
+          proximo[indice] = resumoCriado;
+          return proximo;
+        }
+        return [resumoCriado, ...atual];
+      });
       setFeedback(mensagem);
-      await carregarLista();
       setPacienteAtivoId(criado.id);
+      try {
+        await carregarLista();
+      } catch (refreshError) {
+        console.warn("Paciente criado, mas houve falha ao recarregar a lista.", refreshError);
+      }
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao criar paciente.");
     } finally {
@@ -1430,6 +1483,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   async function salvarEdicaoPaciente(agendarAvaliacao = false) {
     if (!pacienteAtivoId) return;
+    const erroValidacao = validarPacienteForm(editForm);
+    if (erroValidacao) {
+      setErro(erroValidacao);
+      return;
+    }
     setSalvandoEdicao(true);
     setAgendandoAvaliacao(agendarAvaliacao);
     setErro(null);
@@ -1463,6 +1521,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
         setFeedback("Paciente atualizado e avaliação agendada no CRM.");
       } else {
         setFeedback("Paciente atualizado com sucesso.");
+      }
+      try {
+        await carregarLista();
+      } catch (refreshError) {
+        console.warn("Paciente salvo, mas houve falha ao recarregar a lista.", refreshError);
       }
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao atualizar paciente.");
@@ -4024,6 +4087,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   return (
     <section className="module-shell">
+      <div ref={feedbackRef} />
       {feedback ? <article className="panel compact-panel">{feedback}</article> : null}
       {erro ? <article className="panel compact-panel">{erro}</article> : null}
 
@@ -4844,5 +4908,4 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     </section>
   );
 }
-
 
