@@ -105,6 +105,28 @@ def carregar_template_contrato_docx():
     raise RuntimeError(" | ".join(erros) if erros else "template do contrato indisponivel")
 
 
+def caminho_template_ordem_servico() -> str:
+    candidatos = [
+        TEMPLATE_ORDEM_SERVICO_PATH,
+        os.path.join(API_BASE_DIR, "ORDEM DE SERVICO PROTETICO.docx"),
+        os.path.join(API_BASE_DIR, "ORDEM_DE_SERVICO_PROTETICO.docx"),
+    ]
+    for caminho in candidatos:
+        if os.path.isfile(caminho):
+            return caminho
+
+    try:
+        for nome in os.listdir(API_BASE_DIR):
+            nome_normalizado = normalizar_texto(nome)
+            if nome.lower().endswith(".docx") and "ordem de servico" in nome_normalizado and "protetico" in nome_normalizado:
+                caminho = os.path.join(API_BASE_DIR, nome)
+                if os.path.isfile(caminho):
+                    return caminho
+    except OSError:
+        pass
+    return TEMPLATE_ORDEM_SERVICO_PATH
+
+
 def agora_str() -> str:
     return agora_local().replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
 
@@ -4685,10 +4707,11 @@ def gerar_documento_ordem_servico(
     observacao: str,
     criado_por: str,
 ) -> str:
-    if Document is None or not os.path.isfile(TEMPLATE_ORDEM_SERVICO_PATH):
+    template_ordem_servico_path = caminho_template_ordem_servico()
+    if Document is None or not os.path.isfile(template_ordem_servico_path):
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico nao encontrado.")
 
-    doc = Document(TEMPLATE_ORDEM_SERVICO_PATH)
+    doc = Document(template_ordem_servico_path)
     tabelas = doc.tables
     if not tabelas:
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico invalido.")
