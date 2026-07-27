@@ -924,10 +924,13 @@ def resumir_financeiro_agendamento(
         vencido_na_data = False
         if data_referencia and vencimento:
             try:
-                vencido_na_data = data_br_para_date(vencimento) < data_referencia
+                vencido_na_data = data_br_para_date(vencimento) <= data_referencia
             except Exception:
                 vencido_na_data = False
-        if status == "atrasado" or (status in {"aberto", "a vencer"} and vencido_na_data):
+        if data_referencia:
+            if status in {"aberto", "a vencer", "atrasado"} and vencido_na_data:
+                total_atrasado += valor
+        elif status == "atrasado":
             total_atrasado += valor
 
     if total_atrasado > 0:
