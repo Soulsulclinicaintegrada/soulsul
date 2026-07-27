@@ -40,7 +40,7 @@ type RelatorioCrmItem = {
 };
 
 type CrmAba = "funil" | "agendados" | "finalizados" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
-type RelatorioAberto = "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram" | "palavras-chave";
+type RelatorioAberto = "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram" | "avaliacoes-sem-reagendamento" | "palavras-chave";
 
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   pacienteId: -1,
@@ -207,6 +207,13 @@ function extrairDataIso(valor?: string) {
   return `${match[3]}-${match[2]}-${match[1]}`;
 }
 
+function extrairDataHoraOrdenacao(data?: string, horario?: string) {
+  const dataIso = extrairDataIso(data);
+  if (!dataIso) return "";
+  const hora = String(horario || "").trim() || "00:00";
+  return `${dataIso} ${hora}`;
+}
+
 function numeroMoeda(valor?: string) {
   const texto = String(valor || "").trim();
   if (!texto) return 0;
@@ -267,11 +274,12 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
   const [buscaLead, setBuscaLead] = useState("");
   const [leadSelecionadoId, setLeadSelecionadoId] = useState<number | null>(null);
-  const [relatorioAberto, setRelatorioAberto] = useState<RelatorioAberto>("sem-agendamento");
+  const [relatorioAberto, setRelatorioAberto] = useState<RelatorioAberto>("avaliacoes-sem-reagendamento");
   const [relatorioSemAgendamento, setRelatorioSemAgendamento] = useState<RelatorioCrmItem[]>([]);
   const [relatorioAniversariantes, setRelatorioAniversariantes] = useState<RelatorioCrmItem[]>([]);
   const [relatorioFaltaram, setRelatorioFaltaram] = useState<RelatorioCrmItem[]>([]);
   const [relatorioDesmarcaram, setRelatorioDesmarcaram] = useState<RelatorioCrmItem[]>([]);
+  const [relatorioAvaliacoesSemReagendamento, setRelatorioAvaliacoesSemReagendamento] = useState<RelatorioCrmItem[]>([]);
   const [relatorioPalavrasChave, setRelatorioPalavrasChave] = useState<RelatorioCrmItem[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -440,6 +448,51 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
             motivo: item.statusMotivo || "",
             usuario: item.statusUsuario || "",
           }))
+      );
+
+      setRelatorioAvaliacoesSemReagendamento(
+        (resposta.avaliacoesPrimeiraConsultaPerdida || []).length
+          ? (resposta.avaliacoesPrimeiraConsultaPerdida || []).map((item) => ({
+            chave: `avaliacao-sem-reagendamento-${item.pacienteId}-${item.dataAvaliacao || ""}`,
+            pacienteId: item.pacienteId,
+            nome: item.nome,
+            prontuario: item.prontuario || "",
+            telefone: item.telefone || "",
+            dataIso: extrairDataIso(item.dataAvaliacao),
+            profissional: item.profissional || "",
+            tipoProcedimento: item.procedimento || "",
+            statusOrigem: item.status || "",
+            motivo: item.motivo || "",
+            usuario: item.usuario || "",
+            detalhe: `${item.dataAvaliacao || "-"} · ${item.profissional || "-"} · ${item.status || "-"} · ${item.procedimento || "-"}`,
+          }))
+          : Array.from(historicoPorPaciente.entries())
+            .flatMap(([pacienteId, historico]) => {
+              const historicoOrdenado = [...historico]
+                .filter((item) => extrairDataHoraOrdenacao(item.data, item.inicio))
+                .sort((a, b) => extrairDataHoraOrdenacao(a.data, a.inicio).localeCompare(extrairDataHoraOrdenacao(b.data, b.inicio)));
+              const primeiraConsulta = historicoOrdenado[0];
+              if (!primeiraConsulta || !agendamentoEhAvaliacao(primeiraConsulta)) return [];
+              const statusPrimeiraConsulta = normalizarTexto(primeiraConsulta.status || "");
+              if (statusPrimeiraConsulta !== "faltou" && statusPrimeiraConsulta !== "desmarcado") return [];
+              const teveProcedimentoDepois = historicoOrdenado.slice(1).some((item) => {
+                const status = normalizarTexto(item.status || "");
+                if (status === "cancelado" || status === "desmarcado" || status === "faltou") return false;
+                return !agendamentoEhAvaliacao(item);
+              });
+              if (teveProcedimentoDepois) return [];
+              return [{
+                ...mapearAgendamentoRelatorio("avaliacao-sem-reagendamento", primeiraConsulta),
+                dataIso: extrairDataIso(primeiraConsulta.data),
+                profissional: primeiraConsulta.profissional || "",
+                tipoProcedimento: primeiraConsulta.tipoAtendimento || primeiraConsulta.procedimentos?.[0] || "",
+                statusOrigem: primeiraConsulta.status || "",
+                motivo: primeiraConsulta.statusMotivo || "",
+                usuario: primeiraConsulta.statusUsuario || "",
+                detalhe: `${primeiraConsulta.data || "-"} · ${primeiraConsulta.inicio || "-"} · ${primeiraConsulta.profissional || "-"} · ${primeiraConsulta.status || "-"} · ${(primeiraConsulta.procedimentos || []).join(", ") || primeiraConsulta.tipoAtendimento || "-"}`,
+              }];
+            })
+            .sort((a, b) => `${b.dataIso || ""} ${b.nome}`.localeCompare(`${a.dataIso || ""} ${a.nome}`))
       );
 
       setRelatorioPalavrasChave(
@@ -664,6 +717,16 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         statusOrigem: relatorioStatusOrigem,
       }),
     [relatorioDataFim, relatorioDataInicio, relatorioDesmarcaram, relatorioProfissional, relatorioStatusOrigem, relatorioTipoProcedimento]
+  );
+  const avaliacoesSemReagendamentoFiltrados = useMemo(
+    () =>
+      aplicarFiltroRelatorio(relatorioAvaliacoesSemReagendamento, {
+        inicio: relatorioDataInicio,
+        fim: relatorioDataFim,
+        profissional: relatorioProfissional,
+        tipoProcedimento: relatorioTipoProcedimento,
+      }),
+    [relatorioAvaliacoesSemReagendamento, relatorioDataFim, relatorioDataInicio, relatorioProfissional, relatorioTipoProcedimento]
   );
   const palavrasChaveFiltrados = useMemo<RelatorioCrmItem[]>(() => {
     const palavras = quebrarPalavrasChave(relatorioPalavrasBusca);
@@ -1045,6 +1108,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           vazio: "Nenhuma desmarcação registrada.",
           icone: <CalendarDays size={18} />,
         };
+      case "avaliacoes-sem-reagendamento":
+        return {
+          titulo: "Primeira avaliação faltou ou desmarcou",
+          nomeExportacao: "crm-avaliacoes-sem-reagendamento",
+          itens: avaliacoesSemReagendamentoFiltrados,
+          vazio: "Nenhuma avaliação nesta condição.",
+          icone: <CalendarDays size={18} />,
+        };
       case "palavras-chave":
         return {
           titulo: "Agendamentos por palavras-chave",
@@ -1064,7 +1135,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           icone: <Search size={18} />,
         };
     }
-  }, [aniversariantesFiltrados, desmarcaramFiltrados, faltaramFiltrados, palavrasChaveFiltrados, relatorioAberto, relatorioLetra, relatorioPalavrasBusca, semAgendamentoFiltrados]);
+  }, [aniversariantesFiltrados, avaliacoesSemReagendamentoFiltrados, desmarcaramFiltrados, faltaramFiltrados, palavrasChaveFiltrados, relatorioAberto, relatorioLetra, relatorioPalavrasBusca, semAgendamentoFiltrados]);
 
   return (
     <section className="module-shell crm-shell">
@@ -1106,6 +1177,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         </div>
         {abaAtiva === "relatorios" ? (
           <div className="tab-shell crm-report-tabs-shell">
+            <button type="button" className={`segmented-tab ${relatorioAberto === "avaliacoes-sem-reagendamento" ? "active" : ""}`} onClick={() => alternarRelatorio("avaliacoes-sem-reagendamento")}>Primeira avaliação</button>
             <button type="button" className={`segmented-tab ${relatorioAberto === "sem-agendamento" ? "active" : ""}`} onClick={() => alternarRelatorio("sem-agendamento")}>Sem agendamento</button>
             <button type="button" className={`segmented-tab ${relatorioAberto === "aniversariantes" ? "active" : ""}`} onClick={() => alternarRelatorio("aniversariantes")}>Aniversariantes</button>
             <button type="button" className={`segmented-tab ${relatorioAberto === "faltaram" ? "active" : ""}`} onClick={() => alternarRelatorio("faltaram")}>Faltaram</button>
@@ -1519,7 +1591,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               ))}
             </div>
           ) : null}
-          {relatorioAberto === "faltaram" || relatorioAberto === "desmarcaram" ? (
+          {relatorioAberto === "faltaram" || relatorioAberto === "desmarcaram" || relatorioAberto === "avaliacoes-sem-reagendamento" ? (
             <div className="crm-filter-row crm-filter-row-report">
               <label>
                 <span>Data inicial</span>
@@ -1595,8 +1667,14 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                         .join(" · ")}
                     </span>
                   ) : null}
-                  {relatorioAberto === "desmarcaram" && (item.statusOrigem || item.motivo) ? (
-                    <span>{[item.statusOrigem ? `Origem: ${item.statusOrigem}` : "", item.motivo ? `Motivo: ${item.motivo}` : ""].filter(Boolean).join(" · ")}</span>
+                  {(relatorioAberto === "desmarcaram" || relatorioAberto === "avaliacoes-sem-reagendamento") && (item.statusOrigem || item.motivo || item.usuario) ? (
+                    <span>
+                      {[
+                        item.statusOrigem ? `Status: ${item.statusOrigem}` : "",
+                        item.motivo ? `Motivo: ${item.motivo}` : "",
+                        item.usuario ? `Por: ${item.usuario}` : "",
+                      ].filter(Boolean).join(" · ")}
+                    </span>
                   ) : null}
                   <div className="crm-inline-actions">
                     {item.pacienteId ? <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button> : null}

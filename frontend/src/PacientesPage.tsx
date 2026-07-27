@@ -46,6 +46,7 @@ import {
   atualizarPacienteApi
 } from "./pacientesApi";
 import { adicionarMinutos, salvarAgendamentoAgenda } from "./agendaApi";
+import { carregarUsuarioSessao } from "./auth";
 import { Odontograma } from "./Odontograma";
 import logoSoulSul from "./assets/logo-soul-sul.png";
 
@@ -158,7 +159,8 @@ const OPCOES_ESTADO_CIVIL = ["", "Solteiro(a)", "Casado(a)", "Divorciado(a)", "V
 const CLINICAS_ORCAMENTO = ["Soul Sul Clinica Integrada"];
 const CRIADORES_ORCAMENTO = ["Avaliacao", "Juliana", "Recepcao"];
 const TABELAS_ORCAMENTO = ["Soul Sul Clinica"];
-const DENTICOES = ["Permanente", "Decidua"];
+const DENTICOES = ["Permanente", "Decidua"] as const;
+const DENTICOES_CLINICAS = ["Todas", ...DENTICOES] as const;
 const PROFISSIONAIS_ORCAMENTO = ["Avaliacao", "Dra. Gabriela", "Dr. Caio", "Dra. Ester", "Dr. Ayrton"];
 const FILEIRA_SUPERIOR_PERMANENTE = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
 const FILEIRA_INFERIOR_PERMANENTE = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
@@ -304,6 +306,8 @@ type ResumoFinanceiroCards = {
   atrasado: string;
   pagos: string;
 };
+
+const STATUS_RECEBIVEIS_MODAL = ["Aberto", "A vencer", "Atrasado", "Pago", "Suspenso", "Cancelado"] as const;
 
 const FORM_INICIAL: PacienteForm = {
   nome: "",
@@ -946,6 +950,14 @@ function mapProcedimentoCatalogoApi(item: ProcedimentoResumoApi): ProcedimentoCa
 
 export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas = {} }: PacientesPageProps) {
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const usuarioSessao = carregarUsuarioSessao();
+  const usuarioPodeAprovarOrcamento = useMemo(() => {
+    const identidade = `${usuarioSessao?.usuario || ""} ${usuarioSessao?.nome || ""}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    return identidade.includes("juliana") || identidade.includes("eliane");
+  }, [usuarioSessao?.nome, usuarioSessao?.usuario]);
   const [pacientes, setPacientes] = useState<PacienteResumoApi[]>([]);
   const [pacienteAtivoId, setPacienteAtivoId] = useState<number | null>(null);
   const [ficha, setFicha] = useState<FichaPacienteApi | null>(null);
@@ -998,8 +1010,9 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [ordemServicoForm, setOrdemServicoForm] = useState<OrdemServicoForm>(ORDEM_SERVICO_INICIAL);
   const [salvandoOrdemServico, setSalvandoOrdemServico] = useState(false);
   const [salvandoCrmFinalizado, setSalvandoCrmFinalizado] = useState(false);
-  const [denticaoClinica, setDenticaoClinica] = useState<"Permanente" | "Decidua">("Permanente");
+  const [denticaoClinica, setDenticaoClinica] = useState<(typeof DENTICOES_CLINICAS)[number]>("Todas");
   const [elementoClinicoAtivo, setElementoClinicoAtivo] = useState<number[]>([]);
+  const [buscaOdontogramaClinico, setBuscaOdontogramaClinico] = useState("");
   const [salvandoOrcamento, setSalvandoOrcamento] = useState(false);
   const [confirmarDesaprovarId, setConfirmarDesaprovarId] = useState<number | null>(null);
   const [alterandoStatusOrcamentoId, setAlterandoStatusOrcamentoId] = useState<number | null>(null);
@@ -1028,6 +1041,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
   const orcamentoBloqueado = false;
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
+  const recebivelSelecionadoDetalhe = useMemo(
+    () => ficha?.recebiveis.find((item) => item.id === recebivelForm?.id) || null,
+    [ficha?.recebiveis, recebivelForm?.id]
+  );
   const dentesSelecionadosOdontograma = useMemo(
     () =>
       [...new Set(
@@ -1064,6 +1081,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     () =>
       odontogramaElementos.filter((item) => {
         if (item.dente == null) return true;
+        if (denticaoClinica === "Todas") return true;
         return (item.denticao || "Permanente") === denticaoClinica;
       }),
     [odontogramaElementos, denticaoClinica]
@@ -1071,7 +1089,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const dentesContratadosClinicos = useMemo(
     () =>
       dentesContratados.filter((dente) => (
-        denticaoClinica === "Decidua" ? dente >= 51 && dente <= 85 : dente < 50
+        denticaoClinica === "Todas"
+          ? true
+          : denticaoClinica === "Decidua"
+            ? dente >= 51 && dente <= 85
+            : dente < 50
       )),
     [dentesContratados, denticaoClinica]
   );
@@ -1082,10 +1104,18 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }, [abaClinica, denticaoClinica, dentesContratadosClinicos]);
   const elementosOdontogramaListados = useMemo(
     () => {
-      if (!elementoClinicoAtivo.length) return elementosOdontogramaVisiveis;
-      return elementosOdontogramaVisiveis.filter((item) => item.dente != null && elementoClinicoAtivo.includes(item.dente));
+      const termo = normalizarTextoComparacao(buscaOdontogramaClinico);
+      const base = !elementoClinicoAtivo.length
+        ? elementosOdontogramaVisiveis
+        : elementosOdontogramaVisiveis.filter((item) => item.dente != null && elementoClinicoAtivo.includes(item.dente));
+      if (!termo) return base;
+      return base.filter((item) => normalizarTextoComparacao([
+        item.elemento,
+        item.denticao || "",
+        ...(item.procedimentos || [])
+      ].join(" ")).includes(termo));
     },
-    [elementoClinicoAtivo, elementosOdontogramaVisiveis]
+    [buscaOdontogramaClinico, elementoClinicoAtivo, elementosOdontogramaVisiveis]
   );
   const abasFichaDisponiveis = useMemo(
     () =>
@@ -1795,6 +1825,15 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     setModalRecebivelAberto(false);
     setRecebivelForm(null);
     setRecebivelModalModo("edicao");
+  }
+
+  function aplicarStatusRecebivel(status: typeof STATUS_RECEBIVEIS_MODAL[number]) {
+    if (!recebivelForm) return;
+    setRecebivelForm({
+      ...recebivelForm,
+      status,
+      dataPagamento: status === "Pago" ? (recebivelForm.dataPagamento || dataHojeIso()) : ""
+    });
   }
 
   async function salvarRecebivel(payloadOverride?: Partial<RecebivelAtualizacaoPayload>) {
@@ -2514,6 +2553,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   async function aprovarOrcamento(contratoId: number) {
     if (!pacienteAtivoId) return;
+    if (!usuarioPodeAprovarOrcamento) {
+      setErro("Somente Juliana e Eliane podem aprovar orçamentos.");
+      return;
+    }
     try {
       setAlterandoStatusOrcamentoId(contratoId);
       await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, contratoId, "APROVADO");
@@ -2528,6 +2571,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   async function desaprovarOrcamento() {
     if (!pacienteAtivoId || !confirmarDesaprovarId) return;
+    if (!usuarioPodeAprovarOrcamento) {
+      setErro("Somente Juliana e Eliane podem reabrir orçamentos.");
+      return;
+    }
     try {
       setAlterandoStatusOrcamentoId(confirmarDesaprovarId);
       await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, confirmarDesaprovarId, "EM_ABERTO");
@@ -3804,11 +3851,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             <button
                               type="button"
                               className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : "open"}`}
-                              disabled={alterandoStatusOrcamentoId === contrato.id}
+                              disabled={alterandoStatusOrcamentoId === contrato.id || !usuarioPodeAprovarOrcamento}
                               onClick={() => {
                                 if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
                                 else void aprovarOrcamento(contrato.id);
                               }}
+                              title={usuarioPodeAprovarOrcamento ? undefined : "Somente Juliana e Eliane podem aprovar orçamentos"}
                             >
                               {alterandoStatusOrcamentoId === contrato.id
                                 ? "Salvando..."
@@ -3856,13 +3904,22 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       <div className="clinical-odontograma-layout">
         <div className="clinical-odontograma-main">
           <div className="clinical-odontograma-toolbar">
+            <label className="search-box clinical-odontograma-search">
+              <Search size={18} />
+              <input
+                type="text"
+                placeholder="Buscar dente, elemento ou procedimento..."
+                value={buscaOdontogramaClinico}
+                onChange={(e) => setBuscaOdontogramaClinico(e.target.value)}
+              />
+            </label>
             <label>
               <span>Dentição</span>
               <select value={denticaoClinica} onChange={(e) => {
-                setDenticaoClinica(e.target.value as "Permanente" | "Decidua");
+                setDenticaoClinica(e.target.value as (typeof DENTICOES_CLINICAS)[number]);
                 setElementoClinicoAtivo([]);
               }}>
-                {DENTICOES.map((item) => (
+                {DENTICOES_CLINICAS.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
               </select>
@@ -3874,14 +3931,35 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             ) : null}
           </div>
 
-          <Odontograma
-            denticao={denticaoClinica}
-            dentesContratados={dentesContratadosClinicos}
-            dentesSelecionados={elementoClinicoAtivo}
-            onSelectTooth={(toothId) => {
-              setElementoClinicoAtivo((atual) => atual.includes(toothId) ? atual.filter((item) => item !== toothId) : [toothId]);
-            }}
-          />
+          {denticaoClinica === "Todas" ? (
+            <div className="clinical-odontograma-stack">
+              <Odontograma
+                denticao="Permanente"
+                dentesContratados={dentesContratados.filter((dente) => dente < 50)}
+                dentesSelecionados={elementoClinicoAtivo.filter((dente) => dente < 50)}
+                onSelectTooth={(toothId) => {
+                  setElementoClinicoAtivo((atual) => atual.includes(toothId) ? atual.filter((item) => item !== toothId) : [toothId]);
+                }}
+              />
+              <Odontograma
+                denticao="Decidua"
+                dentesContratados={dentesContratados.filter((dente) => dente >= 51 && dente <= 85)}
+                dentesSelecionados={elementoClinicoAtivo.filter((dente) => dente >= 51 && dente <= 85)}
+                onSelectTooth={(toothId) => {
+                  setElementoClinicoAtivo((atual) => atual.includes(toothId) ? atual.filter((item) => item !== toothId) : [toothId]);
+                }}
+              />
+            </div>
+          ) : (
+            <Odontograma
+              denticao={denticaoClinica}
+              dentesContratados={dentesContratadosClinicos}
+              dentesSelecionados={elementoClinicoAtivo}
+              onSelectTooth={(toothId) => {
+                setElementoClinicoAtivo((atual) => atual.includes(toothId) ? atual.filter((item) => item !== toothId) : [toothId]);
+              }}
+            />
+          )}
         </div>
 
         <aside className="clinical-element-list">
@@ -4103,11 +4181,44 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
               <div>
                 <span className="panel-kicker">Financeiro</span>
                 <h2>{recebivelModalModo === "baixa" ? "Baixar parcela" : "Editar parcela"}</h2>
+                <span className="finance-modal-subtitle">
+                  {recebivelSelecionadoDetalhe?.parcela ? `Parcela ${recebivelSelecionadoDetalhe.parcela}` : "Recebível avulso"}
+                  {recebivelSelecionadoDetalhe?.vencimento ? ` · vence em ${recebivelSelecionadoDetalhe.vencimento}` : ""}
+                </span>
               </div>
               <button type="button" className="icon-only" onClick={fecharRecebivel}>×</button>
             </header>
 
             <div className="modal-body">
+              <div className="finance-modal-summary">
+                <div>
+                  <span>Valor atual</span>
+                  <strong>{recebivelSelecionadoDetalhe?.valor || recebivelForm.valor || "-"}</strong>
+                </div>
+                <div>
+                  <span>Status atual</span>
+                  <strong>{recebivelSelecionadoDetalhe?.status || recebivelForm.status || "-"}</strong>
+                </div>
+                <div>
+                  <span>Forma</span>
+                  <strong>{recebivelSelecionadoDetalhe?.formaPagamento || recebivelForm.formaPagamento || "-"}</strong>
+                </div>
+                <div>
+                  <span>Pagamento</span>
+                  <strong>{recebivelSelecionadoDetalhe?.dataPagamento || recebivelForm.dataPagamento || "Não baixado"}</strong>
+                </div>
+              </div>
+
+              {recebivelModalModo === "edicao" ? (
+                <div className="finance-modal-quick-actions">
+                  <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Aberto")}>Reabrir</button>
+                  <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Atrasado")}>Marcar atrasado</button>
+                  <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Suspenso")}>Suspender</button>
+                  <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Cancelado")}>Cancelar</button>
+                  <button type="button" className="primary-action compact" onClick={() => aplicarStatusRecebivel("Pago")}>Marcar pago hoje</button>
+                </div>
+              ) : null}
+
               <div className="finance-modal-grid">
                 <label>
                   <span>Vencimento</span>
@@ -4137,11 +4248,11 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                       status: e.target.value,
                       dataPagamento: e.target.value === "Pago" ? (recebivelForm.dataPagamento || dataHojeIso()) : ""
                     })}
+                    disabled={recebivelModalModo === "baixa"}
                   >
-                    <option value="Aberto">Aberto</option>
-                    <option value="A vencer">A vencer</option>
-                    <option value="Atrasado">Atrasado</option>
-                    <option value="Pago">Pago</option>
+                    {STATUS_RECEBIVEIS_MODAL.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
@@ -4170,6 +4281,26 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   />
                 </label>
               </div>
+
+              {recebivelSelecionadoDetalhe?.historicoCobranca?.length ? (
+                <div className="finance-modal-history">
+                  <div className="finance-modal-history-header">
+                    <strong>Histórico</strong>
+                    <span>{recebivelSelecionadoDetalhe.historicoCobranca.length} registro(s)</span>
+                  </div>
+                  <div className="finance-modal-history-list">
+                    {recebivelSelecionadoDetalhe.historicoCobranca.map((item) => (
+                      <article key={item.id} className="finance-modal-history-item">
+                        <div>
+                          <strong>{item.status || "Registro"}</strong>
+                          <span>{item.criadoEm || "Data não informada"}{item.criadoPor ? ` · ${item.criadoPor}` : ""}</span>
+                        </div>
+                        <p>{item.observacao || "Sem observação."}</p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <footer className="modal-footer">
@@ -4584,16 +4715,18 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                         {menuOrcamentoAberto ? (
                           <div className="budget-menu-dropdown">
                             <button type="button" className="budget-menu-item" onClick={abrirModalDesconto}>DESCONTO</button>
-                            <button
-                              type="button"
-                              className="budget-menu-item"
-                              onClick={() => {
-                                setMenuOrcamentoAberto(false);
-                                if (orcamentoEditandoId) setConfirmarDesaprovarId(orcamentoEditandoId);
-                              }}
-                            >
-                              REPROVAR
-                            </button>
+                            {usuarioPodeAprovarOrcamento ? (
+                              <button
+                                type="button"
+                                className="budget-menu-item"
+                                onClick={() => {
+                                  setMenuOrcamentoAberto(false);
+                                  if (orcamentoEditandoId) setConfirmarDesaprovarId(orcamentoEditandoId);
+                                }}
+                              >
+                                REPROVAR
+                              </button>
+                            ) : null}
                             <button type="button" className="budget-menu-item" onClick={() => setMenuOrcamentoAberto(false)}>REUTILIZAR ORÇAMENTO</button>
                           </div>
                         ) : null}

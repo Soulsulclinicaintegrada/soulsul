@@ -2203,6 +2203,49 @@ textarea::placeholder {
   width: min(760px, calc(100vw - 48px));
 }
 
+.finance-modal-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.finance-modal-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.finance-modal-summary > div,
+.finance-modal-history-item {
+  border: 1px solid rgba(199, 170, 120, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 12px 14px;
+}
+
+.finance-modal-summary span,
+.finance-modal-history-header span,
+.finance-modal-history-item span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.finance-modal-summary strong,
+.finance-modal-history-header strong,
+.finance-modal-history-item strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.finance-modal-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
 .finance-modal-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2232,6 +2275,37 @@ textarea::placeholder {
   background: rgba(255, 255, 255, 0.95);
   color: var(--text);
   outline: none;
+}
+
+.finance-modal-history {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.finance-modal-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finance-modal-history-list {
+  display: grid;
+  gap: 10px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.finance-modal-history-item {
+  display: grid;
+  gap: 8px;
+}
+
+.finance-modal-history-item p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
 }
 
 .schedule-item-main {
@@ -4826,6 +4900,20 @@ textarea::placeholder {
   font-size: 0.74rem;
 }
 
+.agenda-event-card.financial-alert {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.agenda-event-card.financial-alert .agenda-event-card-copy strong,
+.agenda-event-card.financial-alert .agenda-event-card-copy span {
+  color: #ffffff;
+}
+
+.agenda-event-card.financial-alert .agenda-event-dot {
+  background: #ffffff !important;
+}
+
 .agenda-week-badge {
   display: inline-flex;
   align-items: center;
@@ -5009,6 +5097,11 @@ textarea::placeholder {
   overflow: visible;
   text-overflow: initial;
   line-height: 1.15;
+}
+
+.agenda-week-event-block.financial-alert {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .agenda-month-shell {
@@ -6612,6 +6705,22 @@ textarea::placeholder {
   font-weight: 700;
 }
 
+.agenda-inline-finance.blocked {
+  background: rgba(163, 60, 51, 0.08);
+  border: 1px solid rgba(163, 60, 51, 0.12);
+}
+
+.agenda-patient-finance {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.agenda-patient-finance.blocked,
+.agenda-inline-finance.blocked {
+  color: #9a3d35;
+  font-weight: 700;
+}
+
 .crm-shell {
   gap: 1rem;
 }
@@ -7290,12 +7399,23 @@ textarea::placeholder {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .clinical-odontograma-toolbar label {
   display: grid;
   gap: 8px;
   min-width: 220px;
+}
+
+.clinical-odontograma-search {
+  min-width: min(420px, 100%);
+  flex: 1 1 320px;
+}
+
+.clinical-odontograma-stack {
+  display: grid;
+  gap: 18px;
 }
 
 .clinical-odontograma-toolbar span,

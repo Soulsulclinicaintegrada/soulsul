@@ -28,6 +28,7 @@ import {
   type NotaFiscalEmitidaPayload,
   type ReciboManualApi,
   type ReciboManualPayload,
+  type RecebivelRenegociacaoParcelaPayload,
   type RecebivelAtualizacaoPayload,
   type RecebivelResumoApi,
   atualizarRecebivelPacienteApi,
@@ -98,6 +99,13 @@ type MovimentoEditForm = {
 type RecebivelBaixaSelecionado = {
   id: number;
   desconto: string;
+};
+
+type RenegociacaoParcelaForm = {
+  vencimento: string;
+  valor: string;
+  formaPagamento: string;
+  observacao: string;
 };
 
 type RecebivelGridMap = Record<number, RecebivelForm>;
@@ -256,6 +264,14 @@ function dataIsoParaBr(valor?: string) {
   return `${dia}/${mes}/${ano}`;
 }
 
+function novaParcelaRenegociacao(
+  vencimento = new Date().toISOString().slice(0, 10),
+  valor = "",
+  formaPagamento = "PIX"
+): RenegociacaoParcelaForm {
+  return { vencimento, valor, formaPagamento, observacao: "" };
+}
+
 function dataEstaNoPeriodo(dataIso: string, inicio?: string, fim?: string) {
   if (!dataIso) return !inicio && !fim;
   if (inicio && dataIso < inicio) return false;
@@ -344,6 +360,8 @@ export function FinanceiroPage() {
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
   const [recebiveisGrid, setRecebiveisGrid] = useState<RecebivelGridMap>({});
   const [loteContratoId, setLoteContratoId] = useState<number>(0);
+  const [renegociacaoParcelas, setRenegociacaoParcelas] = useState<RenegociacaoParcelaForm[]>([]);
+  const [renegociacaoObservacao, setRenegociacaoObservacao] = useState("");
   const [contaForm, setContaForm] = useState<ContaPagarForm>(CONTA_PAGAR_INICIAL);
   const [buscaRecebivel, setBuscaRecebivel] = useState("");
   const [buscaBaixaRecebivel, setBuscaBaixaRecebivel] = useState("");
@@ -485,6 +503,11 @@ export function FinanceiroPage() {
     [recebiveisFiltrados]
   );
 
+  const recebiveisRenegociaveis = useMemo(
+    () => recebiveis.filter((item) => !["Pago", "Cancelado", "Suspenso"].includes(item.status || "")),
+    [recebiveis]
+  );
+
   const cobrancasOrdenadas = useMemo(() => {
     const lista = [...cobrancasFiltradas];
     const fator = direcaoCobranca === "desc" ? -1 : 1;
@@ -544,7 +567,7 @@ export function FinanceiroPage() {
 
   const lotes = useMemo(() => {
     const mapa = new Map<number, { contratoId: number; pacienteNome: string; prontuario: string; quantidade: number; primeiroVencimento: string }>();
-    recebiveis.forEach((item) => {
+    recebiveisRenegociaveis.forEach((item) => {
       if (!item.contratoId) return;
       const atual = mapa.get(item.contratoId);
       if (atual) {
@@ -560,7 +583,7 @@ export function FinanceiroPage() {
       }
     });
     return Array.from(mapa.values());
-  }, [recebiveis]);
+  }, [recebiveisRenegociaveis]);
 
   const loteSelecionado = useMemo(
     () => lotes.find((item) => item.contratoId === loteContratoId) || null,
@@ -568,8 +591,18 @@ export function FinanceiroPage() {
   );
 
   const recebiveisDoLote = useMemo(
-    () => recebiveis.filter((item) => item.contratoId === loteContratoId),
-    [recebiveis, loteContratoId]
+    () => recebiveisRenegociaveis.filter((item) => item.contratoId === loteContratoId),
+    [recebiveisRenegociaveis, loteContratoId]
+  );
+
+  const totalRecebiveisDoLote = useMemo(
+    () => recebiveisDoLote.reduce((total, item) => total + moedaParaNumero(item.valor), 0),
+    [recebiveisDoLote]
+  );
+
+  const totalRenegociacao = useMemo(
+    () => renegociacaoParcelas.reduce((total, item) => total + moedaParaNumero(item.valor), 0),
+    [renegociacaoParcelas]
   );
 
   useEffect(() => {
@@ -577,6 +610,30 @@ export function FinanceiroPage() {
     const item = recebiveis.find((row) => row.id === recebivelSelecionadoId);
     if (item) setRecebivelForm(recebivelParaForm(item));
   }, [recebivelSelecionadoId, recebiveis]);
+
+  useEffect(() => {
+    if (!recebiveisDoLote.length) {
+      setRenegociacaoParcelas([]);
+      setRenegociacaoObservacao("");
+      return;
+    }
+    const ordenados = [...recebiveisDoLote].sort((a, b) => {
+      const parcelaA = Number(a.parcela ?? 0);
+      const parcelaB = Number(b.parcela ?? 0);
+      if (parcelaA !== parcelaB) return parcelaA - parcelaB;
+      return dataBrParaIso(a.vencimento).localeCompare(dataBrParaIso(b.vencimento));
+    });
+    setRenegociacaoParcelas(
+      ordenados.map((item) =>
+        novaParcelaRenegociacao(
+          dataBrParaIso(item.vencimento) || new Date().toISOString().slice(0, 10),
+          item.valor || "",
+          item.formaPagamento || "PIX"
+        )
+      )
+    );
+    setRenegociacaoObservacao("");
+  }, [recebiveisDoLote]);
 
   useEffect(() => {
     const proximo: RecebivelGridMap = {};
@@ -804,22 +861,68 @@ export function FinanceiroPage() {
     setDirecaoCobranca("asc");
   }
 
+  function adicionarParcelaRenegociacao() {
+    const ultimaParcela = renegociacaoParcelas[renegociacaoParcelas.length - 1];
+    const vencimentoBase = ultimaParcela?.vencimento || new Date().toISOString().slice(0, 10);
+    const proximoVencimento = (() => {
+      const dataBase = new Date(`${vencimentoBase}T12:00:00`);
+      if (Number.isNaN(dataBase.getTime())) return new Date().toISOString().slice(0, 10);
+      dataBase.setMonth(dataBase.getMonth() + 1);
+      return dataBase.toISOString().slice(0, 10);
+    })();
+    setRenegociacaoParcelas((atual) => [
+      ...atual,
+      novaParcelaRenegociacao(proximoVencimento, "", ultimaParcela?.formaPagamento || "PIX")
+    ]);
+  }
+
+  function removerParcelaRenegociacao(indice: number) {
+    setRenegociacaoParcelas((atual) => atual.filter((_, atualIndice) => atualIndice !== indice));
+  }
+
+  function atualizarParcelaRenegociacao(
+    indice: number,
+    campo: keyof RenegociacaoParcelaForm,
+    valor: string
+  ) {
+    setRenegociacaoParcelas((atual) =>
+      atual.map((item, atualIndice) => (atualIndice === indice ? { ...item, [campo]: valor } : item))
+    );
+  }
+
   async function salvarRecebiveisLote() {
-    if (!loteSelecionado) return;
+    if (!loteSelecionado || !renegociacaoParcelas.length) return;
     setSalvando(true);
     setErro(null);
     try {
+      const novasParcelas: RecebivelRenegociacaoParcelaPayload[] = renegociacaoParcelas.map((item, indice) => {
+        if (!item.vencimento) {
+          throw new Error(`Informe o vencimento da nova parcela ${indice + 1}.`);
+        }
+        if (moedaParaNumero(item.valor) <= 0) {
+          throw new Error(`Informe um valor maior que zero para a nova parcela ${indice + 1}.`);
+        }
+        return {
+          vencimento: item.vencimento,
+          valor: moedaParaNumero(item.valor),
+          forma_pagamento: item.formaPagamento || "PIX",
+          observacao: item.observacao
+        };
+      });
       await atualizarRecebiveisLoteApi(loteSelecionado.contratoId, {
         paciente_nome: loteSelecionado.pacienteNome,
         prontuario: loteSelecionado.prontuario,
         forma_pagamento: recebiveisDoLote[0]?.formaPagamento || "PIX",
-        status: recebiveisDoLote[0]?.status || "Aberto",
-        observacao: recebiveisDoLote[0]?.observacao || "",
-        primeiro_vencimento: dataBrParaIso(loteSelecionado.primeiroVencimento)
+        status: "Suspenso",
+        observacao: renegociacaoObservacao,
+        primeiro_vencimento: novasParcelas[0]?.vencimento || dataBrParaIso(loteSelecionado.primeiroVencimento),
+        novas_parcelas: novasParcelas,
+        suspender_anteriores: true,
+        observacao_renegociacao: renegociacaoObservacao
       });
       await carregarPainel();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Falha ao salvar lote de recebíveis.");
+      setErro(error instanceof Error ? error.message : "Falha ao renegociar lote de recebíveis.");
     } finally {
       setSalvando(false);
     }
@@ -1759,9 +1862,9 @@ export function FinanceiroPage() {
         {!carregando && aba === "lote" ? (
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
-              <span className="panel-kicker">Editar recebíveis em lote</span>
+              <span className="panel-kicker">Renegociar recebíveis em lote</span>
               <label>
-                <span>Lote para editar</span>
+                <span>Lote para renegociar</span>
                 <select value={loteContratoId} onChange={(e) => setLoteContratoId(Number(e.target.value))}>
                   <option value={0}>Selecione</option>
                   {lotes.map((item) => (
@@ -1773,14 +1876,29 @@ export function FinanceiroPage() {
               </label>
               {loteSelecionado ? (
                 <>
+                  <div className="finance-mini-metrics">
+                    <div><span>Parcelas atuais</span><strong>{String(recebiveisDoLote.length)}</strong></div>
+                    <div><span>Saldo atual</span><strong>{numeroParaMoedaBr(totalRecebiveisDoLote)}</strong></div>
+                    <div><span>Novas parcelas</span><strong>{String(renegociacaoParcelas.length)}</strong></div>
+                    <div><span>Novo total</span><strong>{numeroParaMoedaBr(totalRenegociacao)}</strong></div>
+                  </div>
                   <div className="finance-form-grid">
                     <label><span>Nome do paciente</span><input type="text" value={loteSelecionado.pacienteNome} readOnly /></label>
                     <label><span>Prontuário</span><input type="text" value={loteSelecionado.prontuario} readOnly /></label>
-                    <label><span>Novo primeiro vencimento</span><input type="date" value={dataBrParaIso(loteSelecionado.primeiroVencimento)} onChange={() => {}} readOnly /></label>
-                    <label><span>Forma pagamento</span><input type="text" value={recebiveisDoLote[0]?.formaPagamento || ""} readOnly /></label>
-                    <label><span>Status</span><input type="text" value={recebiveisDoLote[0]?.status || ""} readOnly /></label>
+                    <label><span>Contrato</span><input type="text" value={`#${loteSelecionado.contratoId}`} readOnly /></label>
+                    <label><span>Primeiro vencimento atual</span><input type="text" value={loteSelecionado.primeiroVencimento || "-"} readOnly /></label>
+                    <label className="finance-span-2">
+                      <span>Observação da renegociação</span>
+                      <textarea
+                        value={renegociacaoObservacao}
+                        onChange={(e) => setRenegociacaoObservacao(e.target.value)}
+                        placeholder="Ex.: saldo renegociado com a paciente em novo cronograma."
+                        rows={3}
+                      />
+                    </label>
                   </div>
                   <div className="module-sublist">
+                    <span className="panel-kicker">Recebíveis atuais que serão suspensos</span>
                     {recebiveisDoLote.map((item) => (
                       <div className="module-subitem finance-module-subitem" key={item.id}>
                         <div>
@@ -1794,8 +1912,50 @@ export function FinanceiroPage() {
                       </div>
                     ))}
                   </div>
+                  <div className="module-sublist">
+                    <span className="panel-kicker">Novos recebíveis substitutos</span>
+                    {renegociacaoParcelas.length ? renegociacaoParcelas.map((item, indice) => (
+                      <div className="finance-form-grid finance-span-all" key={`renegociacao-${indice}`}>
+                        <label>
+                          <span>Parcela</span>
+                          <input type="text" value={String(indice + 1)} readOnly />
+                        </label>
+                        <label>
+                          <span>Vencimento</span>
+                          <input type="date" value={item.vencimento} onChange={(e) => atualizarParcelaRenegociacao(indice, "vencimento", e.target.value)} />
+                        </label>
+                        <label>
+                          <span>Valor</span>
+                          <input type="text" value={item.valor} onChange={(e) => atualizarParcelaRenegociacao(indice, "valor", e.target.value)} placeholder="0,00" />
+                        </label>
+                        <label>
+                          <span>Forma de pagamento</span>
+                          <select value={item.formaPagamento} onChange={(e) => atualizarParcelaRenegociacao(indice, "formaPagamento", e.target.value)}>
+                            {FORMAS.map((forma) => <option key={forma} value={forma}>{forma}</option>)}
+                          </select>
+                        </label>
+                        <label className="finance-span-2">
+                          <span>Observação da parcela</span>
+                          <input type="text" value={item.observacao} onChange={(e) => atualizarParcelaRenegociacao(indice, "observacao", e.target.value)} placeholder="Opcional" />
+                        </label>
+                        <div className="finance-form-actions finance-span-2">
+                          <button
+                            type="button"
+                            className="ghost-action danger"
+                            onClick={() => removerParcelaRenegociacao(indice)}
+                            disabled={salvando || renegociacaoParcelas.length === 1}
+                          >
+                            Remover parcela
+                          </button>
+                        </div>
+                      </div>
+                    )) : <span className="empty-inline">Adicione pelo menos uma nova parcela para concluir a renegociação.</span>}
+                  </div>
                   <div className="finance-form-actions">
-                    <button type="button" className="primary-action" disabled={salvando} onClick={() => void salvarRecebiveisLote()}>Salvar alterações em lote</button>
+                    <button type="button" className="ghost-action" disabled={salvando} onClick={adicionarParcelaRenegociacao}>Adicionar parcela</button>
+                    <button type="button" className="primary-action" disabled={salvando || !renegociacaoParcelas.length} onClick={() => void salvarRecebiveisLote()}>
+                      Suspender antigas e lançar novas
+                    </button>
                   </div>
                 </>
               ) : null}

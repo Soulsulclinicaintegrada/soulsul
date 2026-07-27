@@ -586,7 +586,8 @@ function corTipo(tipoId: number) {
   return tiposAtendimentoAgenda.find((item) => item.id === tipoId)?.cor ?? "#c7efd6";
 }
 
-function corEventoAgenda(evento: Pick<AgendaEventoUI, "tipoAtendimentoId" | "tipoAtendimento" | "procedimentos">) {
+function corEventoAgenda(evento: Pick<AgendaEventoUI, "tipoAtendimentoId" | "tipoAtendimento" | "procedimentos" | "financeiro">) {
+  if (classeFinanceiroAgenda(evento.financeiro) === "devedor") return "#111111";
   return corTipo(evento.tipoAtendimentoId);
 }
 
@@ -761,6 +762,9 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [sugestoesPaciente, setSugestoesPaciente] = useState<AgendaPacienteBuscaItem[]>([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
   const [contextoPaciente, setContextoPaciente] = useState<AgendaProcedimentoContrato[]>([]);
+  const [financeiroPacienteAgenda, setFinanceiroPacienteAgenda] = useState("");
+  const [pacienteBloqueadoAtendimento, setPacienteBloqueadoAtendimento] = useState(false);
+  const [mensagemBloqueioPaciente, setMensagemBloqueioPaciente] = useState("");
   const [guiasEmitidasPaciente, setGuiasEmitidasPaciente] = useState<Array<{ id: number; procedimentoNome: string; retornoSolicitado?: string; documentoNome: string; elementoArcada?: string; dataEmissao?: string; etapasResumo?: string }>>([]);
   const [procedimentosSelecionados, setProcedimentosSelecionados] = useState<ProcedimentoSelecionado[]>([]);
   const [procedimentoContratoSelecionado, setProcedimentoContratoSelecionado] = useState("");
@@ -1545,9 +1549,15 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     }));
     setSugestoesPaciente([]);
     setModoNovoPacienteRapido(false);
+    setFinanceiroPacienteAgenda(item.financeiro || "");
+    setPacienteBloqueadoAtendimento(Boolean(item.bloqueadoAtendimento));
+    setMensagemBloqueioPaciente(item.mensagemBloqueio || "");
     const contexto = await buscarContextoPacienteAgenda(item.id);
     setContextoPaciente(contexto.procedimentosContratados);
     setGuiasEmitidasPaciente(contexto.guiasEmitidas);
+    setFinanceiroPacienteAgenda(contexto.financeiro || item.financeiro || "");
+    setPacienteBloqueadoAtendimento(Boolean(contexto.bloqueadoAtendimento));
+    setMensagemBloqueioPaciente(contexto.mensagemBloqueio || item.mensagemBloqueio || "");
     setProcedimentoContratoSelecionado("");
     setForm((atual) => ({
       ...atual,
@@ -1574,6 +1584,9 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setSugestoesPaciente([]);
     setContextoPaciente([]);
     setGuiasEmitidasPaciente([]);
+    setFinanceiroPacienteAgenda("");
+    setPacienteBloqueadoAtendimento(false);
+    setMensagemBloqueioPaciente("");
     setProcedimentoContratoSelecionado("");
     setModoNovoPacienteRapido(true);
   }
@@ -1748,6 +1761,10 @@ function atualizarConfigProfissionalDia(
     const nomePrincipal = (form.pacienteId ? form.nomePaciente : form.nomePaciente || form.pacienteBusca).trim();
     const ehConsulta = abaModal === "Nova Consulta";
     if (!nomePrincipal || !slotsSelecionados.length || (ehConsulta && !form.celular.trim())) return;
+    if (ehConsulta && pacienteBloqueadoAtendimento) {
+      setErroAgendaModal(mensagemBloqueioPaciente || "Atendimento bloqueado para paciente devedor. Regularize no Financeiro antes de agendar.");
+      return;
+    }
     if (ehConsulta && !procedimentosSelecionados.length) {
       setErroAgendaModal("Selecione ao menos um procedimento antes de agendar.");
       return;
@@ -1894,7 +1911,7 @@ function atualizarConfigProfissionalDia(
                 observacoes: form.observacoes,
                 status: atualizado.status || form.status,
                 contratoId: ehConsulta ? procedimentosSelecionados.find((proc) => proc.contratoId)?.contratoId ?? null : null,
-                financeiro: ehConsulta && procedimentosSelecionados.some((proc) => proc.contratoId) ? "Financeiro Ok" : "Sem vínculo",
+                financeiro: atualizado.financeiro || (ehConsulta && procedimentosSelecionados.some((proc) => proc.contratoId) ? "Financeiro Ok" : "Sem vínculo"),
                 trabalhoTipo: form.trabalhoTipo,
                 ordemServicoId: form.ordemServicoId,
                 ordemServicoDocumentoNome: form.ordemServicoDocumentoNome,
@@ -1970,7 +1987,7 @@ function atualizarConfigProfissionalDia(
           agendadoPor: form.agendadoPor,
           status: form.status,
           contratoId: ehConsulta ? procedimentosSelecionados.find((item) => item.contratoId)?.contratoId ?? null : null,
-          financeiro: ehConsulta && procedimentosSelecionados.some((item) => item.contratoId) ? "Financeiro Ok" : "Sem vínculo",
+          financeiro: salvo.financeiro || (ehConsulta && procedimentosSelecionados.some((item) => item.contratoId) ? "Financeiro Ok" : "Sem vínculo"),
           trabalhoTipo: form.trabalhoTipo,
           ordemServicoId: form.ordemServicoId,
           ordemServicoDocumentoNome: form.ordemServicoDocumentoNome,
@@ -2473,7 +2490,7 @@ function atualizarConfigProfissionalDia(
                       <button
                         key={evento.id}
                         type="button"
-                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}`}
+                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
                         style={{
                           top: `${topo}px`,
                           height: `${altura}px`,
@@ -2600,7 +2617,7 @@ function atualizarConfigProfissionalDia(
                       <button
                         key={evento.id}
                         type="button"
-                        className="agenda-week-event-block"
+                        className={`agenda-week-event-block${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
                         style={{
                           top: `${topo}px`,
                           height: `${Math.max(altura, 18)}px`,
@@ -2908,6 +2925,9 @@ function atualizarConfigProfissionalDia(
                               <button key={item.id} type="button" onClick={() => void selecionarPaciente(item)}>
                                 <strong>{item.nome}</strong>
                                 <span>Prontuário {item.prontuario} · {item.celular}</span>
+                                <span className={`agenda-patient-finance ${item.bloqueadoAtendimento ? "blocked" : ""}`}>
+                                  {item.bloqueadoAtendimento ? `Bloqueado · ${item.financeiro || "Devedor"}` : (item.financeiro || "Financeiro Ok")}
+                                </span>
                               </button>
                             ))}
                             {!sugestoesPaciente.length ? (
@@ -2916,6 +2936,13 @@ function atualizarConfigProfissionalDia(
                                 <span>Cadastro inicial com nome e celular</span>
                               </button>
                             ) : null}
+                          </div>
+                        ) : null}
+                        {abaModal === "Nova Consulta" && form.pacienteId ? (
+                          <div className={`agenda-inline-hint agenda-inline-finance ${pacienteBloqueadoAtendimento ? "blocked" : ""}`}>
+                            {pacienteBloqueadoAtendimento
+                              ? (mensagemBloqueioPaciente || "Atendimento bloqueado para paciente devedor.")
+                              : (financeiroPacienteAgenda ? `Financeiro do paciente: ${financeiroPacienteAgenda}` : "Financeiro do paciente sem pendências.")}
                           </div>
                         ) : null}
                         {modoNovoPacienteRapido ? <div className="agenda-inline-hint">Cadastro rápido ativado. Informe o celular e clique em Agendar.</div> : null}

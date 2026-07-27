@@ -8,7 +8,7 @@ function apiBasePadrao() {
   const { protocol, hostname } = window.location;
   const hostNormalizado = hostname.toLowerCase();
   if (!["localhost", "127.0.0.1"].includes(hostNormalizado)) {
-    return "https://soulsul-production.up.railway.app";
+    return "https://api.soulsulclinicaintegrada.com.br";
   }
   return `${protocol}//${hostname}:8001`;
 }
@@ -243,6 +243,16 @@ export type RecebivelLotePayload = {
   status: string;
   observacao: string;
   primeiro_vencimento: string;
+  novas_parcelas?: RecebivelRenegociacaoParcelaPayload[];
+  suspender_anteriores?: boolean;
+  observacao_renegociacao?: string;
+};
+
+export type RecebivelRenegociacaoParcelaPayload = {
+  vencimento: string;
+  valor: number;
+  forma_pagamento: string;
+  observacao?: string;
 };
 
 export type BaixaRecebivelPayload = {
@@ -726,6 +736,19 @@ export type CrmAvaliacaoItemApi = {
   }>;
 };
 
+export type CrmPrimeiraAvaliacaoPerdidaItemApi = {
+  pacienteId: number;
+  nome: string;
+  prontuario?: string;
+  telefone?: string;
+  dataAvaliacao?: string;
+  profissional?: string;
+  status?: string;
+  procedimento?: string;
+  motivo?: string;
+  usuario?: string;
+};
+
 export type CrmResgateHistoricoItemApi = {
   id: number;
   status?: string;
@@ -763,6 +786,7 @@ export type CrmPainelApi = {
   finalizados: CrmPacienteItemApi[];
   cancelados: CrmPacienteItemApi[];
   avaliacoes: CrmAvaliacaoItemApi[];
+  avaliacoesPrimeiraConsultaPerdida?: CrmPrimeiraAvaliacaoPerdidaItemApi[];
   resgates: CrmResgateItemApi[];
 };
 
@@ -1122,7 +1146,7 @@ export async function alterarStatusOrcamentoPacienteApi(
   pacienteId: number,
   contratoId: number,
   status: "APROVADO" | "EM_ABERTO",
-  aprovadoPor = "JULIANA"
+  aprovadoPor = nomeUsuarioCabecalho() || "JULIANA"
 ) {
   return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}/status`, {
     method: "PUT",

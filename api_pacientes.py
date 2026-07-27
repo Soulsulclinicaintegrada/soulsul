@@ -665,6 +665,13 @@ class RecebivelAtualizacaoPayload(BaseModel):
     observacao_cobranca: str = ""
 
 
+class RecebivelRenegociacaoParcelaPayload(BaseModel):
+    vencimento: str = ""
+    valor: float = 0
+    forma_pagamento: str = ""
+    observacao: str = ""
+
+
 class RecebivelLotePayload(BaseModel):
     paciente_nome: str = ""
     prontuario: str = ""
@@ -672,6 +679,9 @@ class RecebivelLotePayload(BaseModel):
     status: str = ""
     observacao: str = ""
     primeiro_vencimento: str = ""
+    novas_parcelas: list[RecebivelRenegociacaoParcelaPayload] = Field(default_factory=list)
+    suspender_anteriores: bool = True
+    observacao_renegociacao: str = ""
 
 
 class AgendamentoResumo(BaseModel):
@@ -1046,6 +1056,19 @@ class CrmAvaliacaoItemResposta(BaseModel):
     orcamentos: list[dict] = Field(default_factory=list)
 
 
+class CrmPrimeiraAvaliacaoPerdidaItemResposta(BaseModel):
+    pacienteId: int
+    nome: str
+    prontuario: str = ""
+    telefone: str = ""
+    dataAvaliacao: str = ""
+    profissional: str = ""
+    status: str = ""
+    procedimento: str = ""
+    motivo: str = ""
+    usuario: str = ""
+
+
 class CrmResgateHistoricoItemResposta(BaseModel):
     id: int
     status: str = ""
@@ -1083,6 +1106,7 @@ class CrmPainelResposta(BaseModel):
     finalizados: list[CrmPacienteItemResposta] = Field(default_factory=list)
     cancelados: list[CrmPacienteItemResposta] = Field(default_factory=list)
     avaliacoes: list[CrmAvaliacaoItemResposta] = Field(default_factory=list)
+    avaliacoesPrimeiraConsultaPerdida: list[CrmPrimeiraAvaliacaoPerdidaItemResposta] = Field(default_factory=list)
     resgates: list[CrmResgateItemResposta] = Field(default_factory=list)
 
 
@@ -1354,6 +1378,17 @@ def startup_event() -> None:
 
 def usuario_request(request: Request) -> str:
     return str(request.headers.get("x-usuario") or "").strip()
+
+
+USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO = {"juliana", "eliane"}
+
+
+def validar_usuario_aprovacao_orcamento(request: Request) -> str:
+    usuario = usuario_request(request)
+    usuario_normalizado = normalizar_texto(usuario).replace(" ", "")
+    if usuario_normalizado not in USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO:
+        raise HTTPException(status_code=403, detail="Somente Juliana e Eliane podem aprovar ou reabrir orcamentos.")
+    return usuario
 
 
 def mapear_acao_http(method: str) -> str:
@@ -3177,6 +3212,148 @@ def atualizar_recebiveis_lote_contrato(
                 observacao.strip(),
                 int(row["id"]),
             ),
+        )
+
+
+def renegociar_recebiveis_lote_contrato(
+    conn: sqlite3.Connection,
+    contrato_id: int,
+    paciente_nome: str,
+    prontuario: str,
+    novas_parcelas: list[RecebivelRenegociacaoParcelaPayload],
+    observacao_renegociacao: str = "",
+    criado_por: str = "",
+) -> None:
+    recebiveis_existentes = conn.execute(
+        """
+        SELECT *
+        FROM recebiveis
+        WHERE contrato_id=?
+        ORDER BY parcela_numero, id
+        """,
+        (contrato_id,),
+    ).fetchall()
+    if not recebiveis_existentes:
+        raise HTTPException(status_code=404, detail="Lote de recebíveis não encontrado.")
+
+    recebiveis_ativos = [
+        row for row in recebiveis_existentes
+        if normalizar_texto(row["status"]) not in {"pago", "cancelado", "suspenso"}
+    ]
+    if not recebiveis_ativos:
+        raise HTTPException(status_code=400, detail="Não há recebíveis em aberto para renegociar neste lote.")
+
+    parcelas_validas: list[tuple[int, str, float, str, str]] = []
+    for indice, parcela in enumerate(novas_parcelas, start=1):
+        vencimento_iso = normalizar_data_contrato_iso(parcela.vencimento)
+        if not vencimento_iso:
+            raise HTTPException(status_code=400, detail=f"Informe uma data válida para a parcela {indice}.")
+        valor_parcela = round(float(parcela.valor or 0), 2)
+        if valor_parcela <= 0:
+            raise HTTPException(status_code=400, detail=f"Informe um valor maior que zero para a parcela {indice}.")
+        forma_pagamento = str(parcela.forma_pagamento or "").strip().upper() or "PIX"
+        parcelas_validas.append((
+            indice,
+            vencimento_iso,
+            valor_parcela,
+            forma_pagamento,
+            str(parcela.observacao or "").strip(),
+        ))
+
+    if not parcelas_validas:
+        raise HTTPException(status_code=400, detail="Informe ao menos uma nova parcela para renegociar.")
+
+    paciente_id = int(recebiveis_existentes[0]["paciente_id"] or 0)
+    observacao_base = str(observacao_renegociacao or "").strip() or f"RENEGOCIADO EM {agora_local().strftime('%d/%m/%Y %H:%M')}"
+    usuario_historico = str(criado_por or "Sistema").strip() or "Sistema"
+
+    for row in recebiveis_ativos:
+        observacao_atual = str(row["observacao"] or "").strip()
+        observacao_final = observacao_atual
+        if observacao_base and observacao_base not in observacao_atual:
+            observacao_final = f"{observacao_atual} | {observacao_base}" if observacao_atual else observacao_base
+        conn.execute(
+            "UPDATE recebiveis SET status='Suspenso', observacao=?, data_pagamento=NULL WHERE id=?",
+            (observacao_final, int(row["id"])),
+        )
+        registrar_historico_cobranca_recebivel(
+            conn,
+            recebivel_id=int(row["id"]),
+            paciente_id=paciente_id,
+            status="Suspenso",
+            observacao=observacao_base or "Recebível suspenso por renegociação em lote.",
+            cobrado=False,
+            criado_por=usuario_historico,
+        )
+
+    plano_pagamento_json = json.dumps(
+        [
+            {
+                "indice": indice - 1,
+                "descricao": str(indice),
+                "data": vencimento_iso,
+                "forma": forma_pagamento,
+                "valor": valor_parcela,
+                "parcelas_cartao": len(parcelas_validas) if "cartao" in normalizar_texto(forma_pagamento) and len(parcelas_validas) > 1 else 1,
+            }
+            for indice, vencimento_iso, valor_parcela, forma_pagamento, _ in parcelas_validas
+        ],
+        ensure_ascii=False,
+    )
+    formas_pagamento = {forma_pagamento for _, _, _, forma_pagamento, _ in parcelas_validas}
+    forma_resumo = next(iter(formas_pagamento)) if len(formas_pagamento) == 1 else "MISTO"
+    conn.execute(
+        """
+        UPDATE contratos
+        SET parcelas=?, primeiro_vencimento=?, forma_pagamento=?, plano_pagamento_json=?
+        WHERE id=?
+        """,
+        (
+            len(parcelas_validas),
+            parcelas_validas[0][1],
+            forma_resumo,
+            plano_pagamento_json,
+            contrato_id,
+        ),
+    )
+
+    nome_paciente_final = paciente_nome.strip() or str(recebiveis_existentes[0]["paciente_nome"] or "")
+    prontuario_final = prontuario.strip() or str(recebiveis_existentes[0]["prontuario"] or "")
+    for indice, vencimento_iso, valor_parcela, forma_pagamento, observacao_parcela in parcelas_validas:
+        observacao_nova = f"RENEGOCIACAO_CONTRATO_{contrato_id}"
+        if observacao_base:
+            observacao_nova = f"{observacao_nova} | {observacao_base}"
+        if observacao_parcela:
+            observacao_nova = f"{observacao_nova} | {observacao_parcela}"
+        cursor = conn.execute(
+            """
+            INSERT INTO recebiveis (
+                contrato_id, paciente_id, paciente_nome, prontuario, parcela_numero, vencimento, valor,
+                forma_pagamento, status, observacao, data_criacao, data_pagamento
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, NULL)
+            """,
+            (
+                contrato_id,
+                paciente_id,
+                nome_paciente_final,
+                prontuario_final,
+                indice,
+                vencimento_iso,
+                valor_parcela,
+                forma_pagamento.replace("_", " "),
+                observacao_nova,
+                agora_str(),
+            ),
+        )
+        registrar_historico_cobranca_recebivel(
+            conn,
+            recebivel_id=int(cursor.lastrowid),
+            paciente_id=paciente_id,
+            status="Criado",
+            observacao=observacao_base or "Recebível criado por renegociação em lote.",
+            cobrado=False,
+            criado_por=usuario_historico,
         )
 
 
@@ -6703,6 +6880,95 @@ def listar_avaliacoes_crm(conn: sqlite3.Connection) -> list[CrmAvaliacaoItemResp
     return list(por_paciente.values())
 
 
+def listar_primeira_avaliacao_perdida_crm(conn: sqlite3.Connection) -> list[CrmPrimeiraAvaliacaoPerdidaItemResposta]:
+    rows = conn.execute(
+        """
+        SELECT
+            a.id,
+            a.paciente_id,
+            COALESCE(NULLIF(p.nome, ''), NULLIF(a.nome_paciente_snapshot, ''), NULLIF(a.paciente_nome, '')) AS nome,
+            COALESCE(p.prontuario, '') AS prontuario,
+            COALESCE(NULLIF(p.telefone, ''), NULLIF(a.telefone_snapshot, '')) AS telefone,
+            COALESCE(a.data_agendamento, a.data) AS data_referencia,
+            COALESCE(a.hora_inicio, '') AS hora_inicio,
+            COALESCE(a.profissional, '') AS profissional,
+            COALESCE(a.status, '') AS status,
+            COALESCE(a.status_motivo, '') AS status_motivo,
+            COALESCE(a.status_usuario, '') AS status_usuario,
+            COALESCE(NULLIF(a.procedimento_nome_snapshot, ''), NULLIF(a.procedimento, '')) AS procedimento,
+            COALESCE(a.tipo_atendimento_nome_snapshot, '') AS tipo_atendimento
+        FROM agendamentos a
+        LEFT JOIN pacientes p ON p.id = a.paciente_id
+        WHERE a.paciente_id IS NOT NULL
+        ORDER BY a.paciente_id, COALESCE(a.data_agendamento, a.data), COALESCE(a.hora_inicio, ''), a.id
+        """
+    ).fetchall()
+    historico_por_paciente: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        paciente_id = crm_int(row["paciente_id"], 0)
+        if paciente_id <= 0:
+            continue
+        data_ref = parse_data_contrato(row["data_referencia"])
+        if not data_ref:
+            continue
+        historico_por_paciente.setdefault(paciente_id, []).append(row)
+
+    itens: list[CrmPrimeiraAvaliacaoPerdidaItemResposta] = []
+    for paciente_id, historico in historico_por_paciente.items():
+        historico_ordenado = sorted(
+            historico,
+            key=lambda row: (
+                parse_data_contrato(row["data_referencia"]) or date.min,
+                str(row["hora_inicio"] or ""),
+                crm_int(row["id"], 0),
+            ),
+        )
+        primeira_consulta = historico_ordenado[0] if historico_ordenado else None
+        if primeira_consulta is None or not agendamento_eh_avaliacao(primeira_consulta):
+            continue
+        status_primeira = normalizar_texto(str(primeira_consulta["status"] or ""))
+        if status_primeira not in {"faltou", "desmarcado"}:
+            continue
+
+        teve_procedimento_depois = False
+        for row in historico_ordenado[1:]:
+            status_linha = normalizar_texto(str(row["status"] or ""))
+            if status_linha in {"cancelado", "desmarcado", "faltou"}:
+                continue
+            if agendamento_eh_avaliacao(row):
+                continue
+            teve_procedimento_depois = True
+            break
+        if teve_procedimento_depois:
+            continue
+
+        data_avaliacao = formatar_data_br_valor(primeira_consulta["data_referencia"])
+        if str(primeira_consulta["hora_inicio"] or "").strip():
+            data_avaliacao = f"{data_avaliacao} {str(primeira_consulta['hora_inicio'] or '').strip()}".strip()
+        itens.append(
+            CrmPrimeiraAvaliacaoPerdidaItemResposta(
+                pacienteId=paciente_id,
+                nome=str(primeira_consulta["nome"] or ""),
+                prontuario=formatar_prontuario_valor(primeira_consulta["prontuario"]),
+                telefone=str(primeira_consulta["telefone"] or ""),
+                dataAvaliacao=data_avaliacao,
+                profissional=str(primeira_consulta["profissional"] or ""),
+                status=str(primeira_consulta["status"] or ""),
+                procedimento=str(primeira_consulta["procedimento"] or primeira_consulta["tipo_atendimento"] or ""),
+                motivo=str(primeira_consulta["status_motivo"] or ""),
+                usuario=str(primeira_consulta["status_usuario"] or ""),
+            )
+        )
+    itens.sort(
+        key=lambda item: (
+            (parse_data_contrato(str(item.dataAvaliacao).split(" ")[0]) or date.min).isoformat(),
+            normalizar_texto(item.nome),
+        ),
+        reverse=True,
+    )
+    return itens
+
+
 def listar_resgates_crm(conn: sqlite3.Connection) -> list[CrmResgateItemResposta]:
     rows = conn.execute(
         """
@@ -7052,12 +7318,14 @@ def listar_crm():
         finalizados = [item for item in pipeline if item.origemFinalizado]
         cancelados = [item for item in pipeline if item.origemCancelado]
         avaliacoes = listar_avaliacoes_crm(conn)
+        avaliacoes_primeira_consulta_perdida = listar_primeira_avaliacao_perdida_crm(conn)
         resgates = listar_resgates_crm(conn)
         return CrmPainelResposta(
             pipeline=pipeline,
             finalizados=finalizados,
             cancelados=cancelados,
             avaliacoes=avaliacoes,
+            avaliacoesPrimeiraConsultaPerdida=avaliacoes_primeira_consulta_perdida,
             resgates=resgates,
         )
     finally:
@@ -7514,9 +7782,21 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
 
 
 @app.put("/api/financeiro/recebiveis/lote/{contrato_id}")
-def atualizar_recebiveis_lote(contrato_id: int, payload: RecebivelLotePayload):
+def atualizar_recebiveis_lote(contrato_id: int, payload: RecebivelLotePayload, request: Request):
     conn = conectar()
     try:
+        if payload.novas_parcelas:
+            renegociar_recebiveis_lote_contrato(
+                conn,
+                contrato_id=contrato_id,
+                paciente_nome=payload.paciente_nome,
+                prontuario=payload.prontuario,
+                novas_parcelas=payload.novas_parcelas,
+                observacao_renegociacao=payload.observacao_renegociacao or payload.observacao,
+                criado_por=usuario_request(request),
+            )
+            conn.commit()
+            return {"ok": True}
         atualizar_recebiveis_lote_contrato(
             conn,
             contrato_id=contrato_id,
@@ -8440,7 +8720,7 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
 
 
 @app.put("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}/status")
-def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payload: OrcamentoStatusPayload):
+def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payload: OrcamentoStatusPayload, request: Request):
     conn = conectar()
     try:
         paciente = carregar_paciente_por_id(conn, paciente_id)
@@ -8450,11 +8730,12 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
         status = normalizar_texto(payload.status).upper().replace(" ", "_")
         if status not in {"APROVADO", "EM_ABERTO"}:
             raise HTTPException(status_code=400, detail="Status de orcamento invalido.")
+        usuario_aprovador = validar_usuario_aprovacao_orcamento(request)
 
         if status == "APROVADO":
             conn.execute(
                 "UPDATE contratos SET status='APROVADO', aprovado_por=?, data_aprovacao=? WHERE id=? AND paciente_id=?",
-                (payload.aprovado_por.strip() or "JULIANA", agora_str(), contrato_id, paciente_id),
+                (usuario_aprovador or "JULIANA", agora_str(), contrato_id, paciente_id),
             )
             conn.execute(
                 "UPDATE procedimentos_dente SET status='CONTRATADO' WHERE contrato_id=? AND paciente_id=?",
@@ -8472,7 +8753,7 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
                 conn,
                 paciente_id=int(paciente_id),
                 contrato_id_origem=int(contrato_id),
-                usuario=payload.aprovado_por.strip() or "JULIANA",
+                usuario=usuario_aprovador or "JULIANA",
             )
         else:
             conn.execute(

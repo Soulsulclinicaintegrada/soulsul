@@ -271,6 +271,9 @@ class PacienteBuscaItem(BaseModel):
     nome: str
     prontuario: str
     celular: str
+    financeiro: str = ""
+    bloqueadoAtendimento: bool = False
+    mensagemBloqueio: str = ""
 
 
 class ProcedimentoContratoItem(BaseModel):
@@ -298,6 +301,9 @@ class PacienteContextoResposta(BaseModel):
     nome: str
     prontuario: str
     celular: str
+    financeiro: str = ""
+    bloqueadoAtendimento: bool = False
+    mensagemBloqueio: str = ""
     procedimentosContratados: list[ProcedimentoContratoItem]
     guiasEmitidas: list[GuiaEmitidaItem] = Field(default_factory=list)
 
@@ -789,6 +795,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         paciente_id=row_val(row, "paciente_id"),
         prontuario=row_val(row, "prontuario_snapshot", "") or "",
         contrato_id=contrato_id,
+        data_agendamento=row[data_coluna_agenda],
     )
     return AgendamentoResposta(
         id=row["id"],
@@ -855,6 +862,7 @@ def resumir_financeiro_agendamento(
     paciente_id: int | None,
     prontuario: str,
     contrato_id: int | None,
+    data_agendamento: str = "",
 ) -> str:
     nome_paciente = obter_nome_paciente_financeiro(
         conn,
@@ -889,7 +897,7 @@ def resumir_financeiro_agendamento(
     if filtros:
         recebiveis = conn.execute(
             f"""
-            SELECT DISTINCT id, status, valor
+            SELECT DISTINCT id, status, valor, vencimento
             FROM recebiveis
             WHERE {' OR '.join(f'({filtro})' for filtro in filtros)}
             """,
@@ -899,6 +907,12 @@ def resumir_financeiro_agendamento(
     if not recebiveis:
         return "Financeiro Ok" if contrato_id else "Sem vínculo"
 
+    data_referencia = None
+    try:
+        data_referencia = data_br_para_date(data_agendamento) if str(data_agendamento or "").strip() else None
+    except Exception:
+        data_referencia = None
+
     total_em_aberto = 0.0
     total_atrasado = 0.0
     for recebivel in recebiveis:
@@ -906,7 +920,14 @@ def resumir_financeiro_agendamento(
         valor = float(row_val(recebivel, "valor", 0) or 0)
         if status in {"aberto", "a vencer", "atrasado"}:
             total_em_aberto += valor
-        if status == "atrasado":
+        vencimento = str(row_val(recebivel, "vencimento", "") or "").strip()
+        vencido_na_data = False
+        if data_referencia and vencimento:
+            try:
+                vencido_na_data = data_br_para_date(vencimento) < data_referencia
+            except Exception:
+                vencido_na_data = False
+        if status == "atrasado" or (status in {"aberto", "a vencer"} and vencido_na_data):
             total_atrasado += valor
 
     if total_atrasado > 0:
@@ -914,6 +935,28 @@ def resumir_financeiro_agendamento(
     if total_em_aberto > 0:
         return f"Em aberto {formatar_moeda_br(total_em_aberto)}"
     return "Financeiro Ok"
+
+
+def avaliar_bloqueio_atendimento_paciente(
+    conn: sqlite3.Connection,
+    *,
+    paciente_id: int | None,
+    prontuario: str,
+    contrato_id: int | None = None,
+    data_agendamento: str = "",
+) -> tuple[bool, str, str]:
+    resumo = resumir_financeiro_agendamento(
+        conn,
+        paciente_id=paciente_id,
+        prontuario=prontuario,
+        contrato_id=contrato_id,
+        data_agendamento=data_agendamento,
+    )
+    texto = str(resumo or "").strip()
+    texto_normalizado = texto.lower()
+    bloqueado = texto_normalizado.startswith("devendo")
+    mensagem = f"Atendimento bloqueado: paciente com financeiro atrasado ({texto}). Regularize no Financeiro antes de agendar." if bloqueado else ""
+    return bloqueado, texto, mensagem
 
 
 def contar_conflitos_horario(
@@ -1191,15 +1234,25 @@ def buscar_pacientes(q: str = Query(..., min_length=1)):
             """,
             (termo, termo, termo),
         ).fetchall()
-        return [
-            PacienteBuscaItem(
-                id=row["id"],
-                nome=row["nome"],
-                prontuario=row["prontuario"],
-                celular=row["telefone"],
+        itens: list[PacienteBuscaItem] = []
+        for row in rows:
+            bloqueado, financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+                conn,
+                paciente_id=int(row["id"]),
+                prontuario=str(row["prontuario"] or ""),
             )
-            for row in rows
-        ]
+            itens.append(
+                PacienteBuscaItem(
+                    id=row["id"],
+                    nome=row["nome"],
+                    prontuario=row["prontuario"],
+                    celular=row["telefone"],
+                    financeiro=financeiro,
+                    bloqueadoAtendimento=bloqueado,
+                    mensagemBloqueio=mensagem,
+                )
+            )
+        return itens
     finally:
         conn.close()
 
@@ -1309,11 +1362,20 @@ def buscar_contexto_paciente(paciente_id: int):
             for row in guias_rows
         ]
 
+        bloqueado, financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+            conn,
+            paciente_id=int(paciente["id"]),
+            prontuario=str(paciente["prontuario"] or ""),
+        )
+
         return PacienteContextoResposta(
             id=paciente["id"],
             nome=paciente["nome"],
             prontuario=paciente["prontuario"],
             celular=paciente["telefone"],
+            financeiro=financeiro,
+            bloqueadoAtendimento=bloqueado,
+            mensagemBloqueio=mensagem,
             procedimentosContratados=itens,
             guiasEmitidas=guias_emitidas,
         )
@@ -1331,6 +1393,15 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
         if payload.tipoAtendimentoId and not any(item.nome.strip() for item in payload.procedimentos):
             raise HTTPException(status_code=400, detail="Selecione ao menos um procedimento para salvar a consulta.")
         paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
+        if payload.tipoAtendimentoId and paciente_id_final:
+            bloqueado, _financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+                conn,
+                paciente_id=paciente_id_final,
+                prontuario=str(payload.prontuario or ""),
+                data_agendamento=str(payload.data or ""),
+            )
+            if bloqueado:
+                raise HTTPException(status_code=409, detail=mensagem)
         if existe_conflito(conn, payload.profissionalId, payload.data, payload.horaInicio, payload.horaFim):
             raise HTTPException(status_code=409, detail="Conflito de horário para o profissional selecionado.")
 
@@ -1661,6 +1732,15 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
             raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
         paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
+        if payload.tipoAtendimentoId and paciente_id_final:
+            bloqueado, _financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+                conn,
+                paciente_id=paciente_id_final,
+                prontuario=str(payload.prontuario or ""),
+                data_agendamento=str(payload.data or ""),
+            )
+            if bloqueado:
+                raise HTTPException(status_code=409, detail=mensagem)
         if existe_conflito_excluindo(conn, agendamento_id, payload.profissionalId, payload.data, payload.horaInicio, payload.horaFim):
             raise HTTPException(status_code=409, detail="Conflito de horário para o profissional selecionado.")
 
