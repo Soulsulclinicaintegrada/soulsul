@@ -4273,6 +4273,10 @@ textarea::placeholder {
   gap: 16px;
 }
 
+.finance-form-panel.finance-span-all {
+  overflow: visible;
+}
+
 .finance-module-subitem {
   align-items: flex-start;
 }
@@ -4379,6 +4383,11 @@ textarea::placeholder {
 
 .finance-dropdown-item:hover {
   background: rgba(76, 104, 90, 0.06);
+}
+
+.finance-selected-helper {
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .finance-selected-card {

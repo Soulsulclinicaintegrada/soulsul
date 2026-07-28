@@ -673,6 +673,7 @@ class RecebivelRenegociacaoParcelaPayload(BaseModel):
 
 
 class RecebivelLotePayload(BaseModel):
+    paciente_id: int | None = None
     paciente_nome: str = ""
     prontuario: str = ""
     forma_pagamento: str = ""
@@ -3350,6 +3351,227 @@ def renegociar_recebiveis_lote_contrato(
             conn,
             recebivel_id=int(cursor.lastrowid),
             paciente_id=paciente_id,
+            status="Criado",
+            observacao=observacao_base or "Recebível criado por renegociação em lote.",
+            cobrado=False,
+            criado_por=usuario_historico,
+        )
+
+
+def carregar_recebiveis_lote_generico(
+    conn: sqlite3.Connection,
+    lote_id: str,
+    paciente_id: int | None = None,
+    paciente_nome: str = "",
+    prontuario: str = "",
+) -> tuple[list[sqlite3.Row], int | None]:
+    lote_id = str(lote_id or "").strip()
+    if lote_id.isdigit():
+        contrato_id = int(lote_id)
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM recebiveis
+            WHERE contrato_id=?
+            ORDER BY parcela_numero, id
+            """,
+            (contrato_id,),
+        ).fetchall()
+        return rows, contrato_id
+
+    filtros: list[str] = ["contrato_id IS NULL"]
+    params: list[object] = []
+    if paciente_id:
+        filtros.append("paciente_id=?")
+        params.append(int(paciente_id))
+    elif prontuario.strip():
+        filtros.append("TRIM(COALESCE(prontuario, ''))=?")
+        params.append(prontuario.strip())
+    elif paciente_nome.strip():
+        filtros.append("UPPER(TRIM(COALESCE(paciente_nome, '')))=?")
+        params.append(paciente_nome.strip().upper())
+    else:
+        return [], None
+
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM recebiveis
+        WHERE {' AND '.join(filtros)}
+        ORDER BY parcela_numero, id
+        """,
+        tuple(params),
+    ).fetchall()
+    return rows, None
+
+
+def atualizar_recebiveis_lote_generico(
+    conn: sqlite3.Connection,
+    lote_id: str,
+    paciente_id: int | None,
+    paciente_nome: str,
+    prontuario: str,
+    forma_pagamento: str,
+    status: str,
+    observacao: str,
+    primeiro_vencimento: str = "",
+) -> None:
+    rows, contrato_id = carregar_recebiveis_lote_generico(conn, lote_id, paciente_id, paciente_nome, prontuario)
+    if not rows:
+        return
+
+    data_base = parse_data_contrato(primeiro_vencimento) if primeiro_vencimento.strip() else None
+    for row in rows:
+        vencimento = str(row["vencimento"] or "")
+        if data_base is not None:
+            vencimento = formatar_data_br(adicionar_meses(data_base, max(int(row["parcela_numero"] or 1) - 1, 0)))
+        conn.execute(
+            """
+            UPDATE recebiveis
+            SET paciente_nome=?, prontuario=?, vencimento=?, forma_pagamento=?, status=?, observacao=?
+            WHERE id=?
+            """,
+            (
+                paciente_nome.strip(),
+                prontuario.strip(),
+                vencimento,
+                forma_pagamento.strip(),
+                status.strip(),
+                observacao.strip(),
+                int(row["id"]),
+            ),
+        )
+
+
+def renegociar_recebiveis_lote_generico(
+    conn: sqlite3.Connection,
+    lote_id: str,
+    paciente_id: int | None,
+    paciente_nome: str,
+    prontuario: str,
+    novas_parcelas: list[RecebivelRenegociacaoParcelaPayload],
+    observacao_renegociacao: str = "",
+    criado_por: str = "",
+) -> None:
+    recebiveis_existentes, contrato_id = carregar_recebiveis_lote_generico(conn, lote_id, paciente_id, paciente_nome, prontuario)
+    if not recebiveis_existentes:
+        raise HTTPException(status_code=404, detail="Lote de recebíveis não encontrado.")
+
+    recebiveis_ativos = [
+        row for row in recebiveis_existentes
+        if normalizar_texto(row["status"]) not in {"pago", "cancelado", "suspenso"}
+    ]
+    if not recebiveis_ativos:
+        raise HTTPException(status_code=400, detail="Não há recebíveis em aberto para renegociar neste lote.")
+
+    parcelas_validas: list[tuple[int, str, float, str, str]] = []
+    for indice, parcela in enumerate(novas_parcelas, start=1):
+        vencimento_iso = normalizar_data_contrato_iso(parcela.vencimento)
+        if not vencimento_iso:
+            raise HTTPException(status_code=400, detail=f"Informe uma data válida para a parcela {indice}.")
+        valor_parcela = round(float(parcela.valor or 0), 2)
+        if valor_parcela <= 0:
+            raise HTTPException(status_code=400, detail=f"Informe um valor maior que zero para a parcela {indice}.")
+        forma_pagamento = str(parcela.forma_pagamento or "").strip().upper() or "PIX"
+        parcelas_validas.append((
+            indice,
+            vencimento_iso,
+            valor_parcela,
+            forma_pagamento,
+            str(parcela.observacao or "").strip(),
+        ))
+
+    if not parcelas_validas:
+        raise HTTPException(status_code=400, detail="Informe ao menos uma nova parcela para renegociar.")
+
+    paciente_id_final = int(recebiveis_existentes[0]["paciente_id"] or 0)
+    observacao_base = str(observacao_renegociacao or "").strip() or f"RENEGOCIADO EM {agora_local().strftime('%d/%m/%Y %H:%M')}"
+    usuario_historico = str(criado_por or "Sistema").strip() or "Sistema"
+
+    for row in recebiveis_ativos:
+        observacao_atual = str(row["observacao"] or "").strip()
+        observacao_final = observacao_atual
+        if observacao_base and observacao_base not in observacao_atual:
+            observacao_final = f"{observacao_atual} | {observacao_base}" if observacao_atual else observacao_base
+        conn.execute(
+            "UPDATE recebiveis SET status='Suspenso', observacao=?, data_pagamento=NULL WHERE id=?",
+            (observacao_final, int(row["id"])),
+        )
+        registrar_historico_cobranca_recebivel(
+            conn,
+            recebivel_id=int(row["id"]),
+            paciente_id=paciente_id_final,
+            status="Suspenso",
+            observacao=observacao_base or "Recebível suspenso por renegociação em lote.",
+            cobrado=False,
+            criado_por=usuario_historico,
+        )
+
+    if contrato_id is not None:
+        plano_pagamento_json = json.dumps(
+            [
+                {
+                    "indice": indice - 1,
+                    "descricao": str(indice),
+                    "data": vencimento_iso,
+                    "forma": forma_pagamento,
+                    "valor": valor_parcela,
+                    "parcelas_cartao": len(parcelas_validas) if "cartao" in normalizar_texto(forma_pagamento) and len(parcelas_validas) > 1 else 1,
+                }
+                for indice, vencimento_iso, valor_parcela, forma_pagamento, _ in parcelas_validas
+            ],
+            ensure_ascii=False,
+        )
+        formas_pagamento = {forma_pagamento for _, _, _, forma_pagamento, _ in parcelas_validas}
+        forma_resumo = next(iter(formas_pagamento)) if len(formas_pagamento) == 1 else "MISTO"
+        conn.execute(
+            """
+            UPDATE contratos
+            SET parcelas=?, primeiro_vencimento=?, forma_pagamento=?, plano_pagamento_json=?
+            WHERE id=?
+            """,
+            (
+                len(parcelas_validas),
+                parcelas_validas[0][1],
+                forma_resumo,
+                plano_pagamento_json,
+                contrato_id,
+            ),
+        )
+
+    nome_paciente_final = paciente_nome.strip() or str(recebiveis_existentes[0]["paciente_nome"] or "")
+    prontuario_final = prontuario.strip() or str(recebiveis_existentes[0]["prontuario"] or "")
+    for indice, vencimento_iso, valor_parcela, forma_pagamento, observacao_parcela in parcelas_validas:
+        observacao_nova = f"RENEGOCIACAO_LOTE_{contrato_id if contrato_id is not None else 'SEM_CONTRATO'}"
+        if observacao_base:
+            observacao_nova = f"{observacao_nova} | {observacao_base}"
+        if observacao_parcela:
+            observacao_nova = f"{observacao_nova} | {observacao_parcela}"
+        cursor = conn.execute(
+            """
+            INSERT INTO recebiveis (
+                contrato_id, paciente_id, paciente_nome, prontuario, parcela_numero, vencimento, valor,
+                forma_pagamento, status, observacao, data_criacao, data_pagamento
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, NULL)
+            """,
+            (
+                contrato_id,
+                paciente_id_final,
+                nome_paciente_final,
+                prontuario_final,
+                indice,
+                vencimento_iso,
+                valor_parcela,
+                forma_pagamento.replace("_", " "),
+                observacao_nova,
+                agora_str(),
+            ),
+        )
+        registrar_historico_cobranca_recebivel(
+            conn,
+            recebivel_id=int(cursor.lastrowid),
+            paciente_id=paciente_id_final,
             status="Criado",
             observacao=observacao_base or "Recebível criado por renegociação em lote.",
             cobrado=False,
@@ -7781,14 +8003,15 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
         conn.close()
 
 
-@app.put("/api/financeiro/recebiveis/lote/{contrato_id}")
-def atualizar_recebiveis_lote(contrato_id: int, payload: RecebivelLotePayload, request: Request):
+@app.put("/api/financeiro/recebiveis/lote/{lote_id}")
+def atualizar_recebiveis_lote(lote_id: str, payload: RecebivelLotePayload, request: Request):
     conn = conectar()
     try:
         if payload.novas_parcelas:
-            renegociar_recebiveis_lote_contrato(
+            renegociar_recebiveis_lote_generico(
                 conn,
-                contrato_id=contrato_id,
+                lote_id=lote_id,
+                paciente_id=payload.paciente_id,
                 paciente_nome=payload.paciente_nome,
                 prontuario=payload.prontuario,
                 novas_parcelas=payload.novas_parcelas,
@@ -7797,9 +8020,10 @@ def atualizar_recebiveis_lote(contrato_id: int, payload: RecebivelLotePayload, r
             )
             conn.commit()
             return {"ok": True}
-        atualizar_recebiveis_lote_contrato(
+        atualizar_recebiveis_lote_generico(
             conn,
-            contrato_id=contrato_id,
+            lote_id=lote_id,
+            paciente_id=payload.paciente_id,
             paciente_nome=payload.paciente_nome,
             prontuario=payload.prontuario,
             forma_pagamento=payload.forma_pagamento,

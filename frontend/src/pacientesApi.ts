@@ -237,6 +237,7 @@ export type RecebivelAtualizacaoPayload = {
 };
 
 export type RecebivelLotePayload = {
+  paciente_id?: number | null;
   paciente_nome: string;
   prontuario: string;
   forma_pagamento: string;
@@ -1128,8 +1129,8 @@ export async function atualizarRecebivelPacienteApi(pacienteId: number, recebive
   });
 }
 
-export async function atualizarRecebiveisLoteApi(contratoId: number, payload: RecebivelLotePayload) {
-  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/financeiro/recebiveis/lote/${contratoId}`, {
+export async function atualizarRecebiveisLoteApi(loteId: number | string, payload: RecebivelLotePayload) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/financeiro/recebiveis/lote/${encodeURIComponent(String(loteId))}`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });

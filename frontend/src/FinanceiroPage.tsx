@@ -108,6 +108,16 @@ type RenegociacaoParcelaForm = {
   observacao: string;
 };
 
+type LoteRecebivelItem = {
+  loteId: string;
+  contratoId: number | null;
+  pacienteId: number | null;
+  pacienteNome: string;
+  prontuario: string;
+  quantidade: number;
+  primeiroVencimento: string;
+};
+
 type RecebivelGridMap = Record<number, RecebivelForm>;
 type OrdenacaoCobranca = "nome" | "vencimento" | "valor" | "status" | "prontuario";
 
@@ -359,7 +369,7 @@ export function FinanceiroPage() {
   const [recebiveisBaixaSelecionados, setRecebiveisBaixaSelecionados] = useState<RecebivelBaixaSelecionado[]>([]);
   const [recebivelForm, setRecebivelForm] = useState<RecebivelForm | null>(null);
   const [recebiveisGrid, setRecebiveisGrid] = useState<RecebivelGridMap>({});
-  const [loteContratoId, setLoteContratoId] = useState<number>(0);
+  const [loteContratoId, setLoteContratoId] = useState<string>("");
   const [buscaLotePaciente, setBuscaLotePaciente] = useState("");
   const [dropdownLoteAberto, setDropdownLoteAberto] = useState(false);
   const [renegociacaoParcelas, setRenegociacaoParcelas] = useState<RenegociacaoParcelaForm[]>([]);
@@ -568,18 +578,22 @@ export function FinanceiroPage() {
   }), [notasFiscais]);
 
   const lotes = useMemo(() => {
-    const mapa = new Map<number, { contratoId: number; pacienteNome: string; prontuario: string; quantidade: number; primeiroVencimento: string }>();
+    const mapa = new Map<string, LoteRecebivelItem>();
     recebiveis.forEach((item) => {
-      if (!item.contratoId) return;
-      const atual = mapa.get(item.contratoId);
+      const loteId = item.contratoId
+        ? `contrato:${item.contratoId}`
+        : `sem-contrato:${item.pacienteId || 0}:${normalizarBuscaTexto(item.prontuario)}:${normalizarBuscaTexto(item.pacienteNome)}`;
+      const atual = mapa.get(loteId);
       if (atual) {
         atual.quantidade += 1;
         if (!atual.primeiroVencimento || dataBrParaIso(item.vencimento) < dataBrParaIso(atual.primeiroVencimento)) {
           atual.primeiroVencimento = item.vencimento || atual.primeiroVencimento;
         }
       } else {
-        mapa.set(item.contratoId, {
-          contratoId: item.contratoId,
+        mapa.set(loteId, {
+          loteId,
+          contratoId: item.contratoId ?? null,
+          pacienteId: item.pacienteId ?? null,
           pacienteNome: item.pacienteNome || "",
           prontuario: item.prontuario || "",
           quantidade: 1,
@@ -590,12 +604,13 @@ export function FinanceiroPage() {
     return Array.from(mapa.values()).sort((a, b) => {
       const nome = normalizarBuscaTexto(a.pacienteNome).localeCompare(normalizarBuscaTexto(b.pacienteNome));
       if (nome !== 0) return nome;
-      return a.contratoId - b.contratoId;
+      if (a.prontuario !== b.prontuario) return a.prontuario.localeCompare(b.prontuario, "pt-BR");
+      return (a.contratoId || 0) - (b.contratoId || 0);
     });
   }, [recebiveis]);
 
   const loteSelecionado = useMemo(
-    () => lotes.find((item) => item.contratoId === loteContratoId) || null,
+    () => lotes.find((item) => item.loteId === loteContratoId) || null,
     [lotes, loteContratoId]
   );
 
@@ -603,13 +618,20 @@ export function FinanceiroPage() {
     const termo = normalizarBuscaTexto(buscaLotePaciente);
     if (!termo) return lotes;
     return lotes.filter((item) =>
-      normalizarBuscaTexto(`${item.pacienteNome} ${item.prontuario} ${item.contratoId}`).includes(termo)
+      normalizarBuscaTexto(`${item.pacienteNome} ${item.prontuario} ${item.contratoId || "sem contrato"}`).includes(termo)
     );
   }, [buscaLotePaciente, lotes]);
 
   const recebiveisDoLote = useMemo(
-    () => recebiveis.filter((item) => item.contratoId === loteContratoId),
-    [recebiveis, loteContratoId]
+    () => recebiveis.filter((item) => {
+      if (!loteSelecionado) return false;
+      if (loteSelecionado.contratoId) return item.contratoId === loteSelecionado.contratoId;
+      return !item.contratoId
+        && (item.pacienteId || 0) === (loteSelecionado.pacienteId || 0)
+        && normalizarBuscaTexto(item.prontuario) === normalizarBuscaTexto(loteSelecionado.prontuario)
+        && normalizarBuscaTexto(item.pacienteNome) === normalizarBuscaTexto(loteSelecionado.pacienteNome);
+    }),
+    [recebiveis, loteSelecionado]
   );
 
   const totalRecebiveisDoLote = useMemo(
@@ -660,18 +682,9 @@ export function FinanceiroPage() {
     setRecebiveisGrid(proximo);
   }, [recebiveis]);
 
-  useEffect(() => {
-    if (!loteSelecionado) return;
-    setBuscaLotePaciente(
-      `${loteSelecionado.pacienteNome} - Prontuário ${loteSelecionado.prontuario} - ${loteSelecionado.quantidade} parcelas - início ${loteSelecionado.primeiroVencimento}`
-    );
-  }, [loteSelecionado]);
-
-  function selecionarLote(item: { contratoId: number; pacienteNome: string; prontuario: string; quantidade: number; primeiroVencimento: string }) {
-    setLoteContratoId(item.contratoId);
-    setBuscaLotePaciente(
-      `${item.pacienteNome} - Prontuário ${item.prontuario} - ${item.quantidade} parcelas - início ${item.primeiroVencimento}`
-    );
+  function selecionarLote(item: LoteRecebivelItem) {
+    setLoteContratoId(item.loteId);
+    setBuscaLotePaciente(item.pacienteNome || "");
     setDropdownLoteAberto(false);
   }
 
@@ -941,7 +954,8 @@ export function FinanceiroPage() {
           observacao: item.observacao
         };
       });
-      await atualizarRecebiveisLoteApi(loteSelecionado.contratoId, {
+      await atualizarRecebiveisLoteApi(loteSelecionado.loteId, {
+        paciente_id: loteSelecionado.pacienteId,
         paciente_nome: loteSelecionado.pacienteNome,
         prontuario: loteSelecionado.prontuario,
         forma_pagamento: recebiveisDoLote[0]?.formaPagamento || "PIX",
@@ -1903,7 +1917,7 @@ export function FinanceiroPage() {
                     value={buscaLotePaciente}
                     onChange={(e) => {
                       setBuscaLotePaciente(e.target.value);
-                      setLoteContratoId(0);
+                      setLoteContratoId("");
                       setDropdownLoteAberto(Boolean(e.target.value.trim()));
                     }}
                     onFocus={() => {
@@ -1916,18 +1930,25 @@ export function FinanceiroPage() {
                   <div className="finance-dropdown-list">
                     {lotesFiltrados.length ? lotesFiltrados.map((item) => (
                       <button
-                        key={item.contratoId}
+                        key={item.loteId}
                         type="button"
                         className="finance-dropdown-item"
                         onClick={() => selecionarLote(item)}
                       >
                         <strong>{item.pacienteNome || "Paciente"}</strong>
-                        <span>Prontuário {item.prontuario || "-"} · Contrato #{item.contratoId} · {item.quantidade} parcelas · início {item.primeiroVencimento || "-"}</span>
+                        <span>
+                          Prontuário {item.prontuario || "-"} · {item.contratoId ? `Contrato #${item.contratoId}` : "Sem contrato vinculado"} · {item.quantidade} parcelas · início {item.primeiroVencimento || "-"}
+                        </span>
                       </button>
                     )) : <div className="empty-inline">Nenhum contrato encontrado.</div>}
                   </div>
                 ) : null}
               </div>
+              {loteSelecionado ? (
+                <span className="finance-selected-helper">
+                  Selecionado: {loteSelecionado.contratoId ? `Contrato #${loteSelecionado.contratoId}` : "Lote sem contrato vinculado"}
+                </span>
+              ) : null}
               {loteSelecionado ? (
                 <>
                   <div className="finance-mini-metrics">
@@ -1939,7 +1960,7 @@ export function FinanceiroPage() {
                   <div className="finance-form-grid">
                     <label><span>Nome do paciente</span><input type="text" value={loteSelecionado.pacienteNome} readOnly /></label>
                     <label><span>Prontuário</span><input type="text" value={loteSelecionado.prontuario} readOnly /></label>
-                    <label><span>Contrato</span><input type="text" value={`#${loteSelecionado.contratoId}`} readOnly /></label>
+                    <label><span>Contrato</span><input type="text" value={loteSelecionado.contratoId ? `#${loteSelecionado.contratoId}` : "Sem contrato vinculado"} readOnly /></label>
                     <label><span>Primeiro vencimento atual</span><input type="text" value={loteSelecionado.primeiroVencimento || "-"} readOnly /></label>
                     <label className="finance-span-2">
                       <span>Observação da renegociação</span>
