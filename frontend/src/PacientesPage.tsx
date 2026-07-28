@@ -308,6 +308,7 @@ type ResumoFinanceiroCards = {
 };
 
 const STATUS_RECEBIVEIS_MODAL = ["Aberto", "A vencer", "Atrasado", "Pago", "Suspenso", "Cancelado"] as const;
+const STATUS_RECEBIVEIS_PACIENTE_VISIVEIS = ["Aberto", "A vencer", "Atrasado", "Pago"] as const;
 
 const FORM_INICIAL: PacienteForm = {
   nome: "",
@@ -1028,6 +1029,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [arquivosBoletosSelecionados, setArquivosBoletosSelecionados] = useState<File[]>([]);
   const [gerandoRecebimentoBoletos, setGerandoRecebimentoBoletos] = useState(false);
+  const [mostrarTodosRecebiveisPaciente, setMostrarTodosRecebiveisPaciente] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
   const [fotoErro, setFotoErro] = useState(false);
   const ultimoCepNovo = useRef("");
@@ -1041,6 +1043,13 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
   const orcamentoBloqueado = false;
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
+  const recebiveisVisiveisPaciente = useMemo(
+    () => (ficha?.recebiveis || []).filter((item) =>
+      mostrarTodosRecebiveisPaciente
+        || STATUS_RECEBIVEIS_PACIENTE_VISIVEIS.includes((item.status || "A vencer") as typeof STATUS_RECEBIVEIS_PACIENTE_VISIVEIS[number])
+    ),
+    [ficha?.recebiveis, mostrarTodosRecebiveisPaciente]
+  );
   const recebivelSelecionadoDetalhe = useMemo(
     () => ficha?.recebiveis.find((item) => item.id === recebivelForm?.id) || null,
     [ficha?.recebiveis, recebivelForm?.id]
@@ -1906,6 +1915,15 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
         {ficha?.recebiveis.length ? (
           <div className="finance-board">
+            <div className="finance-form-actions">
+              <button
+                type="button"
+                className="ghost-action compact"
+                onClick={() => setMostrarTodosRecebiveisPaciente((atual) => !atual)}
+              >
+                {mostrarTodosRecebiveisPaciente ? "Ocultar suspensos/cancelados" : "Exibir tudo"}
+              </button>
+            </div>
             <div className="finance-board-header">
               <span>Parcela</span>
               <span>Vencimento</span>
@@ -1915,7 +1933,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
               <span>Ações</span>
             </div>
             <div className="finance-board-body">
-              {ficha.recebiveis.map((item) => (
+              {recebiveisVisiveisPaciente.map((item) => (
                 <div className="finance-row" key={item.id}>
                   <div className="finance-row-main">
                     <strong>{item.parcela ? `Parcela ${item.parcela}` : "Recebível avulso"}</strong>

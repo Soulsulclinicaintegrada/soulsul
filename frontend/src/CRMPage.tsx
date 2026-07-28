@@ -19,7 +19,7 @@ import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi
 
 type CRMPageProps = {
   busca: string;
-  onAbrirPaciente?: (pacienteId: number) => void;
+  onAbrirPaciente?: (pacienteId: number, destino?: "Cadastro" | "Financeiro") => void;
 };
 
 type RelatorioCrmItem = {
@@ -298,6 +298,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [resgateSortKey, setResgateSortKey] = useState<ResgateSortKey>("nome");
   const [resgateSortDirection, setResgateSortDirection] = useState<"asc" | "desc">("asc");
   const [relatorioLetra, setRelatorioLetra] = useState("TODAS");
+  const [finalizadosLetra, setFinalizadosLetra] = useState("TODAS");
   const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
   const [relatorioDataFim, setRelatorioDataFim] = useState("");
   const [relatorioProfissional, setRelatorioProfissional] = useState("");
@@ -583,9 +584,25 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     () => leadsFunilFiltrados.find((item) => item.id === leadSelecionadoId) || leadsFunilFiltrados[0] || null,
     [leadSelecionadoId, leadsFunilFiltrados]
   );
+  const letrasFinalizados = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          finalizados
+            .filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId))
+            .filter((item) => correspondeBusca(item, normalizarTexto(busca || "")))
+            .map((item) => inicialLetra(item.nome))
+        )
+      ).sort(),
+    [busca, finalizados, pacientesSomenteAvaliacaoSet]
+  );
   const finalizadosFiltrados = useMemo(
-    () => finalizados.filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId)),
-    [finalizados, pacientesSomenteAvaliacaoSet]
+    () =>
+      finalizados
+        .filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId))
+        .filter((item) => correspondeBusca(item, normalizarTexto(busca || "")))
+        .filter((item) => finalizadosLetra === "TODAS" || inicialLetra(item.nome) === finalizadosLetra),
+    [busca, finalizados, finalizadosLetra, pacientesSomenteAvaliacaoSet]
   );
   const canceladosFiltrados = useMemo(
     () => cancelados.filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId)),
@@ -1235,6 +1252,25 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               <CheckCircle2 size={18} />
             </div>
           </div>
+          <div className="crm-report-letter-bar">
+            <button
+              type="button"
+              className={`segmented-tab ${finalizadosLetra === "TODAS" ? "active" : ""}`}
+              onClick={() => setFinalizadosLetra("TODAS")}
+            >
+              Todos
+            </button>
+            {letrasFinalizados.map((letra) => (
+              <button
+                key={`finalizados-${letra}`}
+                type="button"
+                className={`segmented-tab ${finalizadosLetra === letra ? "active" : ""}`}
+                onClick={() => setFinalizadosLetra(letra)}
+              >
+                {letra}
+              </button>
+            ))}
+          </div>
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
             {!carregando && finalizadosFiltrados.map((item) => (
@@ -1245,7 +1281,10 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                 </div>
                 <div className="crm-list-item-meta">
                   <span>{item.finalizadoEm ? `Finalizado em ${item.finalizadoEm}` : "No CRM"}</span>
-                  <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId)}>Abrir paciente</button>
+                  <div className="crm-inline-actions">
+                    <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId, "Cadastro")}>Abrir paciente</button>
+                    <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId, "Financeiro")}>Abrir financeiro</button>
+                  </div>
                 </div>
               </article>
             ))}

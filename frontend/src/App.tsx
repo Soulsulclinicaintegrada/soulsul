@@ -311,8 +311,8 @@ function App() {
       return (
         <CRMPage
           busca={buscaGlobal}
-          onAbrirPaciente={(pacienteId) => {
-            abrirPaciente(pacienteId);
+          onAbrirPaciente={(pacienteId, destino = "Cadastro") => {
+            abrirPaciente(pacienteId, destino);
           }}
         />
       );
