@@ -361,6 +361,7 @@ export function FinanceiroPage() {
   const [recebiveisGrid, setRecebiveisGrid] = useState<RecebivelGridMap>({});
   const [loteContratoId, setLoteContratoId] = useState<number>(0);
   const [buscaLotePaciente, setBuscaLotePaciente] = useState("");
+  const [dropdownLoteAberto, setDropdownLoteAberto] = useState(false);
   const [renegociacaoParcelas, setRenegociacaoParcelas] = useState<RenegociacaoParcelaForm[]>([]);
   const [renegociacaoObservacao, setRenegociacaoObservacao] = useState("");
   const [contaForm, setContaForm] = useState<ContaPagarForm>(CONTA_PAGAR_INICIAL);
@@ -658,6 +659,21 @@ export function FinanceiroPage() {
     });
     setRecebiveisGrid(proximo);
   }, [recebiveis]);
+
+  useEffect(() => {
+    if (!loteSelecionado) return;
+    setBuscaLotePaciente(
+      `${loteSelecionado.pacienteNome} - Prontuário ${loteSelecionado.prontuario} - ${loteSelecionado.quantidade} parcelas - início ${loteSelecionado.primeiroVencimento}`
+    );
+  }, [loteSelecionado]);
+
+  function selecionarLote(item: { contratoId: number; pacienteNome: string; prontuario: string; quantidade: number; primeiroVencimento: string }) {
+    setLoteContratoId(item.contratoId);
+    setBuscaLotePaciente(
+      `${item.pacienteNome} - Prontuário ${item.prontuario} - ${item.quantidade} parcelas - início ${item.primeiroVencimento}`
+    );
+    setDropdownLoteAberto(false);
+  }
 
   useEffect(() => {
     const primeiroSelecionado = recebiveisBaixaSelecionados[0]?.id || 0;
@@ -1879,31 +1895,39 @@ export function FinanceiroPage() {
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
               <span className="panel-kicker">Renegociar recebíveis em lote</span>
-              <div className="finance-form-grid">
+              <div className="finance-dropdown-shell">
                 <label>
                   <span>Buscar por nome do paciente</span>
                   <input
                     type="text"
                     value={buscaLotePaciente}
-                    onChange={(e) => setBuscaLotePaciente(e.target.value)}
+                    onChange={(e) => {
+                      setBuscaLotePaciente(e.target.value);
+                      setLoteContratoId(0);
+                      setDropdownLoteAberto(Boolean(e.target.value.trim()));
+                    }}
+                    onFocus={() => {
+                      setDropdownLoteAberto(true);
+                    }}
                     placeholder="Digite o nome do paciente"
                   />
                 </label>
-                <label>
-                  <span>Lote para renegociar</span>
-                  <select value={loteContratoId} onChange={(e) => setLoteContratoId(Number(e.target.value))}>
-                    <option value={0}>Selecione</option>
-                    {lotesFiltrados.map((item) => (
-                      <option key={item.contratoId} value={item.contratoId}>
-                        {item.pacienteNome} - Prontuário {item.prontuario} - {item.quantidade} parcelas - início {item.primeiroVencimento}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {dropdownLoteAberto ? (
+                  <div className="finance-dropdown-list">
+                    {lotesFiltrados.length ? lotesFiltrados.map((item) => (
+                      <button
+                        key={item.contratoId}
+                        type="button"
+                        className="finance-dropdown-item"
+                        onClick={() => selecionarLote(item)}
+                      >
+                        <strong>{item.pacienteNome || "Paciente"}</strong>
+                        <span>Prontuário {item.prontuario || "-"} · Contrato #{item.contratoId} · {item.quantidade} parcelas · início {item.primeiroVencimento || "-"}</span>
+                      </button>
+                    )) : <div className="empty-inline">Nenhum contrato encontrado.</div>}
+                  </div>
+                ) : null}
               </div>
-              {!lotesFiltrados.length ? (
-                <span className="empty-inline">Nenhum contrato encontrado para essa busca.</span>
-              ) : null}
               {loteSelecionado ? (
                 <>
                   <div className="finance-mini-metrics">
