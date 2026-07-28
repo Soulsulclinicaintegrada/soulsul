@@ -273,6 +273,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [resgates, setResgates] = useState<CrmResgateItemApi[]>([]);
   const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
   const [buscaLead, setBuscaLead] = useState("");
+  const [buscaFinalizados, setBuscaFinalizados] = useState("");
   const [leadSelecionadoId, setLeadSelecionadoId] = useState<number | null>(null);
   const [relatorioAberto, setRelatorioAberto] = useState<RelatorioAberto>("avaliacoes-sem-reagendamento");
   const [relatorioSemAgendamento, setRelatorioSemAgendamento] = useState<RelatorioCrmItem[]>([]);
@@ -590,19 +591,19 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         new Set(
           finalizados
             .filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId))
-            .filter((item) => correspondeBusca(item, normalizarTexto(busca || "")))
+            .filter((item) => correspondeBusca(item, normalizarTexto(buscaFinalizados || busca || "")))
             .map((item) => inicialLetra(item.nome))
         )
       ).sort(),
-    [busca, finalizados, pacientesSomenteAvaliacaoSet]
+    [busca, buscaFinalizados, finalizados, pacientesSomenteAvaliacaoSet]
   );
   const finalizadosFiltrados = useMemo(
     () =>
       finalizados
         .filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId))
-        .filter((item) => correspondeBusca(item, normalizarTexto(busca || "")))
+        .filter((item) => correspondeBusca(item, normalizarTexto(buscaFinalizados || busca || "")))
         .filter((item) => finalizadosLetra === "TODAS" || inicialLetra(item.nome) === finalizadosLetra),
-    [busca, finalizados, finalizadosLetra, pacientesSomenteAvaliacaoSet]
+    [busca, buscaFinalizados, finalizados, finalizadosLetra, pacientesSomenteAvaliacaoSet]
   );
   const canceladosFiltrados = useMemo(
     () => cancelados.filter((item) => !pacientesSomenteAvaliacaoSet.has(item.pacienteId)),
@@ -1251,6 +1252,15 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
               </button>
               <CheckCircle2 size={18} />
             </div>
+          </div>
+          <div className="crm-inline-actions">
+            <Search size={15} />
+            <input
+              type="text"
+              value={buscaFinalizados}
+              onChange={(event) => setBuscaFinalizados(event.target.value)}
+              placeholder="Buscar paciente finalizado"
+            />
           </div>
           <div className="crm-report-letter-bar">
             <button
