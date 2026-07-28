@@ -923,10 +923,13 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     let cancelado = false;
     void (async () => {
       try {
-        const contexto = await buscarContextoPacienteAgenda(form.pacienteId!);
+        const contexto = await buscarContextoPacienteAgenda(form.pacienteId!, isoParaBr(form.data));
         if (cancelado) return;
         setContextoPaciente(contexto.procedimentosContratados);
         setGuiasEmitidasPaciente(contexto.guiasEmitidas);
+        setFinanceiroPacienteAgenda(contexto.financeiro || "");
+        setPacienteBloqueadoAtendimento(Boolean(contexto.bloqueadoAtendimento));
+        setMensagemBloqueioPaciente(contexto.mensagemBloqueio || "");
         setForm((atual) => ({
           ...atual,
           nomePaciente: atual.nomePaciente || contexto.nome,
@@ -941,7 +944,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     return () => {
       cancelado = true;
     };
-  }, [abaModal, form.pacienteId, modoNovoPacienteRapido]);
+  }, [abaModal, form.data, form.pacienteId, modoNovoPacienteRapido]);
   const dataTitulo = useMemo(() => formatarCabecalhoData(dataSelecionada), [dataSelecionada]);
   const diasSemana = useMemo(() => gerarDiasDaSemana(dataSelecionada), [dataSelecionada]);
   const diasMes = useMemo(() => montarDiasDoMes(dataSelecionada), [dataSelecionada]);
@@ -1506,9 +1509,12 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setEventoAtivoId(null);
     setDetalhePosicao(null);
     if (detalhe.pacienteId) {
-      const contexto = await buscarContextoPacienteAgenda(detalhe.pacienteId);
+      const contexto = await buscarContextoPacienteAgenda(detalhe.pacienteId, detalhe.data);
       setContextoPaciente(contexto.procedimentosContratados);
       setGuiasEmitidasPaciente(contexto.guiasEmitidas);
+      setFinanceiroPacienteAgenda(contexto.financeiro || "");
+      setPacienteBloqueadoAtendimento(Boolean(contexto.bloqueadoAtendimento));
+      setMensagemBloqueioPaciente(contexto.mensagemBloqueio || "");
       setProcedimentoContratoSelecionado("");
       setForm((atual) => ({
         ...atual,
@@ -1552,7 +1558,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setFinanceiroPacienteAgenda(item.financeiro || "");
     setPacienteBloqueadoAtendimento(Boolean(item.bloqueadoAtendimento));
     setMensagemBloqueioPaciente(item.mensagemBloqueio || "");
-    const contexto = await buscarContextoPacienteAgenda(item.id);
+    const contexto = await buscarContextoPacienteAgenda(item.id, isoParaBr(form.data));
     setContextoPaciente(contexto.procedimentosContratados);
     setGuiasEmitidasPaciente(contexto.guiasEmitidas);
     setFinanceiroPacienteAgenda(contexto.financeiro || item.financeiro || "");
@@ -1757,13 +1763,27 @@ function atualizarConfigProfissionalDia(
     setModoSelecaoSlots("intervalo");
   }
 
+  function solicitarSenhaAutorizacaoBloqueio() {
+    return String(
+      window.prompt(
+        mensagemBloqueioPaciente
+          ? `${mensagemBloqueioPaciente}\n\nDigite sua senha para autorizar este agendamento.`
+          : "Paciente com financeiro atrasado para a data escolhida. Digite sua senha para autorizar este agendamento."
+      ) || ""
+    ).trim();
+  }
+
   async function salvarAgendamento() {
     const nomePrincipal = (form.pacienteId ? form.nomePaciente : form.nomePaciente || form.pacienteBusca).trim();
     const ehConsulta = abaModal === "Nova Consulta";
     if (!nomePrincipal || !slotsSelecionados.length || (ehConsulta && !form.celular.trim())) return;
+    let autorizacaoSenha = "";
     if (ehConsulta && pacienteBloqueadoAtendimento) {
-      setErroAgendaModal(mensagemBloqueioPaciente || "Atendimento bloqueado para paciente devedor. Regularize no Financeiro antes de agendar.");
-      return;
+      autorizacaoSenha = solicitarSenhaAutorizacaoBloqueio();
+      if (!autorizacaoSenha) {
+        setErroAgendaModal(mensagemBloqueioPaciente || "Atendimento bloqueado para paciente devedor.");
+        return;
+      }
     }
     if (ehConsulta && !procedimentosSelecionados.length) {
       setErroAgendaModal("Selecione ao menos um procedimento antes de agendar.");
@@ -1825,7 +1845,8 @@ function atualizarConfigProfissionalDia(
         trabalhoTipo: form.trabalhoTipo,
         ordemServicoId: form.ordemServicoId,
         ordemServicoDocumentoNome: form.ordemServicoDocumentoNome,
-        elementoArcada: form.elementoArcada
+        elementoArcada: form.elementoArcada,
+        autorizacaoSenha
       };
 
       const itensProcedimento = ehConsulta

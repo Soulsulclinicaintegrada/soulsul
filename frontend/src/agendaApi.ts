@@ -188,6 +188,7 @@ export type AgendaSalvarPayload = {
   nomePaciente: string;
   prontuario?: string;
   telefone?: string;
+  autorizacaoSenha?: string;
   profissionalId: number;
   profissionalNome: string;
   tipoAtendimentoId: number;
@@ -451,13 +452,13 @@ export async function salvarConfiguracaoAgendaApi(payload: AgendaConfiguracaoApi
   });
 }
 
-export async function buscarPacientesAgenda(texto: string): Promise<AgendaPacienteBuscaItem[]> {
+export async function buscarPacientesAgenda(texto: string, dataAgendamento?: string): Promise<AgendaPacienteBuscaItem[]> {
   if (!texto.trim()) return [];
 
   if (API_BASE_URL) {
     try {
       return await fetchJson<AgendaPacienteBuscaItem[]>(
-        `${API_BASE_URL}/api/agenda/pacientes/buscar?q=${encodeURIComponent(texto)}`
+        `${API_BASE_URL}/api/agenda/pacientes/buscar?q=${encodeURIComponent(texto)}&data_agendamento=${encodeURIComponent(dataAgendamento || "")}`
       );
     } catch {
       // segue para fallback local
@@ -483,12 +484,13 @@ export async function buscarPacientesAgenda(texto: string): Promise<AgendaPacien
 }
 
 export async function buscarContextoPacienteAgenda(
-  pacienteId: number
+  pacienteId: number,
+  dataAgendamento?: string
 ): Promise<AgendaPacienteContexto> {
   if (API_BASE_URL) {
     try {
       return await fetchJson<AgendaPacienteContexto>(
-        `${API_BASE_URL}/api/agenda/pacientes/${pacienteId}/contexto`
+        `${API_BASE_URL}/api/agenda/pacientes/${pacienteId}/contexto?data_agendamento=${encodeURIComponent(dataAgendamento || "")}`
       );
     } catch {
       try {
