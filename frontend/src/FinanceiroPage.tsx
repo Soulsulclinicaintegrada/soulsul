@@ -108,6 +108,14 @@ type RenegociacaoParcelaForm = {
   observacao: string;
 };
 
+type GeradorRenegociacaoForm = {
+  quantidade: string;
+  primeiroVencimento: string;
+  valor: string;
+  formaPagamento: string;
+  observacao: string;
+};
+
 type LoteRecebivelItem = {
   loteId: string;
   contratoId: number | null;
@@ -156,6 +164,7 @@ type NotaFiscalForm = {
 };
 
 const STATUS_RECEBIVEIS = ["Aberto", "Pago", "Atrasado", "Suspenso", "Cancelado"] as const;
+const STATUS_RECEBIVEIS_VISIVEIS = ["Aberto", "Pago", "Atrasado"] as const;
 const STATUS_PAGAR = ["A vencer", "Atrasado", "Pago", "Cancelado"] as const;
 const FORMAS = ["PIX", "BOLETO", "CARTAO_CREDITO", "CARTAO_DEBITO", "DINHEIRO"] as const;
 const CONTAS_CAIXA = ["CAIXA", "SICOOB", "INFINITEPAY", "PAGBANK", "C6"] as const;
@@ -198,6 +207,14 @@ const RECIBO_INICIAL: ReciboManualForm = {
   referente: "",
   observacao: "",
   cidade: "CAMPOS DOS GOYTACAZES/RJ"
+};
+
+const GERADOR_RENEGOCIACAO_INICIAL: GeradorRenegociacaoForm = {
+  quantidade: "1",
+  primeiroVencimento: new Date().toISOString().slice(0, 10),
+  valor: "",
+  formaPagamento: "PIX",
+  observacao: ""
 };
 
 function normalizarBuscaTexto(valor?: string) {
@@ -374,6 +391,7 @@ export function FinanceiroPage() {
   const [dropdownLoteAberto, setDropdownLoteAberto] = useState(false);
   const [renegociacaoParcelas, setRenegociacaoParcelas] = useState<RenegociacaoParcelaForm[]>([]);
   const [renegociacaoObservacao, setRenegociacaoObservacao] = useState("");
+  const [geradorRenegociacao, setGeradorRenegociacao] = useState<GeradorRenegociacaoForm>(GERADOR_RENEGOCIACAO_INICIAL);
   const [contaForm, setContaForm] = useState<ContaPagarForm>(CONTA_PAGAR_INICIAL);
   const [buscaRecebivel, setBuscaRecebivel] = useState("");
   const [buscaBaixaRecebivel, setBuscaBaixaRecebivel] = useState("");
@@ -382,6 +400,7 @@ export function FinanceiroPage() {
   const [movimentoEditandoId, setMovimentoEditandoId] = useState<number>(0);
   const [movimentoEditForm, setMovimentoEditForm] = useState<MovimentoEditForm | null>(null);
   const [filtroStatusRecebivel, setFiltroStatusRecebivel] = useState("");
+  const [mostrarTodosRecebiveis, setMostrarTodosRecebiveis] = useState(false);
   const [filtroFormaRecebivel, setFiltroFormaRecebivel] = useState("");
   const [filtroVencimentoRecebivelInicio, setFiltroVencimentoRecebivelInicio] = useState("");
   const [filtroVencimentoRecebivelFim, setFiltroVencimentoRecebivelFim] = useState("");
@@ -494,21 +513,30 @@ export function FinanceiroPage() {
   const recebiveisFiltrados = useMemo(() => {
     const termo = normalizarBuscaTexto(buscaRecebivel);
     return recebiveis.filter((item) => {
+      const statusAtual = String(item.status || "");
       const buscaOk = !termo || normalizarBuscaTexto(`${item.pacienteNome || ""} ${item.prontuario || ""} ${item.parcela || ""} ${item.vencimento || ""}`).includes(termo);
-      const statusOk = !filtroStatusRecebivel || String(item.status || "") === filtroStatusRecebivel;
+      const visibilidadeOk = mostrarTodosRecebiveis || STATUS_RECEBIVEIS_VISIVEIS.includes(statusAtual as typeof STATUS_RECEBIVEIS_VISIVEIS[number]);
+      const statusOk = !filtroStatusRecebivel || statusAtual === filtroStatusRecebivel;
       const formaOk = !filtroFormaRecebivel || String(item.formaPagamento || "") === filtroFormaRecebivel;
       const vencimentoOk = dataEstaNoPeriodo(
         dataBrParaIso(item.vencimento),
         filtroVencimentoRecebivelInicio,
         filtroVencimentoRecebivelFim
       );
-      return buscaOk && statusOk && formaOk && vencimentoOk;
+      return buscaOk && visibilidadeOk && statusOk && formaOk && vencimentoOk;
     }).sort((a, b) => {
       const nome = String(a.pacienteNome || "").localeCompare(String(b.pacienteNome || ""), "pt-BR");
       if (nome !== 0) return nome;
       return String(a.vencimento || "").localeCompare(String(b.vencimento || ""), "pt-BR");
     });
-  }, [recebiveis, buscaRecebivel, filtroStatusRecebivel, filtroFormaRecebivel, filtroVencimentoRecebivelInicio, filtroVencimentoRecebivelFim]);
+  }, [recebiveis, buscaRecebivel, filtroStatusRecebivel, mostrarTodosRecebiveis, filtroFormaRecebivel, filtroVencimentoRecebivelInicio, filtroVencimentoRecebivelFim]);
+
+  useEffect(() => {
+    if (mostrarTodosRecebiveis) return;
+    if (filtroStatusRecebivel && !STATUS_RECEBIVEIS_VISIVEIS.includes(filtroStatusRecebivel as typeof STATUS_RECEBIVEIS_VISIVEIS[number])) {
+      setFiltroStatusRecebivel("");
+    }
+  }, [filtroStatusRecebivel, mostrarTodosRecebiveis]);
 
   const cobrancasFiltradas = useMemo(
     () => recebiveisFiltrados.filter((item) => ["Aberto", "Atrasado"].includes(item.status || "")),
@@ -672,6 +700,13 @@ export function FinanceiroPage() {
       )
     );
     setRenegociacaoObservacao("");
+    setGeradorRenegociacao({
+      quantidade: String(Math.max(1, ordenados.filter((item) => !["Pago", "Cancelado", "Suspenso"].includes(item.status || "")).length || ordenados.length || 1)),
+      primeiroVencimento: dataBrParaIso(ordenados[0]?.vencimento) || new Date().toISOString().slice(0, 10),
+      valor: ordenados[0]?.valor || "",
+      formaPagamento: ordenados[0]?.formaPagamento || "PIX",
+      observacao: ""
+    });
   }, [recebiveisDoLote]);
 
   useEffect(() => {
@@ -892,6 +927,7 @@ export function FinanceiroPage() {
   function limparFiltrosRecebiveis() {
     setBuscaRecebivel("");
     setFiltroStatusRecebivel("");
+    setMostrarTodosRecebiveis(false);
     setFiltroFormaRecebivel("");
     setFiltroVencimentoRecebivelInicio("");
     setFiltroVencimentoRecebivelFim("");
@@ -923,6 +959,36 @@ export function FinanceiroPage() {
 
   function removerParcelaRenegociacao(indice: number) {
     setRenegociacaoParcelas((atual) => atual.filter((_, atualIndice) => atualIndice !== indice));
+  }
+
+  function gerarParcelasRenegociacao() {
+    const quantidade = Math.max(1, Number.parseInt(geradorRenegociacao.quantidade.replace(/\D/g, ""), 10) || 0);
+    const primeiroVencimento = geradorRenegociacao.primeiroVencimento;
+    if (!primeiroVencimento) {
+      setErro("Informe o primeiro vencimento para gerar as parcelas.");
+      return;
+    }
+    if (moedaParaNumero(geradorRenegociacao.valor) <= 0) {
+      setErro("Informe um valor válido para gerar as parcelas.");
+      return;
+    }
+    const base = new Date(`${primeiroVencimento}T12:00:00`);
+    if (Number.isNaN(base.getTime())) {
+      setErro("Informe uma data válida para gerar as parcelas.");
+      return;
+    }
+    setErro(null);
+    setRenegociacaoParcelas(
+      Array.from({ length: quantidade }, (_, indice) => {
+        const data = new Date(base);
+        data.setMonth(base.getMonth() + indice);
+        return novaParcelaRenegociacao(
+          data.toISOString().slice(0, 10),
+          geradorRenegociacao.valor,
+          geradorRenegociacao.formaPagamento || "PIX"
+        );
+      }).map((item) => ({ ...item, observacao: geradorRenegociacao.observacao }))
+    );
   }
 
   function atualizarParcelaRenegociacao(
@@ -969,6 +1035,31 @@ export function FinanceiroPage() {
       await carregarPainel();
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao renegociar lote de recebíveis.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function suspenderRecebiveisLote() {
+    if (!loteSelecionado) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      await atualizarRecebiveisLoteApi(loteSelecionado.loteId, {
+        paciente_id: loteSelecionado.pacienteId,
+        paciente_nome: loteSelecionado.pacienteNome,
+        prontuario: loteSelecionado.prontuario,
+        forma_pagamento: recebiveisDoLote[0]?.formaPagamento || "PIX",
+        status: "Suspenso",
+        observacao: renegociacaoObservacao,
+        primeiro_vencimento: "",
+        novas_parcelas: [],
+        suspender_anteriores: true,
+        observacao_renegociacao: renegociacaoObservacao
+      });
+      await carregarPainel();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao suspender parcelas do lote.");
     } finally {
       setSalvando(false);
     }
@@ -1351,7 +1442,7 @@ export function FinanceiroPage() {
                   <span>Status</span>
                   <select value={filtroStatusRecebivel} onChange={(e) => setFiltroStatusRecebivel(e.target.value)}>
                     <option value="">Todos</option>
-                    {STATUS_RECEBIVEIS.map((item) => <option key={item} value={item}>{item}</option>)}
+                    {(mostrarTodosRecebiveis ? STATUS_RECEBIVEIS : STATUS_RECEBIVEIS_VISIVEIS).map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
                 <label>
@@ -1388,6 +1479,13 @@ export function FinanceiroPage() {
                 </label>
               </div>
               <div className="finance-form-actions">
+                <button
+                  type="button"
+                  className="ghost-action"
+                  onClick={() => setMostrarTodosRecebiveis((atual) => !atual)}
+                >
+                  {mostrarTodosRecebiveis ? "Ocultar suspensos/cancelados" : "Exibir tudo"}
+                </button>
                 <button type="button" className="ghost-action" onClick={limparFiltrosRecebiveis}>Limpar filtros</button>
               </div>
             </article>
@@ -1909,7 +2007,7 @@ export function FinanceiroPage() {
           <div className="finance-legacy-grid">
             <article className="panel finance-form-panel finance-span-all">
               <span className="panel-kicker">Renegociar recebíveis em lote</span>
-              <div className="finance-dropdown-shell">
+              <div className="finance-dropdown-shell finance-dropdown-shell-inline">
                 <label>
                   <span>Buscar por nome do paciente</span>
                   <input
@@ -1989,6 +2087,56 @@ export function FinanceiroPage() {
                   </div>
                   <div className="module-sublist">
                     <span className="panel-kicker">Novos recebíveis substitutos</span>
+                    <div className="finance-form-grid finance-span-all">
+                      <label>
+                        <span>Quantidade de parcelas</span>
+                        <input
+                          type="text"
+                          value={geradorRenegociacao.quantidade}
+                          onChange={(e) => setGeradorRenegociacao((atual) => ({ ...atual, quantidade: e.target.value.replace(/\D/g, "") }))}
+                        />
+                      </label>
+                      <label>
+                        <span>Primeiro vencimento</span>
+                        <input
+                          type="date"
+                          value={geradorRenegociacao.primeiroVencimento}
+                          onChange={(e) => setGeradorRenegociacao((atual) => ({ ...atual, primeiroVencimento: e.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        <span>Valor de cada parcela</span>
+                        <input
+                          type="text"
+                          value={geradorRenegociacao.valor}
+                          onChange={(e) => setGeradorRenegociacao((atual) => ({ ...atual, valor: e.target.value }))}
+                          placeholder="0,00"
+                        />
+                      </label>
+                      <label>
+                        <span>Forma de pagamento</span>
+                        <select
+                          value={geradorRenegociacao.formaPagamento}
+                          onChange={(e) => setGeradorRenegociacao((atual) => ({ ...atual, formaPagamento: e.target.value }))}
+                        >
+                          {FORMAS.map((forma) => <option key={forma} value={forma}>{forma}</option>)}
+                        </select>
+                      </label>
+                      <label className="finance-span-2">
+                        <span>Observação para todas as parcelas</span>
+                        <input
+                          type="text"
+                          value={geradorRenegociacao.observacao}
+                          onChange={(e) => setGeradorRenegociacao((atual) => ({ ...atual, observacao: e.target.value }))}
+                          placeholder="Opcional"
+                        />
+                      </label>
+                      <div className="finance-form-actions finance-span-2">
+                        <button type="button" className="ghost-action" disabled={salvando} onClick={gerarParcelasRenegociacao}>
+                          Gerar parcelas iguais
+                        </button>
+                      </div>
+                    </div>
                     {renegociacaoParcelas.length ? renegociacaoParcelas.map((item, indice) => (
                       <div className="finance-form-grid finance-span-all" key={`renegociacao-${indice}`}>
                         <label>
@@ -2027,6 +2175,9 @@ export function FinanceiroPage() {
                     )) : <span className="empty-inline">Adicione pelo menos uma nova parcela para concluir a renegociação.</span>}
                   </div>
                   <div className="finance-form-actions">
+                    <button type="button" className="ghost-action danger" disabled={salvando} onClick={() => void suspenderRecebiveisLote()}>
+                      Suspender parcelas ativas
+                    </button>
                     <button type="button" className="ghost-action" disabled={salvando} onClick={adicionarParcelaRenegociacao}>Adicionar parcela</button>
                     <button type="button" className="primary-action" disabled={salvando || !renegociacaoParcelas.length} onClick={() => void salvarRecebiveisLote()}>
                       Suspender antigas e lançar novas

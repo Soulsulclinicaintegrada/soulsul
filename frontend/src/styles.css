@@ -4365,6 +4365,14 @@ textarea::placeholder {
   overflow: auto;
 }
 
+.finance-dropdown-shell-inline .finance-dropdown-list {
+  position: static;
+  left: auto;
+  right: auto;
+  top: auto;
+  margin-top: 4px;
+}
+
 .finance-dropdown-item {
   width: 100%;
   border: 0;

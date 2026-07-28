@@ -3579,6 +3579,50 @@ def renegociar_recebiveis_lote_generico(
         )
 
 
+def suspender_recebiveis_lote_generico(
+    conn: sqlite3.Connection,
+    lote_id: str,
+    paciente_id: int | None,
+    paciente_nome: str,
+    prontuario: str,
+    observacao_renegociacao: str = "",
+    criado_por: str = "",
+) -> None:
+    recebiveis_existentes, _contrato_id = carregar_recebiveis_lote_generico(conn, lote_id, paciente_id, paciente_nome, prontuario)
+    if not recebiveis_existentes:
+        raise HTTPException(status_code=404, detail="Lote de recebíveis não encontrado.")
+
+    recebiveis_ativos = [
+        row for row in recebiveis_existentes
+        if normalizar_texto(row["status"]) not in {"pago", "cancelado", "suspenso"}
+    ]
+    if not recebiveis_ativos:
+        raise HTTPException(status_code=400, detail="Não há parcelas ativas para suspender neste lote.")
+
+    paciente_id_final = int(recebiveis_existentes[0]["paciente_id"] or 0)
+    observacao_base = str(observacao_renegociacao or "").strip() or f"SUSPENSO EM {agora_local().strftime('%d/%m/%Y %H:%M')}"
+    usuario_historico = str(criado_por or "Sistema").strip() or "Sistema"
+
+    for row in recebiveis_ativos:
+        observacao_atual = str(row["observacao"] or "").strip()
+        observacao_final = observacao_atual
+        if observacao_base and observacao_base not in observacao_atual:
+            observacao_final = f"{observacao_atual} | {observacao_base}" if observacao_atual else observacao_base
+        conn.execute(
+            "UPDATE recebiveis SET status='Suspenso', observacao=?, data_pagamento=NULL WHERE id=?",
+            (observacao_final, int(row["id"])),
+        )
+        registrar_historico_cobranca_recebivel(
+            conn,
+            recebivel_id=int(row["id"]),
+            paciente_id=paciente_id_final,
+            status="Suspenso",
+            observacao=observacao_base,
+            cobrado=False,
+            criado_por=usuario_historico,
+        )
+
+
 def carregar_agendamentos_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -> list[sqlite3.Row]:
     rows = conn.execute(
         f"""
@@ -8007,6 +8051,18 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
 def atualizar_recebiveis_lote(lote_id: str, payload: RecebivelLotePayload, request: Request):
     conn = conectar()
     try:
+        if payload.suspender_anteriores and not payload.novas_parcelas:
+            suspender_recebiveis_lote_generico(
+                conn,
+                lote_id=lote_id,
+                paciente_id=payload.paciente_id,
+                paciente_nome=payload.paciente_nome,
+                prontuario=payload.prontuario,
+                observacao_renegociacao=payload.observacao_renegociacao or payload.observacao,
+                criado_por=usuario_request(request),
+            )
+            conn.commit()
+            return {"ok": True}
         if payload.novas_parcelas:
             renegociar_recebiveis_lote_generico(
                 conn,

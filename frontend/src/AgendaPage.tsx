@@ -806,6 +806,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const agendaSomentePropria = normalizarEscopoAgenda(usuarioLogado?.agendaEscopo) === "somente a propria"
     || normalizarEscopoAgenda(usuarioLogado?.agendaEscopo) === "somente propria"
     || normalizarEscopoAgenda(usuarioLogado?.agendaEscopo) === "somente_propria";
+  const usuarioPodeLiberarBloqueioFinanceiro = usuarioEhAdministrador
+    || normalizarTextoAgenda(String(usuarioLogado?.cargo || "")) === "recepcionista";
 
   const configProfissionaisMap = useMemo(() => new Map(configProfissionais.map((item) => [item.id, item])), [configProfissionais]);
   const profissionaisOrdenados = useMemo(
@@ -1764,6 +1766,7 @@ function atualizarConfigProfissionalDia(
   }
 
   function solicitarSenhaAutorizacaoBloqueio() {
+    if (usuarioPodeLiberarBloqueioFinanceiro) return "";
     return String(
       window.prompt(
         mensagemBloqueioPaciente
@@ -1780,7 +1783,7 @@ function atualizarConfigProfissionalDia(
     let autorizacaoSenha = "";
     if (ehConsulta && pacienteBloqueadoAtendimento) {
       autorizacaoSenha = solicitarSenhaAutorizacaoBloqueio();
-      if (!autorizacaoSenha) {
+      if (!autorizacaoSenha && !usuarioPodeLiberarBloqueioFinanceiro) {
         setErroAgendaModal(mensagemBloqueioPaciente || "Atendimento bloqueado para paciente devedor.");
         return;
       }

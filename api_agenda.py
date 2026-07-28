@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from database import conectar, inicializar_banco
+from database import conectar, inicializar_banco, verificar_senha
 
 
 TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo") if ZoneInfo is not None else None
@@ -215,6 +215,7 @@ class AgendamentoPayload(BaseModel):
     recorrenciaIntervaloDias: int | None = None
     recorrenciaTotal: int | None = None
     recorrenciaIndice: int | None = None
+    autorizacaoSenha: str | None = None
     procedimentos: list[ProcedimentoPayload] = Field(default_factory=list)
 
 
@@ -699,6 +700,68 @@ def registrar_historico_agendamento(
 
 def usuario_request(request: Request) -> str:
     return (request.headers.get("x-usuario") or "").strip() or "Sistema"
+
+
+def validar_autorizacao_bloqueio_agendamento(
+    conn: sqlite3.Connection,
+    *,
+    usuario_identificador: str,
+    senha: str = "",
+) -> bool:
+    usuario_limpo = str(usuario_identificador or "").strip()
+    senha_limpa = str(senha or "").strip()
+    if not usuario_limpo:
+        return False
+    row = conn.execute(
+        """
+        SELECT senha_hash, perfil, cargo
+        FROM usuarios
+        WHERE COALESCE(ativo, 1)=1
+          AND (
+            lower(trim(COALESCE(usuario, ''))) = lower(trim(?))
+            OR lower(trim(COALESCE(nome, ''))) = lower(trim(?))
+          )
+        LIMIT 1
+        """,
+        (usuario_limpo, usuario_limpo),
+    ).fetchone()
+    if row is None:
+        return False
+    perfil = str(row["perfil"] or "").strip().lower()
+    cargo = str(row["cargo"] or "").strip().lower()
+    if perfil == "administrador" or cargo == "recepcionista":
+        return True
+    if not senha_limpa:
+        return False
+    return verificar_senha(senha_limpa, str(row["senha_hash"] or ""))
+
+
+def exigir_bloqueio_ou_autorizacao_agendamento(
+    conn: sqlite3.Connection,
+    *,
+    request: Request,
+    paciente_id: int,
+    prontuario: str,
+    data_agendamento: str,
+    senha_autorizacao: str = "",
+) -> tuple[bool, str]:
+    bloqueado, _financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+        conn,
+        paciente_id=paciente_id,
+        prontuario=prontuario,
+        data_agendamento=data_agendamento,
+    )
+    if not bloqueado:
+        return False, ""
+    if validar_autorizacao_bloqueio_agendamento(
+        conn,
+        usuario_identificador=usuario_request(request),
+        senha=senha_autorizacao,
+    ):
+        return True, mensagem
+    if str(senha_autorizacao or "").strip():
+        raise HTTPException(status_code=403, detail="Senha de autorização inválida para liberar o agendamento.")
+    raise HTTPException(status_code=409, detail=mensagem)
 
 
 def descrever_agendamento_para_auditoria(
@@ -1223,7 +1286,7 @@ def salvar_configuracao_agenda(payload: AgendaConfiguracaoPayload):
 
 
 @app.get("/api/agenda/pacientes/buscar", response_model=list[PacienteBuscaItem])
-def buscar_pacientes(q: str = Query(..., min_length=1)):
+def buscar_pacientes(q: str = Query(..., min_length=1), data_agendamento: str = Query(default="")):
     termo = f"%{q.strip()}%"
     conn = conectar()
     try:
@@ -1243,6 +1306,7 @@ def buscar_pacientes(q: str = Query(..., min_length=1)):
                 conn,
                 paciente_id=int(row["id"]),
                 prontuario=str(row["prontuario"] or ""),
+                data_agendamento=data_agendamento,
             )
             itens.append(
                 PacienteBuscaItem(
@@ -1261,7 +1325,7 @@ def buscar_pacientes(q: str = Query(..., min_length=1)):
 
 
 @app.get("/api/agenda/pacientes/{paciente_id}/contexto", response_model=PacienteContextoResposta)
-def buscar_contexto_paciente(paciente_id: int):
+def buscar_contexto_paciente(paciente_id: int, data_agendamento: str = Query(default="")):
     conn = conectar()
     try:
         paciente = conn.execute(
@@ -1369,6 +1433,7 @@ def buscar_contexto_paciente(paciente_id: int):
             conn,
             paciente_id=int(paciente["id"]),
             prontuario=str(paciente["prontuario"] or ""),
+            data_agendamento=data_agendamento,
         )
 
         return PacienteContextoResposta(
@@ -1396,15 +1461,16 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
         if payload.tipoAtendimentoId and not any(item.nome.strip() for item in payload.procedimentos):
             raise HTTPException(status_code=400, detail="Selecione ao menos um procedimento para salvar a consulta.")
         paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
+        autorizacao_bloqueio = False
         if payload.tipoAtendimentoId and paciente_id_final:
-            bloqueado, _financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+            autorizacao_bloqueio, _mensagem_bloqueio = exigir_bloqueio_ou_autorizacao_agendamento(
                 conn,
+                request=request,
                 paciente_id=paciente_id_final,
                 prontuario=str(payload.prontuario or ""),
                 data_agendamento=str(payload.data or ""),
+                senha_autorizacao=str(payload.autorizacaoSenha or ""),
             )
-            if bloqueado:
-                raise HTTPException(status_code=409, detail=mensagem)
         if existe_conflito(conn, payload.profissionalId, payload.data, payload.horaInicio, payload.horaFim):
             raise HTTPException(status_code=409, detail="Conflito de horário para o profissional selecionado.")
 
@@ -1512,6 +1578,15 @@ def criar_agendamento(payload: AgendamentoPayload, request: Request):
             usuario,
             momento,
         )
+        if autorizacao_bloqueio:
+            registrar_historico_agendamento(
+                conn,
+                agendamento_id,
+                "AUTORIZADO",
+                "Agendamento liberado com senha para paciente com financeiro atrasado.",
+                usuario,
+                momento,
+            )
 
         for procedimento in payload.procedimentos:
             conn.execute(
@@ -1576,6 +1651,20 @@ def atualizar_agendamento_serie(agendamento_id: int, payload: AgendamentoPayload
             f"SELECT * FROM agendamentos WHERE COALESCE(recorrencia_grupo, '')=? ORDER BY {data_coluna_agenda}, hora_inicio, id",
             (grupo,),
         ).fetchall()
+        autorizacao_bloqueio_serie = False
+
+        if payload.tipoAtendimentoId and paciente_id_final:
+            for row in rows:
+                nova_data = adicionar_dias_data_br(row_val(row, data_coluna_agenda, payload.data), delta_dias)
+                autorizado_item, _mensagem_bloqueio = exigir_bloqueio_ou_autorizacao_agendamento(
+                    conn,
+                    request=request,
+                    paciente_id=paciente_id_final,
+                    prontuario=str(payload.prontuario or ""),
+                    data_agendamento=str(nova_data or ""),
+                    senha_autorizacao=str(payload.autorizacaoSenha or ""),
+                )
+                autorizacao_bloqueio_serie = autorizacao_bloqueio_serie or autorizado_item
 
         for row in rows:
             nova_data = adicionar_dias_data_br(row_val(row, data_coluna_agenda, payload.data), delta_dias)
@@ -1696,6 +1785,15 @@ def atualizar_agendamento_serie(agendamento_id: int, payload: AgendamentoPayload
                 )
             if descricao_alteracoes:
                 registrar_historico_agendamento(conn, row_id, "MODIFICADO", f"Série atualizada: {descricao_alteracoes}", usuario, momento)
+            if autorizacao_bloqueio_serie:
+                registrar_historico_agendamento(
+                    conn,
+                    row_id,
+                    "AUTORIZADO",
+                    "Agendamento da série liberado com senha para paciente com financeiro atrasado.",
+                    usuario,
+                    momento,
+                )
 
         conn.commit()
         atualizados = [
@@ -1735,15 +1833,16 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
             raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
 
         paciente_id_final = garantir_paciente_minimo(conn, payload.pacienteId, payload.nomePaciente, payload.telefone)
+        autorizacao_bloqueio = False
         if payload.tipoAtendimentoId and paciente_id_final:
-            bloqueado, _financeiro, mensagem = avaliar_bloqueio_atendimento_paciente(
+            autorizacao_bloqueio, _mensagem_bloqueio = exigir_bloqueio_ou_autorizacao_agendamento(
                 conn,
+                request=request,
                 paciente_id=paciente_id_final,
                 prontuario=str(payload.prontuario or ""),
                 data_agendamento=str(payload.data or ""),
+                senha_autorizacao=str(payload.autorizacaoSenha or ""),
             )
-            if bloqueado:
-                raise HTTPException(status_code=409, detail=mensagem)
         if existe_conflito_excluindo(conn, agendamento_id, payload.profissionalId, payload.data, payload.horaInicio, payload.horaFim):
             raise HTTPException(status_code=409, detail="Conflito de horário para o profissional selecionado.")
 
@@ -1842,6 +1941,15 @@ def atualizar_agendamento(agendamento_id: int, payload: AgendamentoPayload, requ
                 agendamento_id,
                 "MODIFICADO",
                 descricao_alteracoes,
+                usuario,
+                momento,
+            )
+        if autorizacao_bloqueio:
+            registrar_historico_agendamento(
+                conn,
+                agendamento_id,
+                "AUTORIZADO",
+                "Agendamento liberado com senha para paciente com financeiro atrasado.",
                 usuario,
                 momento,
             )
