@@ -1006,6 +1006,7 @@ export function FinanceiroPage() {
     setSalvando(true);
     setErro(null);
     try {
+      const loteDestino = loteSelecionado.contratoId ? String(loteSelecionado.contratoId) : loteSelecionado.loteId;
       const novasParcelas: RecebivelRenegociacaoParcelaPayload[] = renegociacaoParcelas.map((item, indice) => {
         if (!item.vencimento) {
           throw new Error(`Informe o vencimento da nova parcela ${indice + 1}.`);
@@ -1020,7 +1021,7 @@ export function FinanceiroPage() {
           observacao: item.observacao
         };
       });
-      await atualizarRecebiveisLoteApi(loteSelecionado.loteId, {
+      await atualizarRecebiveisLoteApi(loteDestino, {
         paciente_id: loteSelecionado.pacienteId,
         paciente_nome: loteSelecionado.pacienteNome,
         prontuario: loteSelecionado.prontuario,
@@ -1045,7 +1046,8 @@ export function FinanceiroPage() {
     setSalvando(true);
     setErro(null);
     try {
-      await atualizarRecebiveisLoteApi(loteSelecionado.loteId, {
+      const loteDestino = loteSelecionado.contratoId ? String(loteSelecionado.contratoId) : loteSelecionado.loteId;
+      await atualizarRecebiveisLoteApi(loteDestino, {
         paciente_id: loteSelecionado.pacienteId,
         paciente_nome: loteSelecionado.pacienteNome,
         prontuario: loteSelecionado.prontuario,

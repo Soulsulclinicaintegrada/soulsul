@@ -4,6 +4,7 @@ import {
   adicionarPacienteManualCrmApi,
   adicionarPacienteAvaliacaoCrmApi,
   marcarPacienteFinalizadoCrmApi,
+  reativarPacienteCrmApi,
   removerPacienteCanceladoCrmApi,
   removerPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
@@ -39,7 +40,8 @@ type RelatorioCrmItem = {
   usuario?: string;
 };
 
-type CrmAba = "funil" | "agendados" | "finalizados" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
+type CrmAba = "funil" | "agendados" | "finalizacao" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
+type FinalizacaoSubAba = "finalizar" | "finalizados";
 type RelatorioAberto = "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram" | "avaliacoes-sem-reagendamento" | "palavras-chave";
 
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
@@ -272,7 +274,9 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [avaliacoes, setAvaliacoes] = useState<CrmAvaliacaoItemApi[]>([]);
   const [resgates, setResgates] = useState<CrmResgateItemApi[]>([]);
   const [abaAtiva, setAbaAtiva] = useState<CrmAba>("funil");
+  const [finalizacaoSubAba, setFinalizacaoSubAba] = useState<FinalizacaoSubAba>("finalizar");
   const [buscaLead, setBuscaLead] = useState("");
+  const [buscaFinalizar, setBuscaFinalizar] = useState("");
   const [buscaFinalizados, setBuscaFinalizados] = useState("");
   const [leadSelecionadoId, setLeadSelecionadoId] = useState<number | null>(null);
   const [relatorioAberto, setRelatorioAberto] = useState<RelatorioAberto>("avaliacoes-sem-reagendamento");
@@ -299,6 +303,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [resgateSortKey, setResgateSortKey] = useState<ResgateSortKey>("nome");
   const [resgateSortDirection, setResgateSortDirection] = useState<"asc" | "desc">("asc");
   const [relatorioLetra, setRelatorioLetra] = useState("TODAS");
+  const [finalizarLetra, setFinalizarLetra] = useState("TODAS");
   const [finalizadosLetra, setFinalizadosLetra] = useState("TODAS");
   const [relatorioDataInicio, setRelatorioDataInicio] = useState("");
   const [relatorioDataFim, setRelatorioDataFim] = useState("");
@@ -573,6 +578,25 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const leadsFunilFiltrados = useMemo(
     () => pipelineFiltrado.filter((item) => correspondeBusca(item, termoBuscaLead)),
     [pipelineFiltrado, termoBuscaLead]
+  );
+  const letrasFinalizar = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          pipelineFiltrado
+            .filter((item) => correspondeBusca(item, normalizarTexto(buscaFinalizar || busca || "")))
+            .map((item) => inicialLetra(item.nome))
+        )
+      ).sort(),
+    [busca, buscaFinalizar, pipelineFiltrado]
+  );
+  const pacientesFinalizarFiltrados = useMemo(
+    () =>
+      pipelineFiltrado
+        .filter((item) => correspondeBusca(item, normalizarTexto(buscaFinalizar || busca || "")))
+        .filter((item) => finalizarLetra === "TODAS" || inicialLetra(item.nome) === finalizarLetra)
+        .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")),
+    [busca, buscaFinalizar, finalizarLetra, pipelineFiltrado]
   );
   const agendadosFiltrados = useMemo(
     () =>
@@ -923,20 +947,38 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
     }
   }
 
-  async function finalizarPacienteDoRelatorio(item: RelatorioCrmItem) {
-    if (!item.pacienteId) return;
-    setFinalizandoPacienteId(item.pacienteId);
+  async function finalizarPacienteCrm(pacienteId: number, nomePaciente: string) {
+    setFinalizandoPacienteId(pacienteId);
     setErro(null);
     try {
-      const finalizado = normalizarItemCrm(await marcarPacienteFinalizadoCrmApi(item.pacienteId));
-      setFinalizados((atual) => [finalizado, ...atual.filter((registro) => registro.pacienteId !== item.pacienteId)]);
-      setRelatorioSemAgendamento((atual) => atual.filter((registro) => registro.pacienteId !== item.pacienteId));
-      setPipeline((atual) => atual.filter((registro) => registro.pacienteId !== item.pacienteId && registro.id !== item.pacienteId));
-      setFeedback(`Paciente ${item.nome} finalizado no CRM.`);
+      const finalizado = normalizarItemCrm(await marcarPacienteFinalizadoCrmApi(pacienteId));
+      setFinalizados((atual) => [finalizado, ...atual.filter((registro) => registro.pacienteId !== pacienteId)]);
+      setRelatorioSemAgendamento((atual) => atual.filter((registro) => registro.pacienteId !== pacienteId));
+      setPipeline((atual) => atual.filter((registro) => registro.pacienteId !== pacienteId && registro.id !== pacienteId));
+      setFeedback(`Paciente ${nomePaciente} finalizado no CRM.`);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao finalizar o paciente no CRM.");
     } finally {
       setFinalizandoPacienteId(null);
+    }
+  }
+
+  async function finalizarPacienteDoRelatorio(item: RelatorioCrmItem) {
+    if (!item.pacienteId) return;
+    await finalizarPacienteCrm(item.pacienteId, item.nome);
+  }
+
+  async function reativarPacienteDoCrm(item: CrmPacienteItemApi) {
+    setAdicionandoAvaliacaoId(item.pacienteId);
+    setErro(null);
+    try {
+      await reativarPacienteCrmApi(item.pacienteId);
+      setFeedback(`Paciente ${item.nome} reativado no CRM.`);
+      await carregarPainel();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao reativar o paciente no CRM.");
+    } finally {
+      setAdicionandoAvaliacaoId(null);
     }
   }
 
@@ -1187,7 +1229,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         <div className="tab-shell tab-shell-primary crm-tabs-shell">
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "funil" ? "active" : ""}`} onClick={() => setAbaAtiva("funil")}>Funil</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "agendados" ? "active" : ""}`} onClick={() => setAbaAtiva("agendados")}>Agendados</button>
-          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizados" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizados")}>Finalizados</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizacao" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizacao")}>Finalização</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "cancelados" ? "active" : ""}`} onClick={() => setAbaAtiva("cancelados")}>Cancelados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "avaliacoes" ? "active" : ""}`} onClick={() => setAbaAtiva("avaliacoes")}>Avaliações</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "resgates" ? "active" : ""}`} onClick={() => setAbaAtiva("resgates")}>Resgates</button>
@@ -1205,7 +1247,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         ) : null}
       </section>
 
-      <section className={abaAtiva === "agendados" || abaAtiva === "finalizados" || abaAtiva === "cancelados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
+      <section className={abaAtiva === "agendados" || abaAtiva === "finalizacao" || abaAtiva === "cancelados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
         <article className={abaAtiva === "agendados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
           <div className="section-title-row">
             <div>
@@ -1239,51 +1281,95 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           </div>
         </article>
 
-        <article className={abaAtiva === "finalizados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
+        <article className={abaAtiva === "finalizacao" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
           <div className="section-title-row">
             <div>
               <span className="panel-kicker">Entrada manual</span>
-              <h2>Pacientes finalizados</h2>
+              <h2>Finalização de pacientes</h2>
             </div>
             <div className="crm-inline-actions">
-              <button type="button" className="ghost-action compact" onClick={() => exportarCrmPacientes("crm-finalizados", finalizadosFiltrados)}>
+              <button
+                type="button"
+                className="ghost-action compact"
+                onClick={() => exportarCrmPacientes(finalizacaoSubAba === "finalizar" ? "crm-finalizar" : "crm-finalizados", finalizacaoSubAba === "finalizar" ? pacientesFinalizarFiltrados : finalizadosFiltrados)}
+              >
                 <Download size={15} />
                 Baixar
               </button>
               <CheckCircle2 size={18} />
             </div>
           </div>
-          <div className="crm-inline-actions">
-            <Search size={15} />
-            <input
-              type="text"
-              value={buscaFinalizados}
-              onChange={(event) => setBuscaFinalizados(event.target.value)}
-              placeholder="Buscar paciente finalizado"
-            />
-          </div>
-          <div className="crm-report-letter-bar">
+          <div className="tab-shell crm-report-tabs-shell">
             <button
               type="button"
-              className={`segmented-tab ${finalizadosLetra === "TODAS" ? "active" : ""}`}
-              onClick={() => setFinalizadosLetra("TODAS")}
+              className={`segmented-tab ${finalizacaoSubAba === "finalizar" ? "active" : ""}`}
+              onClick={() => setFinalizacaoSubAba("finalizar")}
             >
-              Todos
+              Finalizar
             </button>
-            {letrasFinalizados.map((letra) => (
+            <button
+              type="button"
+              className={`segmented-tab ${finalizacaoSubAba === "finalizados" ? "active" : ""}`}
+              onClick={() => setFinalizacaoSubAba("finalizados")}
+            >
+              Finalizados
+            </button>
+          </div>
+          <div className="crm-report-letter-bar">
+            <div className="crm-inline-actions">
+              <Search size={15} />
+              <input
+                type="text"
+                value={finalizacaoSubAba === "finalizar" ? buscaFinalizar : buscaFinalizados}
+                onChange={(event) => finalizacaoSubAba === "finalizar" ? setBuscaFinalizar(event.target.value) : setBuscaFinalizados(event.target.value)}
+                placeholder={finalizacaoSubAba === "finalizar" ? "Buscar paciente ativo" : "Buscar paciente finalizado"}
+              />
+            </div>
+            <div className="crm-report-letter-bar">
               <button
-                key={`finalizados-${letra}`}
                 type="button"
-                className={`segmented-tab ${finalizadosLetra === letra ? "active" : ""}`}
-                onClick={() => setFinalizadosLetra(letra)}
+                className={`segmented-tab ${(finalizacaoSubAba === "finalizar" ? finalizarLetra : finalizadosLetra) === "TODAS" ? "active" : ""}`}
+                onClick={() => finalizacaoSubAba === "finalizar" ? setFinalizarLetra("TODAS") : setFinalizadosLetra("TODAS")}
               >
-                {letra}
+                Todos
               </button>
-            ))}
+              {(finalizacaoSubAba === "finalizar" ? letrasFinalizar : letrasFinalizados).map((letra) => (
+                <button
+                  key={`${finalizacaoSubAba}-${letra}`}
+                  type="button"
+                  className={`segmented-tab ${(finalizacaoSubAba === "finalizar" ? finalizarLetra : finalizadosLetra) === letra ? "active" : ""}`}
+                  onClick={() => finalizacaoSubAba === "finalizar" ? setFinalizarLetra(letra) : setFinalizadosLetra(letra)}
+                >
+                  {letra}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="crm-list">
             {carregando ? <div className="module-subitem"><strong>Carregando...</strong></div> : null}
-            {!carregando && finalizadosFiltrados.map((item) => (
+            {!carregando && finalizacaoSubAba === "finalizar" && pacientesFinalizarFiltrados.map((item) => (
+              <article key={`finalizar-${item.id}`} className="crm-list-item">
+                <div>
+                  <strong>{item.nome}</strong>
+                  <span>{item.prontuario || "Sem prontuário"} · {item.telefone || "Sem telefone"}</span>
+                </div>
+                <div className="crm-list-item-meta">
+                  <span>{item.etapaFunil || "No CRM"}</span>
+                  <div className="crm-inline-actions">
+                    <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId, "Cadastro")}>Abrir paciente</button>
+                    <button
+                      type="button"
+                      className="ghost-action"
+                      onClick={() => void finalizarPacienteCrm(item.pacienteId, item.nome)}
+                      disabled={finalizandoPacienteId === item.pacienteId}
+                    >
+                      {finalizandoPacienteId === item.pacienteId ? "Finalizando..." : "Finalizar"}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {!carregando && finalizacaoSubAba === "finalizados" && finalizadosFiltrados.map((item) => (
               <article key={`finalizado-${item.id}`} className="crm-list-item">
                 <div>
                   <strong>{item.nome}</strong>
@@ -1293,12 +1379,20 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                   <span>{item.finalizadoEm ? `Finalizado em ${item.finalizadoEm}` : "No CRM"}</span>
                   <div className="crm-inline-actions">
                     <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId, "Cadastro")}>Abrir paciente</button>
-                    <button type="button" className="ghost-action" onClick={() => onAbrirPaciente?.(item.pacienteId, "Financeiro")}>Abrir financeiro</button>
+                    <button
+                      type="button"
+                      className="ghost-action"
+                      onClick={() => void reativarPacienteDoCrm(item)}
+                      disabled={adicionandoAvaliacaoId === item.pacienteId}
+                    >
+                      {adicionandoAvaliacaoId === item.pacienteId ? "Reativando..." : "Reativar"}
+                    </button>
                   </div>
                 </div>
               </article>
             ))}
-            {!carregando && !finalizadosFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente finalizado no CRM.</strong></div> : null}
+            {!carregando && finalizacaoSubAba === "finalizar" && !pacientesFinalizarFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente ativo encontrado para finalização.</strong></div> : null}
+            {!carregando && finalizacaoSubAba === "finalizados" && !finalizadosFiltrados.length ? <div className="module-subitem"><strong>Nenhum paciente finalizado no CRM.</strong></div> : null}
           </div>
         </article>
 
