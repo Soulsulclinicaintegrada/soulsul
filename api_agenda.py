@@ -61,6 +61,18 @@ def adicionar_dias_data_br(data_br: str, dias: int) -> str:
     return data_date_para_br(data_br_para_date(data_br) + timedelta(days=dias))
 
 
+def adicionar_dias_uteis_data(data_base: datetime.date, dias_uteis: int) -> datetime.date:
+    if dias_uteis <= 0:
+        return data_base
+    atual = data_base
+    restantes = dias_uteis
+    while restantes > 0:
+        atual += timedelta(days=1)
+        if atual.weekday() < 5:
+            restantes -= 1
+    return atual
+
+
 def formatar_moeda_br(valor: float) -> str:
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -987,7 +999,9 @@ def resumir_financeiro_agendamento(
         vencido_na_data = False
         if data_referencia and vencimento:
             try:
-                vencido_na_data = data_br_para_date(vencimento) <= data_referencia
+                vencimento_data = data_br_para_date(vencimento)
+                data_limite_bloqueio = adicionar_dias_uteis_data(vencimento_data, 2)
+                vencido_na_data = data_referencia > data_limite_bloqueio
             except Exception:
                 vencido_na_data = False
         if data_referencia:
