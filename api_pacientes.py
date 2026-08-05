@@ -11,7 +11,7 @@ from io import BytesIO
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 import json
-from datetime import date, datetime
+from datetime import date, datetime, time
 from shutil import copyfile
 import base64
 try:
@@ -65,6 +65,17 @@ from database import (
     gerar_hash_senha,
     inicializar_banco,
     verificar_senha,
+)
+from sofia_test_module import (
+    AI_STATUS_WAITING_DECISION,
+    RESPONSIBLE_UNASSIGNED,
+    ConversationState,
+    SofiaExecutionContext,
+    SofiaFeatureFlags,
+    build_shadow_evaluation,
+    derive_commercial_status,
+    register_incoming_message,
+    should_enable_sofia,
 )
 
 
@@ -309,6 +320,10 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "pacientes", "profissao TEXT")
         garantir_coluna(conn, "pacientes", "origem TEXT")
         garantir_coluna(conn, "pacientes", "foto_path TEXT")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso INTEGER DEFAULT 0")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso_observacao TEXT")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso_por TEXT")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso_em TEXT")
         garantir_coluna(conn, "contratos", "status TEXT DEFAULT 'EM_ABERTO'")
         garantir_coluna(conn, "contratos", "aprovado_por TEXT")
         garantir_coluna(conn, "contratos", "data_aprovacao TEXT")
@@ -347,6 +362,72 @@ def garantir_colunas_pacientes_api() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS sofia_configuracao (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                enabled INTEGER DEFAULT 0,
+                shadow_mode INTEGER DEFAULT 1,
+                allowed_environments_json TEXT DEFAULT '[]',
+                allowed_whatsapp_numbers_json TEXT DEFAULT '[]',
+                allowed_users_json TEXT DEFAULT '[]',
+                allowed_conversation_types_json TEXT DEFAULT '[]',
+                rollout_percentage INTEGER DEFAULT 0,
+                business_hours_start TEXT,
+                business_hours_end TEXT,
+                atualizado_por TEXT,
+                atualizado_em TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crm_sofia_sugestoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crm_id INTEGER NOT NULL,
+                paciente_id INTEGER NOT NULL,
+                conversation_id TEXT,
+                environment TEXT,
+                whatsapp_number TEXT,
+                conversation_type TEXT,
+                contact_seed TEXT,
+                commercial_status TEXT,
+                ai_status TEXT,
+                responsible TEXT,
+                unread_count INTEGER DEFAULT 0,
+                first_unread_at TEXT,
+                pending_followup_for TEXT,
+                eligible_for_auto_send INTEGER DEFAULT 0,
+                shadow_mode INTEGER DEFAULT 1,
+                suggested_reply TEXT,
+                approved_reply TEXT,
+                sent_reply TEXT,
+                approved_by TEXT,
+                rejected INTEGER DEFAULT 0,
+                sent_automatically INTEGER DEFAULT 0,
+                created_by TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crm_sofia_mensagens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crm_id INTEGER NOT NULL,
+                paciente_id INTEGER NOT NULL,
+                conversation_id TEXT,
+                environment TEXT,
+                whatsapp_number TEXT,
+                conversation_type TEXT,
+                direction TEXT,
+                message_text TEXT,
+                sent_at TEXT,
+                created_by TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS recebiveis_historico (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 recebivel_id INTEGER NOT NULL,
@@ -380,6 +461,10 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_data_retorno_crm ON contratos(data_retorno_crm)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_sofia_sugestoes_crm_id ON crm_sofia_sugestoes(crm_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_sofia_sugestoes_paciente_id ON crm_sofia_sugestoes(paciente_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_sofia_mensagens_crm_id ON crm_sofia_mensagens(crm_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_sofia_mensagens_paciente_id ON crm_sofia_mensagens(paciente_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_recebiveis_historico_recebivel_id ON recebiveis_historico(recebivel_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_orcamentos_historico_contrato_id ON orcamentos_historico(contrato_id)")
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
@@ -569,6 +654,11 @@ class PacientePayload(BaseModel):
     cpf_responsavel: str = ""
 
 
+class TratamentoSuspensaoPayload(BaseModel):
+    suspenso: bool = False
+    observacao: str = ""
+
+
 class PacienteResumo(BaseModel):
     id: int
     nome: str
@@ -579,6 +669,7 @@ class PacienteResumo(BaseModel):
     email: str = ""
     dataNascimento: str = ""
     fotoUrl: str = ""
+    tratamentoSuspenso: bool = False
 
 
 class PacienteDetalhe(BaseModel):
@@ -607,6 +698,10 @@ class PacienteDetalhe(BaseModel):
     responsavel: str = ""
     cpfResponsavel: str = ""
     fotoUrl: str = ""
+    tratamentoSuspenso: bool = False
+    tratamentoSuspensoObservacao: str = ""
+    tratamentoSuspensoPor: str = ""
+    tratamentoSuspensoEm: str = ""
 
 
 class ProximoProntuarioResposta(BaseModel):
@@ -1111,6 +1206,127 @@ class CrmPainelResposta(BaseModel):
     resgates: list[CrmResgateItemResposta] = Field(default_factory=list)
 
 
+class SofiaConfiguracaoPayload(BaseModel):
+    enabled: bool = False
+    shadowMode: bool = True
+    allowedEnvironments: list[str] = Field(default_factory=list)
+    allowedWhatsappNumbers: list[str] = Field(default_factory=list)
+    allowedUsers: list[str] = Field(default_factory=list)
+    allowedConversationTypes: list[str] = Field(default_factory=list)
+    rolloutPercentage: int = 0
+    businessHoursStart: str = ""
+    businessHoursEnd: str = ""
+    updatedBy: str = ""
+    updatedAt: str = ""
+
+
+class SofiaShadowSuggestionPayload(BaseModel):
+    conversationId: str
+    environment: str
+    whatsappNumber: str
+    conversationType: str
+    contactSeed: str
+    suggestedReply: str
+    receivedAt: str = ""
+    currentCommercialStatus: str = "novo contato"
+    pendingFollowupFor: str = ""
+    unreadCount: int = 0
+    approvedReply: str = ""
+    approvedBy: str = ""
+    rejected: bool = False
+
+
+class SofiaShadowSuggestionResposta(BaseModel):
+    id: int
+    crmId: int
+    pacienteId: int
+    conversationId: str = ""
+    environment: str = ""
+    whatsappNumber: str = ""
+    conversationType: str = ""
+    contactSeed: str = ""
+    commercialStatus: str = ""
+    aiStatus: str = ""
+    responsible: str = ""
+    unreadCount: int = 0
+    firstUnreadAt: str = ""
+    pendingFollowupFor: str = ""
+    eligibleForAutoSend: bool = False
+    shadowMode: bool = True
+    suggestedReply: str = ""
+    approvedReply: str = ""
+    sentReply: str = ""
+    approvedBy: str = ""
+    rejected: bool = False
+    sentAutomatically: bool = False
+    createdBy: str = ""
+    createdAt: str = ""
+
+
+class SofiaConversationMessagePayload(BaseModel):
+    conversationId: str
+    environment: str
+    whatsappNumber: str
+    conversationType: str
+    direction: str = "inbound"
+    messageText: str
+    sentAt: str = ""
+    currentCommercialStatus: str = "novo contato"
+    pendingFollowupFor: str = ""
+    unreadCount: int = 0
+
+
+class SofiaConversationMessageResposta(BaseModel):
+    id: int
+    crmId: int
+    pacienteId: int
+    conversationId: str = ""
+    environment: str = ""
+    whatsappNumber: str = ""
+    conversationType: str = ""
+    direction: str = ""
+    messageText: str = ""
+    sentAt: str = ""
+    createdBy: str = ""
+    createdAt: str = ""
+
+
+class SofiaInboxItemResposta(BaseModel):
+    crmId: int
+    pacienteId: int
+    nome: str
+    telefone: str = ""
+    etapaFunil: str = ""
+    responsavel: str = ""
+    conversationId: str = ""
+    whatsappNumber: str = ""
+    conversationType: str = ""
+    lastMessageText: str = ""
+    lastMessageAt: str = ""
+    unreadCount: int = 0
+    commercialStatus: str = ""
+    suggestedReply: str = ""
+
+
+class SofiaWebhookMensagemPayload(BaseModel):
+    patientName: str = ""
+    phone: str
+    messageText: str
+    environment: str = "homolog"
+    whatsappNumber: str
+    conversationType: str = "captacao"
+    sentAt: str = ""
+
+
+class SofiaWebhookRecebimentoResposta(BaseModel):
+    ok: bool = True
+    source: str = ""
+    crmId: int
+    pacienteId: int
+    conversationId: str = ""
+    processedAt: str = ""
+
+
 class CrmAtualizacaoPayload(BaseModel):
     etapa_funil: str = ""
     canal: str = "Facebook"
@@ -1382,6 +1598,7 @@ def usuario_request(request: Request) -> str:
 
 
 USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO = {"juliana", "eliane"}
+USUARIOS_AUTORIZADOS_BLOQUEIO_TRATAMENTO = {"juliana", "eliane"}
 
 
 def validar_usuario_aprovacao_orcamento(request: Request) -> str:
@@ -1390,6 +1607,53 @@ def validar_usuario_aprovacao_orcamento(request: Request) -> str:
     if usuario_normalizado not in USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO:
         raise HTTPException(status_code=403, detail="Somente Juliana e Eliane podem aprovar ou reabrir orcamentos.")
     return usuario
+
+
+def validar_usuario_bloqueio_tratamento(request: Request) -> str:
+    usuario = usuario_request(request)
+    usuario_normalizado = normalizar_texto(usuario).replace(" ", "")
+    if usuario_normalizado not in USUARIOS_AUTORIZADOS_BLOQUEIO_TRATAMENTO:
+        raise HTTPException(status_code=403, detail="Somente Juliana e Eliane podem suspender ou liberar o tratamento do paciente.")
+    return usuario
+
+
+def nivel_permissao_backend(valor: object) -> int:
+    texto = normalizar_texto(str(valor or ""))
+    if texto == "edicao":
+        return 2
+    if texto == "visualizacao":
+        return 1
+    return 0
+
+
+def carregar_usuario_por_request(conn: sqlite3.Connection, request: Request) -> sqlite3.Row | None:
+    usuario = usuario_request(request)
+    if not usuario:
+        return None
+    return conn.execute(
+        """
+        SELECT *
+        FROM usuarios
+        WHERE lower(trim(COALESCE(usuario, ''))) = lower(trim(?))
+           OR lower(trim(COALESCE(nome, ''))) = lower(trim(?))
+        LIMIT 1
+        """,
+        (usuario, usuario),
+    ).fetchone()
+
+
+def validar_usuario_edicao_orcamento(conn: sqlite3.Connection, request: Request) -> sqlite3.Row:
+    usuario_row = carregar_usuario_por_request(conn, request)
+    if usuario_row is None:
+        raise HTTPException(status_code=403, detail="Usuario sem permissão para alterar orçamento.")
+    cargo = str(usuario_row["cargo"] or "Profissional")
+    perfil = str(usuario_row["perfil"] or "Usuario")
+    modulos_padrao, abas_padrao, _ = permissoes_padrao_backend(cargo, perfil)
+    modulos = json_dict_seguro(usuario_row["modulos_json"], modulos_padrao)
+    abas = json_dict_seguro(usuario_row["pacientes_abas_json"], abas_padrao)
+    if nivel_permissao_backend(modulos.get("Financeiro")) < 2 or nivel_permissao_backend(abas.get("Orcamentos")) < 2:
+        raise HTTPException(status_code=403, detail="Usuário sem permissão de edição no Financeiro/Orçamentos.")
+    return usuario_row
 
 
 def mapear_acao_http(method: str) -> str:
@@ -2416,6 +2680,7 @@ def mapear_paciente_resumo(row: sqlite3.Row) -> PacienteResumo:
         email=str(row["email"] or ""),
         dataNascimento=formatar_data_br_valor(row["data_nascimento"]),
         fotoUrl=url_foto_paciente(row),
+        tratamentoSuspenso=bool(int(row["tratamento_suspenso"] or 0)),
     )
 
 
@@ -2446,6 +2711,10 @@ def mapear_paciente_detalhe(row: sqlite3.Row) -> PacienteDetalhe:
         responsavel=str(row["responsavel"] or ""),
         cpfResponsavel=str(row["cpf_responsavel"] or ""),
         fotoUrl=url_foto_paciente(row),
+        tratamentoSuspenso=bool(int(row["tratamento_suspenso"] or 0)),
+        tratamentoSuspensoObservacao=str(row["tratamento_suspenso_observacao"] or ""),
+        tratamentoSuspensoPor=str(row["tratamento_suspenso_por"] or ""),
+        tratamentoSuspensoEm=str(row["tratamento_suspenso_em"] or ""),
     )
 
 
@@ -6810,6 +7079,519 @@ def crm_row_val(row: sqlite3.Row, chave: str, padrao: object = "") -> object:
         return padrao
 
 
+def parse_time_hhmm(valor: object) -> time | None:
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    try:
+        return time.fromisoformat(texto)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Informe um horario valido no formato HH:MM.")
+
+
+def limpar_lista_texto(valores: object) -> list[str]:
+    if not isinstance(valores, list):
+        return []
+    itens: list[str] = []
+    for valor in valores:
+        texto = str(valor or "").strip()
+        if texto and texto not in itens:
+            itens.append(texto)
+    return itens
+
+
+def carregar_json_lista(row: sqlite3.Row | None, chave: str) -> list[str]:
+    if row is None:
+        return []
+    texto = str(crm_row_val(row, chave, "[]") or "[]").strip() or "[]"
+    try:
+        bruto = json.loads(texto)
+    except json.JSONDecodeError:
+        return []
+    return limpar_lista_texto(bruto)
+
+
+def obter_configuracao_sofia(conn: sqlite3.Connection) -> SofiaConfiguracaoPayload:
+    row = conn.execute("SELECT * FROM sofia_configuracao WHERE id=1 LIMIT 1").fetchone()
+    if row is None:
+        conn.execute(
+            """
+            INSERT INTO sofia_configuracao (
+                id, enabled, shadow_mode, allowed_environments_json, allowed_whatsapp_numbers_json,
+                allowed_users_json, allowed_conversation_types_json, rollout_percentage,
+                business_hours_start, business_hours_end, atualizado_por, atualizado_em
+            )
+            VALUES (1, 0, 1, '[]', '[]', '[]', '[]', 0, '', '', '', ?)
+            """,
+            (agora_str(),),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM sofia_configuracao WHERE id=1 LIMIT 1").fetchone()
+    return SofiaConfiguracaoPayload(
+        enabled=crm_bool(crm_row_val(row, "enabled", 0)),
+        shadowMode=crm_bool(crm_row_val(row, "shadow_mode", 1)),
+        allowedEnvironments=carregar_json_lista(row, "allowed_environments_json"),
+        allowedWhatsappNumbers=carregar_json_lista(row, "allowed_whatsapp_numbers_json"),
+        allowedUsers=carregar_json_lista(row, "allowed_users_json"),
+        allowedConversationTypes=carregar_json_lista(row, "allowed_conversation_types_json"),
+        rolloutPercentage=crm_int(crm_row_val(row, "rollout_percentage", 0), 0),
+        businessHoursStart=str(crm_row_val(row, "business_hours_start", "") or ""),
+        businessHoursEnd=str(crm_row_val(row, "business_hours_end", "") or ""),
+        updatedBy=str(crm_row_val(row, "atualizado_por", "") or ""),
+        updatedAt=str(crm_row_val(row, "atualizado_em", "") or ""),
+    )
+
+
+def salvar_configuracao_sofia(
+    conn: sqlite3.Connection,
+    payload: SofiaConfiguracaoPayload,
+    *,
+    usuario: str,
+) -> SofiaConfiguracaoPayload:
+    inicio = parse_time_hhmm(payload.businessHoursStart)
+    fim = parse_time_hhmm(payload.businessHoursEnd)
+    if (inicio is None) != (fim is None):
+        raise HTTPException(status_code=400, detail="Informe horario inicial e final juntos.")
+    if inicio is not None and fim is not None and inicio >= fim:
+        raise HTTPException(status_code=400, detail="O horario final precisa ser maior que o inicial.")
+    rollout = max(0, min(100, crm_int(payload.rolloutPercentage, 0)))
+    atualizado_em = agora_str()
+    conn.execute(
+        """
+        INSERT INTO sofia_configuracao (
+            id, enabled, shadow_mode, allowed_environments_json, allowed_whatsapp_numbers_json,
+            allowed_users_json, allowed_conversation_types_json, rollout_percentage,
+            business_hours_start, business_hours_end, atualizado_por, atualizado_em
+        )
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            enabled=excluded.enabled,
+            shadow_mode=excluded.shadow_mode,
+            allowed_environments_json=excluded.allowed_environments_json,
+            allowed_whatsapp_numbers_json=excluded.allowed_whatsapp_numbers_json,
+            allowed_users_json=excluded.allowed_users_json,
+            allowed_conversation_types_json=excluded.allowed_conversation_types_json,
+            rollout_percentage=excluded.rollout_percentage,
+            business_hours_start=excluded.business_hours_start,
+            business_hours_end=excluded.business_hours_end,
+            atualizado_por=excluded.atualizado_por,
+            atualizado_em=excluded.atualizado_em
+        """,
+        (
+            1 if payload.enabled else 0,
+            1 if payload.shadowMode else 0,
+            json.dumps(limpar_lista_texto(payload.allowedEnvironments), ensure_ascii=False),
+            json.dumps(limpar_lista_texto(payload.allowedWhatsappNumbers), ensure_ascii=False),
+            json.dumps(limpar_lista_texto(payload.allowedUsers), ensure_ascii=False),
+            json.dumps(limpar_lista_texto(payload.allowedConversationTypes), ensure_ascii=False),
+            rollout,
+            payload.businessHoursStart.strip(),
+            payload.businessHoursEnd.strip(),
+            str(usuario or "").strip(),
+            atualizado_em,
+        ),
+    )
+    conn.commit()
+    return obter_configuracao_sofia(conn)
+
+
+def construir_feature_flags_sofia(config: SofiaConfiguracaoPayload) -> SofiaFeatureFlags:
+    return SofiaFeatureFlags(
+        enabled=bool(config.enabled),
+        shadow_mode=bool(config.shadowMode),
+        allowed_environments=frozenset(config.allowedEnvironments),
+        allowed_whatsapp_numbers=frozenset(config.allowedWhatsappNumbers),
+        allowed_users=frozenset(config.allowedUsers),
+        allowed_conversation_types=frozenset(config.allowedConversationTypes),
+        rollout_percentage=max(0, min(100, crm_int(config.rolloutPercentage, 0))),
+        business_hours_start=parse_time_hhmm(config.businessHoursStart),
+        business_hours_end=parse_time_hhmm(config.businessHoursEnd),
+    )
+
+
+def mapear_sofia_sugestao(row: sqlite3.Row) -> SofiaShadowSuggestionResposta:
+    return SofiaShadowSuggestionResposta(
+        id=crm_int(row["id"]),
+        crmId=crm_int(row["crm_id"]),
+        pacienteId=crm_int(row["paciente_id"]),
+        conversationId=str(row["conversation_id"] or ""),
+        environment=str(row["environment"] or ""),
+        whatsappNumber=str(row["whatsapp_number"] or ""),
+        conversationType=str(row["conversation_type"] or ""),
+        contactSeed=str(row["contact_seed"] or ""),
+        commercialStatus=str(row["commercial_status"] or ""),
+        aiStatus=str(row["ai_status"] or ""),
+        responsible=str(row["responsible"] or ""),
+        unreadCount=crm_int(row["unread_count"]),
+        firstUnreadAt=str(row["first_unread_at"] or ""),
+        pendingFollowupFor=str(row["pending_followup_for"] or ""),
+        eligibleForAutoSend=crm_bool(row["eligible_for_auto_send"]),
+        shadowMode=crm_bool(row["shadow_mode"]),
+        suggestedReply=str(row["suggested_reply"] or ""),
+        approvedReply=str(row["approved_reply"] or ""),
+        sentReply=str(row["sent_reply"] or ""),
+        approvedBy=str(row["approved_by"] or ""),
+        rejected=crm_bool(row["rejected"]),
+        sentAutomatically=crm_bool(row["sent_automatically"]),
+        createdBy=str(row["created_by"] or ""),
+        createdAt=str(row["created_at"] or ""),
+    )
+
+
+def mapear_sofia_mensagem(row: sqlite3.Row) -> SofiaConversationMessageResposta:
+    return SofiaConversationMessageResposta(
+        id=crm_int(row["id"]),
+        crmId=crm_int(row["crm_id"]),
+        pacienteId=crm_int(row["paciente_id"]),
+        conversationId=str(row["conversation_id"] or ""),
+        environment=str(row["environment"] or ""),
+        whatsappNumber=str(row["whatsapp_number"] or ""),
+        conversationType=str(row["conversation_type"] or ""),
+        direction=str(row["direction"] or ""),
+        messageText=str(row["message_text"] or ""),
+        sentAt=str(row["sent_at"] or ""),
+        createdBy=str(row["created_by"] or ""),
+        createdAt=str(row["created_at"] or ""),
+    )
+
+
+def validar_token_webhook_sofia(request: Request) -> None:
+    esperado = os.getenv("SOFIA_WEBHOOK_TOKEN", "").strip()
+    recebido = str(request.headers.get("x-sofia-webhook-token") or "").strip()
+    if not esperado or recebido != esperado:
+        raise HTTPException(status_code=403, detail="Webhook da Sofia nao autorizado.")
+
+
+def primeiro_texto_disponivel(*valores: object) -> str:
+    for valor in valores:
+        texto = str(valor or "").strip()
+        if texto:
+            return texto
+    return ""
+
+
+def obter_em_caminho(payload: object, *caminho: str) -> object:
+    atual = payload
+    for chave in caminho:
+        if not isinstance(atual, dict) or chave not in atual:
+            return None
+        atual = atual[chave]
+    return atual
+
+
+def normalizar_payload_webhook_sofia(payload: object) -> SofiaWebhookMensagemPayload:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload do webhook invalido.")
+
+    source = primeiro_texto_disponivel(payload.get("source"), payload.get("provider"), payload.get("origin"))
+    patient_name = primeiro_texto_disponivel(
+        payload.get("patientName"),
+        payload.get("patient_name"),
+        payload.get("name"),
+        obter_em_caminho(payload, "contact", "name"),
+        obter_em_caminho(payload, "patient", "name"),
+    )
+    phone = primeiro_texto_disponivel(
+        payload.get("phone"),
+        payload.get("telefone"),
+        payload.get("from"),
+        payload.get("sender"),
+        obter_em_caminho(payload, "contact", "phone"),
+        obter_em_caminho(payload, "patient", "phone"),
+        obter_em_caminho(payload, "message", "from"),
+    )
+    message_text = primeiro_texto_disponivel(
+        payload.get("messageText"),
+        payload.get("message"),
+        payload.get("text"),
+        payload.get("body"),
+        obter_em_caminho(payload, "message", "text"),
+        obter_em_caminho(payload, "message", "body"),
+        obter_em_caminho(payload, "last_message", "text"),
+    )
+    whatsapp_number = primeiro_texto_disponivel(
+        payload.get("whatsappNumber"),
+        payload.get("to"),
+        payload.get("recipient"),
+        obter_em_caminho(payload, "channel", "number"),
+        obter_em_caminho(payload, "metadata", "display_phone_number"),
+        obter_em_caminho(payload, "message", "to"),
+    )
+    conversation_type = primeiro_texto_disponivel(
+        payload.get("conversationType"),
+        payload.get("conversation_type"),
+        payload.get("type"),
+        "captacao",
+    )
+    environment = primeiro_texto_disponivel(
+        payload.get("environment"),
+        payload.get("env"),
+        "production",
+    )
+    sent_at = primeiro_texto_disponivel(
+        payload.get("sentAt"),
+        payload.get("timestamp"),
+        payload.get("created_at"),
+        obter_em_caminho(payload, "message", "timestamp"),
+        "2026-08-03T09:00:00",
+    )
+    if source and not patient_name:
+        patient_name = f"Lead {source} {phone}".strip()
+
+    return SofiaWebhookMensagemPayload(
+        patientName=patient_name,
+        phone=phone,
+        messageText=message_text,
+        environment=environment,
+        whatsappNumber=whatsapp_number,
+        conversationType=conversation_type,
+        sentAt=sent_at,
+    )
+
+
+def localizar_paciente_por_telefone(conn: sqlite3.Connection, telefone: str) -> sqlite3.Row | None:
+    telefone_limpo = str(telefone or "").strip()
+    if not telefone_limpo:
+        return None
+    return conn.execute(
+        """
+        SELECT *
+        FROM pacientes
+        WHERE COALESCE(trim(telefone), '') = COALESCE(trim(?), '')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (telefone_limpo,),
+    ).fetchone()
+
+
+def montar_item_inbox_sofia(conn: sqlite3.Connection, crm_id: int) -> SofiaInboxItemResposta | None:
+    row = conn.execute(
+        """
+        SELECT
+            crm.id AS crm_id,
+            crm.paciente_id,
+            COALESCE(p.nome, '') AS nome,
+            COALESCE(p.telefone, '') AS telefone,
+            COALESCE(crm.etapa_funil, 'Novo lead') AS etapa_funil,
+            COALESCE(crm.responsavel, '') AS responsavel,
+            COALESCE(msg.conversation_id, '') AS conversation_id,
+            COALESCE(msg.whatsapp_number, '') AS whatsapp_number,
+            COALESCE(msg.conversation_type, '') AS conversation_type,
+            COALESCE(msg.message_text, '') AS last_message_text,
+            COALESCE(msg.sent_at, msg.created_at, '') AS last_message_at,
+            COALESCE(sug.unread_count, 0) AS unread_count,
+            COALESCE(sug.commercial_status, '') AS commercial_status,
+            COALESCE(sug.suggested_reply, '') AS suggested_reply
+        FROM crm_pacientes crm
+        JOIN pacientes p ON p.id = crm.paciente_id
+        LEFT JOIN crm_sofia_mensagens msg ON msg.id = (
+            SELECT m.id
+            FROM crm_sofia_mensagens m
+            WHERE m.crm_id = crm.id
+            ORDER BY COALESCE(m.sent_at, m.created_at, '') DESC, m.id DESC
+            LIMIT 1
+        )
+        LEFT JOIN crm_sofia_sugestoes sug ON sug.id = (
+            SELECT s.id
+            FROM crm_sofia_sugestoes s
+            WHERE s.crm_id = crm.id
+            ORDER BY COALESCE(s.created_at, '') DESC, s.id DESC
+            LIMIT 1
+        )
+        WHERE crm.id = ?
+        LIMIT 1
+        """,
+        (int(crm_id),),
+    ).fetchone()
+    if row is None:
+        return None
+    return SofiaInboxItemResposta(
+        crmId=crm_int(row["crm_id"]),
+        pacienteId=crm_int(row["paciente_id"]),
+        nome=str(row["nome"] or ""),
+        telefone=str(row["telefone"] or ""),
+        etapaFunil=str(row["etapa_funil"] or ""),
+        responsavel=str(row["responsavel"] or ""),
+        conversationId=str(row["conversation_id"] or ""),
+        whatsappNumber=str(row["whatsapp_number"] or ""),
+        conversationType=str(row["conversation_type"] or ""),
+        lastMessageText=str(row["last_message_text"] or ""),
+        lastMessageAt=str(row["last_message_at"] or ""),
+        unreadCount=crm_int(row["unread_count"]),
+        commercialStatus=str(row["commercial_status"] or ""),
+        suggestedReply=str(row["suggested_reply"] or ""),
+    )
+
+
+def sugerir_resposta_sofia_por_contexto(
+    crm: sqlite3.Row,
+    *,
+    mensagem: str,
+    commercial_status: str,
+) -> str:
+    nome = str(crm["nome"] or "").strip()
+    primeiro_nome = nome.split()[0] if nome else "Oi"
+    texto = normalizar_texto(mensagem)
+    status = normalizar_texto(commercial_status)
+
+    if any(chave in texto for chave in ("valor", "preco", "preço", "quanto custa", "orcamento", "orçamento")):
+        return f"{primeiro_nome}, posso te ajudar com valores gerais e tambem organizar uma avaliacao para confirmar o melhor tratamento. Se quiser, me diga qual procedimento voce procura ou o melhor horario para te atender."
+    if any(chave in texto for chave in ("horario", "horário", "agendar", "agenda", "marcar")):
+        return f"{primeiro_nome}, posso te ajudar a encontrar um horario para sua avaliacao. Me diga se prefere manha, tarde ou noite e qual dia costuma ser melhor para voce."
+    if any(chave in texto for chave in ("dor", "urgencia", "urgência", "inchaco", "inchaço", "sangramento")):
+        return f"{primeiro_nome}, sinto muito por isso. Vou deixar seu atendimento sinalizado como prioridade para avaliarmos a melhor orientacao humana o quanto antes. Se puder, me conte desde quando isso comecou e qual a intensidade."
+    if "retornar hoje" in status:
+        return f"{primeiro_nome}, estou retomando seu atendimento de hoje. Pode me contar o que voce precisa agora para eu seguir com a orientacao e te ajudar no proximo passo?"
+    if "conversando" in status or "em atendimento" in status:
+        return f"{primeiro_nome}, seguimos por aqui. Me envie mais um detalhe do que voce procura para eu te orientar e, se fizer sentido, organizar sua avaliacao."
+    return f"{primeiro_nome}, obrigada pela mensagem. Posso te ajudar com informacoes iniciais e com o agendamento da sua avaliacao. Me conte qual sua principal necessidade no momento."
+
+
+def registrar_sugestao_sofia_shadow(
+    conn: sqlite3.Connection,
+    *,
+    crm_id: int,
+    crm: sqlite3.Row,
+    payload: SofiaShadowSuggestionPayload,
+    usuario: str,
+) -> SofiaShadowSuggestionResposta:
+    config = obter_configuracao_sofia(conn)
+    flags = construir_feature_flags_sofia(config)
+    received_at = datetime.fromisoformat(payload.receivedAt) if str(payload.receivedAt or "").strip() else agora_local()
+    pending_followup = parse_data_contrato(payload.pendingFollowupFor)
+    estado = ConversationState(
+        commercial_status=str(payload.currentCommercialStatus or "novo contato").strip() or "novo contato",
+        ai_status=AI_STATUS_WAITING_DECISION,
+        responsible=str(crm["responsavel"] or RESPONSIBLE_UNASSIGNED or "").strip() or RESPONSIBLE_UNASSIGNED,
+        unread_count=max(0, crm_int(payload.unreadCount, 0)),
+        pending_followup_for=pending_followup,
+    )
+    atualizado = register_incoming_message(estado, received_at)
+    commercial_status = derive_commercial_status(atualizado, received_at.date())
+    contexto = SofiaExecutionContext(
+        environment=str(payload.environment or "").strip(),
+        whatsapp_number=str(payload.whatsappNumber or "").strip(),
+        user=str(usuario or "").strip(),
+        conversation_type=str(payload.conversationType or "").strip(),
+        now=received_at,
+        contact_seed=str(payload.contactSeed or "").strip(),
+    )
+    eligible_for_auto_send = should_enable_sofia(flags, contexto)
+    avaliacao = build_shadow_evaluation(
+        conversation_id=str(payload.conversationId or "").strip(),
+        suggested_reply=str(payload.suggestedReply or "").strip(),
+        approved_reply=str(payload.approvedReply or "").strip() or None,
+        approved_by=str(payload.approvedBy or "").strip() or None,
+        rejected=bool(payload.rejected),
+    )
+    conn.execute(
+        """
+        INSERT INTO crm_sofia_sugestoes (
+            crm_id, paciente_id, conversation_id, environment, whatsapp_number, conversation_type,
+            contact_seed, commercial_status, ai_status, responsible, unread_count, first_unread_at,
+            pending_followup_for, eligible_for_auto_send, shadow_mode, suggested_reply, approved_reply,
+            sent_reply, approved_by, rejected, sent_automatically, created_by, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(crm_id),
+            crm_int(crm["paciente_id"]),
+            avaliacao["conversation_id"],
+            str(payload.environment or "").strip(),
+            str(payload.whatsappNumber or "").strip(),
+            str(payload.conversationType or "").strip(),
+            str(payload.contactSeed or "").strip(),
+            commercial_status,
+            atualizado.ai_status,
+            atualizado.responsible,
+            atualizado.unread_count,
+            atualizado.first_unread_at.isoformat() if atualizado.first_unread_at else "",
+            pending_followup.isoformat() if pending_followup else "",
+            1 if eligible_for_auto_send else 0,
+            1 if config.shadowMode else 0,
+            avaliacao["suggested_reply"],
+            avaliacao["approved_reply"],
+            avaliacao["sent_reply"],
+            avaliacao["approved_by"],
+            1 if avaliacao["rejected"] else 0,
+            1 if avaliacao["sent_automatically"] else 0,
+            usuario,
+            agora_str(),
+        ),
+    )
+    sugestao_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()
+    row = conn.execute(
+        "SELECT * FROM crm_sofia_sugestoes WHERE id=? LIMIT 1",
+        (crm_int(sugestao_id["id"]),),
+    ).fetchone()
+    return mapear_sofia_sugestao(row)
+
+
+def registrar_mensagem_sofia_e_sugestao(
+    conn: sqlite3.Connection,
+    *,
+    crm_id: int,
+    crm: sqlite3.Row,
+    payload: SofiaConversationMessagePayload,
+    usuario: str,
+) -> SofiaShadowSuggestionResposta:
+    direction = normalizar_texto(payload.direction or "")
+    if direction not in {"inbound", "outbound"}:
+        raise HTTPException(status_code=400, detail="A direcao da mensagem deve ser inbound ou outbound.")
+    message_text = str(payload.messageText or "").strip()
+    if not message_text:
+        raise HTTPException(status_code=400, detail="A mensagem nao pode ficar vazia.")
+    sent_at = str(payload.sentAt or "").strip() or agora_local().replace(microsecond=0).isoformat()
+    conn.execute(
+        """
+        INSERT INTO crm_sofia_mensagens (
+            crm_id, paciente_id, conversation_id, environment, whatsapp_number, conversation_type,
+            direction, message_text, sent_at, created_by, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(crm_id),
+            crm_int(crm["paciente_id"]),
+            str(payload.conversationId or "").strip(),
+            str(payload.environment or "").strip(),
+            str(payload.whatsappNumber or "").strip(),
+            str(payload.conversationType or "").strip(),
+            direction,
+            message_text,
+            sent_at,
+            usuario,
+            agora_str(),
+        ),
+    )
+    sugestao_payload = SofiaShadowSuggestionPayload(
+        conversationId=str(payload.conversationId or "").strip(),
+        environment=str(payload.environment or "").strip(),
+        whatsappNumber=str(payload.whatsappNumber or "").strip(),
+        conversationType=str(payload.conversationType or "").strip(),
+        contactSeed=f"lead-{crm_id}",
+        suggestedReply=sugerir_resposta_sofia_por_contexto(
+            crm,
+            mensagem=message_text,
+            commercial_status=str(payload.currentCommercialStatus or "novo contato"),
+        ),
+        receivedAt=sent_at,
+        currentCommercialStatus=str(payload.currentCommercialStatus or "novo contato"),
+        pendingFollowupFor=str(payload.pendingFollowupFor or ""),
+        unreadCount=crm_int(payload.unreadCount, 0),
+        approvedBy=str(crm["responsavel"] or ""),
+    )
+    return registrar_sugestao_sofia_shadow(
+        conn,
+        crm_id=int(crm_id),
+        crm=crm,
+        payload=sugestao_payload,
+        usuario=usuario,
+    )
+
+
 def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResposta | None:
     if row is None:
         return None
@@ -7593,6 +8375,303 @@ def listar_crm():
             avaliacoes=avaliacoes,
             avaliacoesPrimeiraConsultaPerdida=avaliacoes_primeira_consulta_perdida,
             resgates=resgates,
+        )
+    finally:
+        conn.close()
+
+
+@app.get("/api/sofia/configuracao", response_model=SofiaConfiguracaoPayload)
+def buscar_configuracao_sofia():
+    conn = conectar()
+    try:
+        return obter_configuracao_sofia(conn)
+    finally:
+        conn.close()
+
+
+@app.put("/api/sofia/configuracao", response_model=SofiaConfiguracaoPayload)
+def atualizar_configuracao_sofia(payload: SofiaConfiguracaoPayload, request: Request):
+    conn = conectar()
+    try:
+        configuracao = salvar_configuracao_sofia(conn, payload, usuario=usuario_request(request))
+        return configuracao
+    finally:
+        conn.close()
+
+
+@app.get("/api/crm/{crm_id}/sofia/sugestoes", response_model=list[SofiaShadowSuggestionResposta])
+def listar_sugestoes_sofia_crm(crm_id: int):
+    conn = conectar()
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM crm_sofia_sugestoes
+            WHERE crm_id=?
+            ORDER BY id DESC
+            """,
+            (int(crm_id),),
+        ).fetchall()
+        return [mapear_sofia_sugestao(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/api/crm/{crm_id}/sofia/mensagens", response_model=list[SofiaConversationMessageResposta])
+def listar_mensagens_sofia_crm(crm_id: int):
+    conn = conectar()
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM crm_sofia_mensagens
+            WHERE crm_id=?
+            ORDER BY COALESCE(sent_at, created_at, '') DESC, id DESC
+            """,
+            (int(crm_id),),
+        ).fetchall()
+        return [mapear_sofia_mensagem(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/api/sofia/inbox", response_model=list[SofiaInboxItemResposta])
+def listar_inbox_sofia(limit: int = 50):
+    conn = conectar()
+    try:
+        limit_val = max(1, min(200, crm_int(limit, 50)))
+        crm_rows = conn.execute(
+            """
+            SELECT DISTINCT crm_id
+            FROM crm_sofia_mensagens
+            ORDER BY COALESCE(sent_at, created_at, '') DESC, id DESC
+            LIMIT ?
+            """,
+            (limit_val,),
+        ).fetchall()
+        itens: list[SofiaInboxItemResposta] = []
+        for row in crm_rows:
+            item = montar_item_inbox_sofia(conn, crm_int(row["crm_id"]))
+            if item is not None:
+                itens.append(item)
+        return itens
+    finally:
+        conn.close()
+
+
+@app.post("/api/crm/{crm_id}/sofia/avaliar", response_model=SofiaShadowSuggestionResposta)
+def avaliar_sugestao_sofia_crm(crm_id: int, payload: SofiaShadowSuggestionPayload, request: Request):
+    conn = conectar()
+    try:
+        crm = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm_id),),
+        ).fetchone()
+        if crm is None:
+            raise HTTPException(status_code=404, detail="Registro de CRM nao encontrado.")
+        usuario = usuario_request(request)
+        sugestao = registrar_sugestao_sofia_shadow(
+            conn,
+            crm_id=int(crm_id),
+            crm=crm,
+            payload=payload,
+            usuario=usuario,
+        )
+        conn.commit()
+        return sugestao
+    finally:
+        conn.close()
+
+
+@app.post("/api/crm/{crm_id}/sofia/mensagens", response_model=SofiaShadowSuggestionResposta)
+def registrar_mensagem_sofia_crm(crm_id: int, payload: SofiaConversationMessagePayload, request: Request):
+    conn = conectar()
+    try:
+        crm = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm_id),),
+        ).fetchone()
+        if crm is None:
+            raise HTTPException(status_code=404, detail="Registro de CRM nao encontrado.")
+        usuario = usuario_request(request)
+        sugestao = registrar_mensagem_sofia_e_sugestao(
+            conn,
+            crm_id=int(crm_id),
+            crm=crm,
+            payload=payload,
+            usuario=usuario,
+        )
+        conn.commit()
+        return sugestao
+    finally:
+        conn.close()
+
+
+@app.post("/api/sofia/webhook/test", response_model=SofiaInboxItemResposta)
+def receber_mensagem_teste_sofia(payload: SofiaWebhookMensagemPayload, request: Request):
+    conn = conectar()
+    try:
+        telefone = str(payload.phone or "").strip()
+        if not telefone:
+            raise HTTPException(status_code=400, detail="Informe o telefone do contato.")
+        mensagem = str(payload.messageText or "").strip()
+        if not mensagem:
+            raise HTTPException(status_code=400, detail="Informe a mensagem recebida.")
+        paciente = localizar_paciente_por_telefone(conn, telefone)
+        if paciente is None:
+            nome_base = str(payload.patientName or "").strip() or f"Lead WhatsApp {telefone}"
+            paciente_id = garantir_paciente_minimo_crm(conn, nome_base, telefone)
+            paciente = conn.execute("SELECT * FROM pacientes WHERE id=? LIMIT 1", (int(paciente_id),)).fetchone()
+        crm = upsert_crm_origem(conn, int(paciente["id"]), usuario=usuario_request(request))
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET
+                canal='WhatsApp',
+                etapa_funil=CASE
+                    WHEN COALESCE(etapa_funil, '') IN ('', 'Novo lead') THEN 'Contato inicial'
+                    ELSE etapa_funil
+                END,
+                ultima_interacao=?,
+                atualizado_por=?,
+                atualizado_em=?
+            WHERE id=?
+            """,
+            (
+                str(payload.sentAt or "").strip()[:10] if str(payload.sentAt or "").strip() else "2026-08-03",
+                usuario_request(request),
+                agora_str(),
+                int(crm["id"]),
+            ),
+        )
+        sugestao = registrar_mensagem_sofia_e_sugestao(
+            conn,
+            crm_id=int(crm["id"]),
+            crm=conn.execute(
+                """
+                SELECT crm.*, p.nome, p.prontuario, p.telefone
+                FROM crm_pacientes crm
+                JOIN pacientes p ON p.id = crm.paciente_id
+                WHERE crm.id=?
+                LIMIT 1
+                """,
+                (int(crm["id"]),),
+            ).fetchone(),
+            payload=SofiaConversationMessagePayload(
+                conversationId=f"crm-{int(crm['id'])}-2026-08-03",
+                environment=str(payload.environment or "homolog").strip() or "homolog",
+                whatsappNumber=str(payload.whatsappNumber or "").strip(),
+                conversationType=str(payload.conversationType or "captacao").strip() or "captacao",
+                direction="inbound",
+                messageText=mensagem,
+                sentAt=str(payload.sentAt or "").strip() or "2026-08-03T09:00:00",
+                currentCommercialStatus="Contato inicial",
+                pendingFollowupFor="",
+                unreadCount=0,
+            ),
+            usuario=usuario_request(request),
+        )
+        _ = sugestao
+        conn.commit()
+        item = montar_item_inbox_sofia(conn, int(crm["id"]))
+        if item is None:
+            raise HTTPException(status_code=500, detail="Falha ao montar a caixa de entrada da Sofia.")
+        return item
+    finally:
+        conn.close()
+
+
+@app.post("/api/sofia/webhook", response_model=SofiaWebhookRecebimentoResposta)
+async def receber_webhook_sofia(request: Request):
+    validar_token_webhook_sofia(request)
+    bruto = await request.json()
+    payload = normalizar_payload_webhook_sofia(bruto)
+
+    conn = conectar()
+    try:
+        telefone = str(payload.phone or "").strip()
+        if not telefone:
+            raise HTTPException(status_code=400, detail="Payload sem telefone do contato.")
+        mensagem = str(payload.messageText or "").strip()
+        if not mensagem:
+            raise HTTPException(status_code=400, detail="Payload sem texto de mensagem.")
+
+        paciente = localizar_paciente_por_telefone(conn, telefone)
+        if paciente is None:
+            nome_base = str(payload.patientName or "").strip() or f"Lead WhatsApp {telefone}"
+            paciente_id = garantir_paciente_minimo_crm(conn, nome_base, telefone)
+            paciente = conn.execute("SELECT * FROM pacientes WHERE id=? LIMIT 1", (int(paciente_id),)).fetchone()
+
+        crm = upsert_crm_origem(conn, int(paciente["id"]), usuario=usuario_request(request) or "sofia-webhook")
+        conn.execute(
+            """
+            UPDATE crm_pacientes
+            SET
+                canal='WhatsApp',
+                etapa_funil=CASE
+                    WHEN COALESCE(etapa_funil, '') IN ('', 'Novo lead') THEN 'Contato inicial'
+                    ELSE etapa_funil
+                END,
+                ultima_interacao=?,
+                atualizado_por=?,
+                atualizado_em=?
+            WHERE id=?
+            """,
+            (
+                str(payload.sentAt or "").strip()[:10] if str(payload.sentAt or "").strip() else "2026-08-03",
+                usuario_request(request) or "sofia-webhook",
+                agora_str(),
+                int(crm["id"]),
+            ),
+        )
+        crm_atualizado = conn.execute(
+            """
+            SELECT crm.*, p.nome, p.prontuario, p.telefone
+            FROM crm_pacientes crm
+            JOIN pacientes p ON p.id = crm.paciente_id
+            WHERE crm.id=?
+            LIMIT 1
+            """,
+            (int(crm["id"]),),
+        ).fetchone()
+        registrar_mensagem_sofia_e_sugestao(
+            conn,
+            crm_id=int(crm["id"]),
+            crm=crm_atualizado,
+            payload=SofiaConversationMessagePayload(
+                conversationId=f"crm-{int(crm['id'])}-2026-08-03",
+                environment=str(payload.environment or "production").strip() or "production",
+                whatsappNumber=str(payload.whatsappNumber or "").strip(),
+                conversationType=str(payload.conversationType or "captacao").strip() or "captacao",
+                direction="inbound",
+                messageText=mensagem,
+                sentAt=str(payload.sentAt or "").strip() or "2026-08-03T09:00:00",
+                currentCommercialStatus="Contato inicial",
+                pendingFollowupFor="",
+                unreadCount=0,
+            ),
+            usuario=usuario_request(request) or "sofia-webhook",
+        )
+        conn.commit()
+        return SofiaWebhookRecebimentoResposta(
+            ok=True,
+            source=primeiro_texto_disponivel(bruto.get("source") if isinstance(bruto, dict) else "", bruto.get("provider") if isinstance(bruto, dict) else "", "whatsapp"),
+            crmId=int(crm["id"]),
+            pacienteId=int(crm["paciente_id"]),
+            conversationId=f"crm-{int(crm['id'])}-2026-08-03",
+            processedAt=agora_str(),
         )
     finally:
         conn.close()
@@ -8863,10 +9942,51 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
         conn.close()
 
 
+@app.put("/api/pacientes/{paciente_id}/tratamento-suspensao", response_model=PacienteDetalhe)
+def atualizar_suspensao_tratamento_paciente(paciente_id: int, payload: TratamentoSuspensaoPayload, request: Request):
+    usuario = validar_usuario_bloqueio_tratamento(request)
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        suspenso = bool(payload.suspenso)
+        observacao = str(payload.observacao or "").strip()
+        agora = agora_str()
+        conn.execute(
+            """
+            UPDATE pacientes
+            SET tratamento_suspenso=?,
+                tratamento_suspenso_observacao=?,
+                tratamento_suspenso_por=?,
+                tratamento_suspenso_em=?
+            WHERE id=?
+            """,
+            (
+                1 if suspenso else 0,
+                observacao if suspenso else "",
+                usuario if suspenso else "",
+                agora if suspenso else "",
+                paciente_id,
+            ),
+        )
+        conn.commit()
+        registrar_acao_usuario(
+            usuario,
+            acao="Edicao",
+            tipo="Paciente",
+            info=f"{'Suspensao' if suspenso else 'Liberacao'} de tratamento do paciente #{paciente_id} - {str(paciente['nome'] or '').strip()}",
+            metodo_http="PUT",
+            rota=f"/api/pacientes/{paciente_id}/tratamento-suspensao",
+        )
+        return mapear_paciente_detalhe(carregar_paciente_por_id(conn, paciente_id))
+    finally:
+        conn.close()
+
+
 @app.post("/api/pacientes/{paciente_id}/orcamentos", response_model=OrcamentoCriadoResposta)
 def criar_orcamento_paciente(paciente_id: int, payload: OrcamentoPacientePayload, request: Request):
     conn = conectar()
     try:
+        validar_usuario_edicao_orcamento(conn, request)
         carregar_paciente_por_id(conn, paciente_id)
         crm = upsert_crm_origem(conn, int(paciente_id), usuario=usuario_request(request))
         contrato_id = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload)
@@ -8918,6 +10038,7 @@ def detalhar_orcamento_paciente(paciente_id: int, contrato_id: int):
 def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: OrcamentoPacientePayload, request: Request):
     conn = conectar()
     try:
+        validar_usuario_edicao_orcamento(conn, request)
         carregar_paciente_por_id(conn, paciente_id)
         crm = upsert_crm_origem(conn, int(paciente_id), usuario=usuario_request(request))
         contrato_anterior = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
@@ -9003,6 +10124,7 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
 def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payload: OrcamentoStatusPayload, request: Request):
     conn = conectar()
     try:
+        validar_usuario_edicao_orcamento(conn, request)
         paciente = carregar_paciente_por_id(conn, paciente_id)
         contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
         if contrato is None:
@@ -9053,9 +10175,10 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
 
 
 @app.delete("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}")
-def excluir_orcamento_paciente(paciente_id: int, contrato_id: int):
+def excluir_orcamento_paciente(paciente_id: int, contrato_id: int, request: Request):
     conn = conectar()
     try:
+        validar_usuario_edicao_orcamento(conn, request)
         paciente = carregar_paciente_por_id(conn, paciente_id)
         contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
         if contrato is None:
