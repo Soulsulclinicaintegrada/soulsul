@@ -713,75 +713,6 @@ def inicializar_banco():
 
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS sofia_configuracao (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            enabled INTEGER DEFAULT 0,
-            shadow_mode INTEGER DEFAULT 1,
-            allowed_environments_json TEXT DEFAULT '[]',
-            allowed_whatsapp_numbers_json TEXT DEFAULT '[]',
-            allowed_users_json TEXT DEFAULT '[]',
-            allowed_conversation_types_json TEXT DEFAULT '[]',
-            rollout_percentage INTEGER DEFAULT 0,
-            business_hours_start TEXT,
-            business_hours_end TEXT,
-            atualizado_por TEXT,
-            atualizado_em TEXT
-        )
-        """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS crm_sofia_sugestoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            crm_id INTEGER NOT NULL,
-            paciente_id INTEGER NOT NULL,
-            conversation_id TEXT,
-            environment TEXT,
-            whatsapp_number TEXT,
-            conversation_type TEXT,
-            contact_seed TEXT,
-            commercial_status TEXT,
-            ai_status TEXT,
-            responsible TEXT,
-            unread_count INTEGER DEFAULT 0,
-            first_unread_at TEXT,
-            pending_followup_for TEXT,
-            eligible_for_auto_send INTEGER DEFAULT 0,
-            shadow_mode INTEGER DEFAULT 1,
-            suggested_reply TEXT,
-            approved_reply TEXT,
-            sent_reply TEXT,
-            approved_by TEXT,
-            rejected INTEGER DEFAULT 0,
-            sent_automatically INTEGER DEFAULT 0,
-            created_by TEXT,
-            created_at TEXT
-        )
-        """
-    )
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS crm_sofia_mensagens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            crm_id INTEGER NOT NULL,
-            paciente_id INTEGER NOT NULL,
-            conversation_id TEXT,
-            environment TEXT,
-            whatsapp_number TEXT,
-            conversation_type TEXT,
-            direction TEXT,
-            message_text TEXT,
-            sent_at TEXT,
-            created_by TEXT,
-            created_at TEXT
-        )
-        """
-    )
-
-    conn.execute(
-        """
         CREATE TABLE IF NOT EXISTS lembretes_agendamento (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             agendamento_id INTEGER,
@@ -1278,51 +1209,6 @@ def inicializar_banco():
     garantir_coluna(conn, "crm_contatos_historico", "criado_por TEXT")
     garantir_coluna(conn, "crm_contatos_historico", "criado_em TEXT")
     garantir_coluna(conn, "crm_contatos_historico", "automatico INTEGER DEFAULT 0")
-    garantir_coluna(conn, "sofia_configuracao", "enabled INTEGER DEFAULT 0")
-    garantir_coluna(conn, "sofia_configuracao", "shadow_mode INTEGER DEFAULT 1")
-    garantir_coluna(conn, "sofia_configuracao", "allowed_environments_json TEXT DEFAULT '[]'")
-    garantir_coluna(conn, "sofia_configuracao", "allowed_whatsapp_numbers_json TEXT DEFAULT '[]'")
-    garantir_coluna(conn, "sofia_configuracao", "allowed_users_json TEXT DEFAULT '[]'")
-    garantir_coluna(conn, "sofia_configuracao", "allowed_conversation_types_json TEXT DEFAULT '[]'")
-    garantir_coluna(conn, "sofia_configuracao", "rollout_percentage INTEGER DEFAULT 0")
-    garantir_coluna(conn, "sofia_configuracao", "business_hours_start TEXT")
-    garantir_coluna(conn, "sofia_configuracao", "business_hours_end TEXT")
-    garantir_coluna(conn, "sofia_configuracao", "atualizado_por TEXT")
-    garantir_coluna(conn, "sofia_configuracao", "atualizado_em TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "crm_id INTEGER NOT NULL")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "paciente_id INTEGER NOT NULL")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "conversation_id TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "environment TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "whatsapp_number TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "conversation_type TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "contact_seed TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "commercial_status TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "ai_status TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "responsible TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "unread_count INTEGER DEFAULT 0")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "first_unread_at TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "pending_followup_for TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "eligible_for_auto_send INTEGER DEFAULT 0")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "shadow_mode INTEGER DEFAULT 1")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "suggested_reply TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "approved_reply TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "sent_reply TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "approved_by TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "rejected INTEGER DEFAULT 0")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "sent_automatically INTEGER DEFAULT 0")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "created_by TEXT")
-    garantir_coluna(conn, "crm_sofia_sugestoes", "created_at TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "crm_id INTEGER NOT NULL")
-    garantir_coluna(conn, "crm_sofia_mensagens", "paciente_id INTEGER NOT NULL")
-    garantir_coluna(conn, "crm_sofia_mensagens", "conversation_id TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "environment TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "whatsapp_number TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "conversation_type TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "direction TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "message_text TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "sent_at TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "created_by TEXT")
-    garantir_coluna(conn, "crm_sofia_mensagens", "created_at TEXT")
     conn.execute(
         """
         UPDATE agendamentos
@@ -1399,10 +1285,6 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_paciente_id ON crm_contatos_historico(paciente_id)")
-    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_sofia_sugestoes_crm_id ON crm_sofia_sugestoes(crm_id)")
-    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_sofia_sugestoes_paciente_id ON crm_sofia_sugestoes(paciente_id)")
-    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_sofia_mensagens_crm_id ON crm_sofia_mensagens(crm_id)")
-    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_sofia_mensagens_paciente_id ON crm_sofia_mensagens(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")

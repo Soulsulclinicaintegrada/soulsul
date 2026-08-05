@@ -8,7 +8,7 @@ function apiBasePadrao() {
   const { protocol, hostname } = window.location;
   const hostNormalizado = hostname.toLowerCase();
   if (!["localhost", "127.0.0.1"].includes(hostNormalizado)) {
-    return "https://soulsul-production.up.railway.app";
+    return "https://api.soulsulclinicaintegrada.com.br";
   }
   return `${protocol}//${hostname}:8001`;
 }
@@ -66,7 +66,6 @@ export type PacienteResumoApi = {
   email?: string;
   dataNascimento?: string;
   fotoUrl?: string;
-  tratamentoSuspenso?: boolean;
 };
 
 export type PacienteDetalheApi = {
@@ -95,15 +94,6 @@ export type PacienteDetalheApi = {
   responsavel?: string;
   cpfResponsavel?: string;
   fotoUrl?: string;
-  tratamentoSuspenso?: boolean;
-  tratamentoSuspensoObservacao?: string;
-  tratamentoSuspensoPor?: string;
-  tratamentoSuspensoEm?: string;
-};
-
-export type TratamentoSuspensaoPacientePayloadApi = {
-  suspenso: boolean;
-  observacao?: string;
 };
 
 export type ProcedimentoResumoApi = {
@@ -801,95 +791,6 @@ export type CrmPainelApi = {
   resgates: CrmResgateItemApi[];
 };
 
-export type SofiaConfiguracaoApi = {
-  enabled: boolean;
-  shadowMode: boolean;
-  allowedEnvironments: string[];
-  allowedWhatsappNumbers: string[];
-  allowedUsers: string[];
-  allowedConversationTypes: string[];
-  rolloutPercentage: number;
-  businessHoursStart: string;
-  businessHoursEnd: string;
-  updatedBy?: string;
-  updatedAt?: string;
-};
-
-export type SofiaShadowSuggestionPayloadApi = {
-  conversationId: string;
-  environment: string;
-  whatsappNumber: string;
-  conversationType: string;
-  contactSeed: string;
-  suggestedReply: string;
-  receivedAt?: string;
-  currentCommercialStatus?: string;
-  pendingFollowupFor?: string;
-  unreadCount?: number;
-  approvedReply?: string;
-  approvedBy?: string;
-  rejected?: boolean;
-};
-
-export type SofiaShadowSuggestionApi = {
-  id: number;
-  crmId: number;
-  pacienteId: number;
-  conversationId?: string;
-  environment?: string;
-  whatsappNumber?: string;
-  conversationType?: string;
-  contactSeed?: string;
-  commercialStatus?: string;
-  aiStatus?: string;
-  responsible?: string;
-  unreadCount?: number;
-  firstUnreadAt?: string;
-  pendingFollowupFor?: string;
-  eligibleForAutoSend?: boolean;
-  shadowMode?: boolean;
-  suggestedReply?: string;
-  approvedReply?: string;
-  sentReply?: string;
-  approvedBy?: string;
-  rejected?: boolean;
-  sentAutomatically?: boolean;
-  createdBy?: string;
-  createdAt?: string;
-};
-
-export type SofiaConversationMessageApi = {
-  id: number;
-  crmId: number;
-  pacienteId: number;
-  conversationId?: string;
-  environment?: string;
-  whatsappNumber?: string;
-  conversationType?: string;
-  direction?: string;
-  messageText?: string;
-  sentAt?: string;
-  createdBy?: string;
-  createdAt?: string;
-};
-
-export type SofiaInboxItemApi = {
-  crmId: number;
-  pacienteId: number;
-  nome: string;
-  telefone?: string;
-  etapaFunil?: string;
-  responsavel?: string;
-  conversationId?: string;
-  whatsappNumber?: string;
-  conversationType?: string;
-  lastMessageText?: string;
-  lastMessageAt?: string;
-  unreadCount?: number;
-  commercialStatus?: string;
-  suggestedReply?: string;
-};
-
 export type CrmAtualizacaoPayloadApi = {
   etapa_funil: string;
   canal: string;
@@ -1036,72 +937,6 @@ export async function listarCrmApi() {
   return fetchJson<CrmPainelApi>(`${API_BASE_URL}/api/crm`);
 }
 
-export async function buscarConfiguracaoSofiaApi() {
-  return fetchJson<SofiaConfiguracaoApi>(`${API_BASE_URL}/api/sofia/configuracao`);
-}
-
-export async function salvarConfiguracaoSofiaApi(payload: SofiaConfiguracaoApi) {
-  return fetchJson<SofiaConfiguracaoApi>(`${API_BASE_URL}/api/sofia/configuracao`, {
-    method: "PUT",
-    body: JSON.stringify(payload)
-  });
-}
-
-export async function listarSugestoesSofiaCrmApi(crmId: number) {
-  return fetchJson<SofiaShadowSuggestionApi[]>(`${API_BASE_URL}/api/crm/${crmId}/sofia/sugestoes`);
-}
-
-export async function avaliarSugestaoSofiaCrmApi(crmId: number, payload: SofiaShadowSuggestionPayloadApi) {
-  return fetchJson<SofiaShadowSuggestionApi>(`${API_BASE_URL}/api/crm/${crmId}/sofia/avaliar`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-}
-
-export async function listarMensagensSofiaCrmApi(crmId: number) {
-  return fetchJson<SofiaConversationMessageApi[]>(`${API_BASE_URL}/api/crm/${crmId}/sofia/mensagens`);
-}
-
-export async function listarInboxSofiaApi(limit = 50) {
-  return fetchJson<SofiaInboxItemApi[]>(`${API_BASE_URL}/api/sofia/inbox?limit=${limit}`);
-}
-
-export async function registrarMensagemSofiaCrmApi(
-  crmId: number,
-  payload: {
-    conversationId: string;
-    environment: string;
-    whatsappNumber: string;
-    conversationType: string;
-    direction: string;
-    messageText: string;
-    sentAt?: string;
-    currentCommercialStatus?: string;
-    pendingFollowupFor?: string;
-    unreadCount?: number;
-  }
-) {
-  return fetchJson<SofiaShadowSuggestionApi>(`${API_BASE_URL}/api/crm/${crmId}/sofia/mensagens`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-}
-
-export async function receberMensagemTesteSofiaApi(payload: {
-  patientName?: string;
-  phone: string;
-  messageText: string;
-  environment?: string;
-  whatsappNumber: string;
-  conversationType?: string;
-  sentAt?: string;
-}) {
-  return fetchJson<SofiaInboxItemApi>(`${API_BASE_URL}/api/sofia/webhook/test`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-}
-
 export async function marcarPacienteFinalizadoCrmApi(pacienteId: number) {
   return fetchJson<CrmPacienteItemApi>(`${API_BASE_URL}/api/crm/pacientes/${pacienteId}/finalizado`, {
     method: "POST"
@@ -1176,16 +1011,6 @@ export async function buscarProximoProntuarioApi() {
 
 export async function atualizarPacienteApi(pacienteId: number, payload: PacienteApiPayload) {
   return fetchJson<PacienteDetalheApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}`, {
-    method: "PUT",
-    body: JSON.stringify(payload)
-  });
-}
-
-export async function atualizarSuspensaoTratamentoPacienteApi(
-  pacienteId: number,
-  payload: TratamentoSuspensaoPacientePayloadApi
-) {
-  return fetchJson<PacienteDetalheApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/tratamento-suspensao`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });

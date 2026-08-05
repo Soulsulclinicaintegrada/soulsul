@@ -10,7 +10,7 @@ function apiBasePadrao() {
   const { protocol, hostname } = window.location;
   const hostNormalizado = hostname.toLowerCase();
   if (!["localhost", "127.0.0.1"].includes(hostNormalizado)) {
-    return "https://soulsul-production.up.railway.app";
+    return "https://agenda-api.soulsulclinicaintegrada.com.br";
   }
   return `${protocol}//${hostname}:8002`;
 }
@@ -71,7 +71,6 @@ export type AgendaApiAgendamento = {
   recorrenciaIntervaloDias?: number;
   recorrenciaTotal?: number;
   recorrenciaIndice?: number;
-  tratamentoSuspenso?: boolean;
   historico?: Array<{
     acao: string;
     descricao: string;
@@ -144,7 +143,6 @@ export type AgendaPacienteBuscaItem = {
   financeiro?: string;
   bloqueadoAtendimento?: boolean;
   mensagemBloqueio?: string;
-  tratamentoSuspenso?: boolean;
 };
 
 export type AgendaProcedimentoContrato = {
@@ -165,7 +163,6 @@ export type AgendaPacienteContexto = {
   financeiro?: string;
   bloqueadoAtendimento?: boolean;
   mensagemBloqueio?: string;
-  tratamentoSuspenso?: boolean;
   procedimentosContratados: AgendaProcedimentoContrato[];
   guiasEmitidas: Array<{
     id: number;

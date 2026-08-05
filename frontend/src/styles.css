@@ -1550,10 +1550,6 @@ textarea::placeholder {
   color: var(--muted);
 }
 
-.patient-photo-upload-actions {
-  margin-top: 8px;
-}
-
 .patient-form-heading-icon {
   display: inline-flex;
   align-items: center;
@@ -4935,20 +4931,6 @@ textarea::placeholder {
   background: #ffffff !important;
 }
 
-.agenda-event-card.treatment-suspended {
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.agenda-event-card.treatment-suspended .agenda-event-card-copy strong,
-.agenda-event-card.treatment-suspended .agenda-event-card-copy span {
-  color: #ffffff;
-}
-
-.agenda-event-card.treatment-suspended .agenda-event-dot {
-  background: #ffffff !important;
-}
-
 .agenda-week-badge {
   display: inline-flex;
   align-items: center;
@@ -5135,11 +5117,6 @@ textarea::placeholder {
 }
 
 .agenda-week-event-block.financial-alert {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.agenda-week-event-block.treatment-suspended {
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.2);
 }
