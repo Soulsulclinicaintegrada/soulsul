@@ -8,7 +8,7 @@ function apiBasePadrao() {
   const { protocol, hostname } = window.location;
   const hostNormalizado = hostname.toLowerCase();
   if (!["localhost", "127.0.0.1"].includes(hostNormalizado)) {
-    return "https://api.soulsulclinicaintegrada.com.br";
+    return "https://soulsul-production.up.railway.app";
   }
   return `${protocol}//${hostname}:8001`;
 }
@@ -66,6 +66,7 @@ export type PacienteResumoApi = {
   email?: string;
   dataNascimento?: string;
   fotoUrl?: string;
+  tratamentoSuspenso?: boolean;
 };
 
 export type PacienteDetalheApi = {
@@ -94,6 +95,15 @@ export type PacienteDetalheApi = {
   responsavel?: string;
   cpfResponsavel?: string;
   fotoUrl?: string;
+  tratamentoSuspenso?: boolean;
+  tratamentoSuspensoObservacao?: string;
+  tratamentoSuspensoPor?: string;
+  tratamentoSuspensoEm?: string;
+};
+
+export type TratamentoSuspensaoPayloadApi = {
+  suspenso: boolean;
+  observacao?: string;
 };
 
 export type ProcedimentoResumoApi = {
@@ -814,6 +824,58 @@ export type CrmResgateAtualizacaoPayloadApi = {
   proximo_contato: string;
 };
 
+export type ChecklistUsuarioItemApi = {
+  id: number;
+  titulo: string;
+  descricao?: string;
+  tipoMeta: string;
+  metaDiaria: number;
+  progressoAtual: number;
+  progressoManual: number;
+  progressoAutomatico: number;
+  concluido: boolean;
+  concluidoManual: boolean;
+  ativo: boolean;
+  ordem: number;
+  atualizadoEm?: string;
+};
+
+export type ChecklistUsuarioResumoApi = {
+  total: number;
+  concluidos: number;
+  pendentes: number;
+  progressoPercentual: number;
+};
+
+export type ChecklistUsuarioPainelApi = {
+  dataReferencia: string;
+  itens: ChecklistUsuarioItemApi[];
+  resumo: ChecklistUsuarioResumoApi;
+  tiposAutomaticos: Array<{ id: string; label: string }>;
+};
+
+export type ChecklistUsuarioItemPayloadApi = {
+  titulo: string;
+  descricao?: string;
+  tipo_meta: string;
+  meta_diaria: number;
+  ativo?: boolean;
+};
+
+export type ChecklistUsuarioItemAtualizacaoPayloadApi = {
+  titulo?: string;
+  descricao?: string;
+  tipo_meta?: string;
+  meta_diaria?: number;
+  ativo?: boolean;
+  ordem?: number;
+};
+
+export type ChecklistUsuarioRegistroPayloadApi = {
+  progresso_manual?: number;
+  concluido_manual?: boolean;
+};
+
 function normalizarErro(detail: unknown, fallback: string) {
   if (Array.isArray(detail)) {
     return detail.join(" ");
@@ -994,6 +1056,37 @@ export async function atualizarCrmResgateApi(contratoId: number, payload: CrmRes
   });
 }
 
+export async function buscarChecklistMeuApi() {
+  return fetchJson<ChecklistUsuarioPainelApi>(`${API_BASE_URL}/api/checklist/me`);
+}
+
+export async function criarChecklistMeuApi(payload: ChecklistUsuarioItemPayloadApi) {
+  return fetchJson<ChecklistUsuarioItemApi>(`${API_BASE_URL}/api/checklist/me`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function atualizarChecklistApi(checklistId: number, payload: ChecklistUsuarioItemAtualizacaoPayloadApi) {
+  return fetchJson<ChecklistUsuarioItemApi>(`${API_BASE_URL}/api/checklist/${checklistId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function atualizarRegistroChecklistApi(checklistId: number, payload: ChecklistUsuarioRegistroPayloadApi) {
+  return fetchJson<ChecklistUsuarioItemApi>(`${API_BASE_URL}/api/checklist/${checklistId}/registro`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function arquivarChecklistApi(checklistId: number) {
+  return fetchJson<ChecklistUsuarioItemApi>(`${API_BASE_URL}/api/checklist/${checklistId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function odontogramaPacienteApi(pacienteId: number) {
   return fetchJson<OdontogramaPacienteApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/odontograma`);
 }
@@ -1011,6 +1104,16 @@ export async function buscarProximoProntuarioApi() {
 
 export async function atualizarPacienteApi(pacienteId: number, payload: PacienteApiPayload) {
   return fetchJson<PacienteDetalheApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function atualizarSuspensaoTratamentoPacienteApi(
+  pacienteId: number,
+  payload: TratamentoSuspensaoPayloadApi
+) {
+  return fetchJson<PacienteDetalheApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/tratamento-suspensao`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });

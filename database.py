@@ -895,6 +895,36 @@ def inicializar_banco():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS checklist_usuario_itens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            titulo TEXT NOT NULL,
+            descricao TEXT,
+            tipo_meta TEXT DEFAULT 'manual',
+            meta_diaria INTEGER DEFAULT 1,
+            ativo INTEGER DEFAULT 1,
+            ordem INTEGER DEFAULT 0,
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS checklist_usuario_registros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checklist_id INTEGER NOT NULL,
+            data_referencia TEXT NOT NULL,
+            progresso_manual INTEGER DEFAULT 0,
+            concluido_manual INTEGER DEFAULT 0,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS recibos_manuais (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             numero INTEGER,
@@ -1098,6 +1128,20 @@ def inicializar_banco():
     garantir_coluna(conn, "usuarios", "modulos_json TEXT DEFAULT '{}'")
     garantir_coluna(conn, "usuarios", "pacientes_abas_json TEXT DEFAULT '{}'")
     garantir_coluna(conn, "usuarios", "data_criacao TEXT")
+    garantir_coluna(conn, "checklist_usuario_itens", "usuario_id INTEGER")
+    garantir_coluna(conn, "checklist_usuario_itens", "titulo TEXT")
+    garantir_coluna(conn, "checklist_usuario_itens", "descricao TEXT")
+    garantir_coluna(conn, "checklist_usuario_itens", "tipo_meta TEXT DEFAULT 'manual'")
+    garantir_coluna(conn, "checklist_usuario_itens", "meta_diaria INTEGER DEFAULT 1")
+    garantir_coluna(conn, "checklist_usuario_itens", "ativo INTEGER DEFAULT 1")
+    garantir_coluna(conn, "checklist_usuario_itens", "ordem INTEGER DEFAULT 0")
+    garantir_coluna(conn, "checklist_usuario_itens", "criado_em TEXT")
+    garantir_coluna(conn, "checklist_usuario_itens", "atualizado_em TEXT")
+    garantir_coluna(conn, "checklist_usuario_registros", "checklist_id INTEGER")
+    garantir_coluna(conn, "checklist_usuario_registros", "data_referencia TEXT")
+    garantir_coluna(conn, "checklist_usuario_registros", "progresso_manual INTEGER DEFAULT 0")
+    garantir_coluna(conn, "checklist_usuario_registros", "concluido_manual INTEGER DEFAULT 0")
+    garantir_coluna(conn, "checklist_usuario_registros", "atualizado_em TEXT")
     garantir_coluna(conn, "agenda_configuracao", "ordem_profissionais_json TEXT DEFAULT '[]'")
     garantir_coluna(conn, "agenda_configuracao", "config_clinica_dias_json TEXT DEFAULT '{}'")
     garantir_coluna(conn, "agenda_configuracao", "config_profissionais_json TEXT DEFAULT '{}'")
@@ -1278,6 +1322,8 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agendamento_procedimentos_agendamento_id ON agendamento_procedimentos(agendamento_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agendamento_historico_agendamento_id ON agendamento_historico(agendamento_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_lembretes_agendamento_id ON lembretes_agendamento(agendamento_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_checklist_usuario_itens_usuario ON checklist_usuario_itens(usuario_id, ativo, ordem)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_usuario_registros_dia ON checklist_usuario_registros(checklist_id, data_referencia)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_paciente_id ON ordens_servico_protetico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_etapas_ordem_id ON ordem_servico_protetico_etapas(ordem_servico_id)")
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pacientes_paciente_id ON crm_pacientes(paciente_id)")

@@ -423,6 +423,10 @@ textarea::placeholder {
   gap: 14px;
 }
 
+.checklist-topbar-button {
+  white-space: nowrap;
+}
+
 .topbar-menu-toggle {
   display: inline-flex;
   align-items: center;
@@ -2674,6 +2678,120 @@ textarea::placeholder {
   border-radius: 10px;
   border: 1px solid rgba(199, 170, 120, 0.18);
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.18);
+}
+
+.checklist-drawer {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  height: min(920px, calc(100vh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.checklist-body {
+  padding-bottom: 28px;
+}
+
+.checklist-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.checklist-create-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.checklist-preset-groups {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.checklist-preset-group {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(199, 170, 120, 0.18);
+}
+
+.checklist-preset-group strong {
+  color: #2f241d;
+}
+
+.checklist-items {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.checklist-section-block {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.checklist-item-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.checklist-item-card.done {
+  border-color: rgba(47, 106, 82, 0.32);
+  background: linear-gradient(180deg, rgba(239, 249, 243, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.checklist-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.checklist-item-top strong {
+  display: block;
+  color: #2f241d;
+}
+
+.checklist-item-top span {
+  display: block;
+  color: #7a685a;
+  font-size: 0.84rem;
+  margin-top: 0.2rem;
+}
+
+.checklist-item-top p {
+  margin: 0.45rem 0 0;
+  color: #5f5246;
+  line-height: 1.5;
+}
+
+.checklist-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(47, 106, 82, 0.12);
+  color: #2f6a52;
+  font-weight: 800;
+}
+
+.checklist-progress-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(188, 145, 85, 0.16);
+  overflow: hidden;
+}
+
+.checklist-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2f6a52 0%, #6ea887 100%);
 }
 
 .modal-shell {
@@ -5917,6 +6035,52 @@ textarea::placeholder {
   gap: 12px;
 }
 
+.agenda-reminders-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.agenda-reminders-list {
+  display: grid;
+  gap: 8px;
+}
+
+.agenda-reminder-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(199, 170, 120, 0.16);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.agenda-reminder-card.confirmacao {
+  border-left: 4px solid #bc9155;
+}
+
+.agenda-reminder-card.avaliacao {
+  border-left: 4px solid #2f6a52;
+}
+
+.agenda-reminder-card.reagendamento {
+  border-left: 4px solid #b44b39;
+}
+
+.agenda-reminder-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.agenda-reminder-copy strong {
+  color: #2f241d;
+}
+
+.agenda-reminder-copy span {
+  color: #7a685a;
+  font-size: 0.82rem;
+}
+
 .agenda-profissionais-list {
   display: grid;
   gap: 8px;
@@ -6894,6 +7058,106 @@ textarea::placeholder {
   gap: 0.9rem 1rem;
 }
 
+.crm-kanban-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.crm-kanban-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-height: 320px;
+  padding: 0.9rem;
+  border: 1px solid rgba(198, 176, 139, 0.24);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 244, 236, 0.96));
+}
+
+.crm-kanban-column-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.crm-kanban-column-header strong {
+  display: block;
+  color: #2f241d;
+}
+
+.crm-kanban-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(47, 106, 82, 0.12);
+  color: #2f6a52;
+  font-weight: 800;
+}
+
+.crm-kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.crm-kanban-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.95rem;
+  border-radius: 16px;
+  border: 1px solid rgba(198, 176, 139, 0.28);
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(36, 27, 19, 0.06);
+  cursor: grab;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.crm-kanban-card:hover,
+.crm-kanban-card.active {
+  transform: translateY(-1px);
+  border-color: rgba(47, 106, 82, 0.38);
+  box-shadow: 0 16px 34px rgba(36, 27, 19, 0.1);
+}
+
+.crm-kanban-card.dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+
+.crm-kanban-card-top strong,
+.crm-kanban-card-top span,
+.crm-kanban-card-meta span {
+  display: block;
+}
+
+.crm-kanban-card-meta {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.crm-kanban-card-meta span {
+  color: #7a685a;
+  font-size: 0.82rem;
+}
+
+.crm-kanban-empty {
+  padding: 1rem;
+  border: 1px dashed rgba(198, 176, 139, 0.42);
+  border-radius: 16px;
+  color: #7a685a;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.66);
+}
+
 .crm-funnel-grid-shell {
   margin-top: 1rem;
   border: 1px solid rgba(198, 176, 139, 0.22);
@@ -7266,8 +7530,16 @@ textarea::placeholder {
 }
 
 @media (max-width: 980px) {
+  .checklist-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .crm-grid {
     grid-template-columns: 1fr;
+  }
+
+  .crm-kanban-board {
+    grid-template-columns: repeat(8, minmax(240px, 1fr));
   }
 
   .crm-form-grid {
@@ -7289,6 +7561,10 @@ textarea::placeholder {
   .patient-record-topbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .checklist-item-top {
+    flex-direction: column;
   }
 }
 

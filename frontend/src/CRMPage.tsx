@@ -43,6 +43,7 @@ type RelatorioCrmItem = {
 type CrmAba = "funil" | "agendados" | "finalizacao" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
 type FinalizacaoSubAba = "finalizar" | "finalizados";
 type RelatorioAberto = "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram" | "avaliacoes-sem-reagendamento" | "palavras-chave";
+type CrmEtapa = (typeof ETAPAS_CRM)[number];
 
 const AVALIACAO_PLACEHOLDER: CrmAvaliacaoItemApi = {
   pacienteId: -1,
@@ -313,6 +314,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [relatorioPalavrasBusca, setRelatorioPalavrasBusca] = useState("");
   const [novoLeadManual, setNovoLeadManual] = useState<CrmNovoLeadPayloadApi>({ nome: "", telefone: "" });
   const [pacientesSomenteAvaliacaoIds, setPacientesSomenteAvaliacaoIds] = useState<number[]>([]);
+  const [kanbanArrastandoId, setKanbanArrastandoId] = useState<number | null>(null);
 
   async function carregarPainel() {
     setCarregando(true);
@@ -578,6 +580,16 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const leadsFunilFiltrados = useMemo(
     () => pipelineFiltrado.filter((item) => correspondeBusca(item, termoBuscaLead)),
     [pipelineFiltrado, termoBuscaLead]
+  );
+  const funilKanban = useMemo(
+    () =>
+      ETAPAS_CRM.map((etapa) => ({
+        etapa,
+        itens: leadsFunilFiltrados
+          .filter((item) => (item.etapaFunil || "Novo lead") === etapa)
+          .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")),
+      })),
+    [leadsFunilFiltrados]
   );
   const letrasFinalizar = useMemo(
     () =>
@@ -874,6 +886,36 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       setErro(error instanceof Error ? error.message : "Falha ao salvar o CRM.");
     } finally {
       setSalvandoId(null);
+    }
+  }
+
+  async function moverLeadKanban(item: CrmPacienteItemApi, etapaDestino: CrmEtapa) {
+    const etapaAtual = item.etapaFunil || "Novo lead";
+    if (etapaAtual === etapaDestino) return;
+    const atualizadoLocal = {
+      ...item,
+      etapaFunil: etapaDestino,
+      ultimaInteracao: item.ultimaInteracao || hojeIso(),
+    };
+    atualizarItemLocal(item.id, atualizadoLocal);
+    setLeadSelecionadoId(item.id);
+    setFeedback(`Lead movido para ${etapaDestino}.`);
+    try {
+      const atualizado = await atualizarCrmApi(item.id, {
+        etapa_funil: etapaDestino,
+        canal: atualizadoLocal.canal || "Facebook",
+        campanha: atualizadoLocal.campanha || "",
+        conjunto_anuncio: atualizadoLocal.conjuntoAnuncio || "",
+        anuncio: atualizadoLocal.anuncio || "",
+        responsavel: atualizadoLocal.responsavel || "",
+        proximo_contato: atualizadoLocal.proximoContato || "",
+        observacao: atualizadoLocal.observacao || "",
+        ultima_interacao: atualizadoLocal.ultimaInteracao || "",
+      });
+      atualizarItemLocal(item.id, normalizarItemCrm(atualizado));
+    } catch (error) {
+      atualizarItemLocal(item.id, { etapaFunil: etapaAtual });
+      setErro(error instanceof Error ? error.message : "Falha ao mover lead no kanban.");
     }
   }
 
@@ -2045,6 +2087,83 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
                     placeholder="Ex.: Maria, 2299..., Facebook ou Conversando"
                   />
                 </label>
+              </div>
+              <div className="crm-kanban-board">
+                {funilKanban.map((coluna) => (
+                  <section
+                    key={coluna.etapa}
+                    className="crm-kanban-column"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const leadId = Number(event.dataTransfer.getData("text/plain"));
+                      const lead = leadsFunilFiltrados.find((item) => item.id === leadId);
+                      setKanbanArrastandoId(null);
+                      if (!lead) return;
+                      void moverLeadKanban(lead, coluna.etapa);
+                    }}
+                  >
+                    <header className="crm-kanban-column-header">
+                      <div>
+                        <span className="panel-kicker">Etapa</span>
+                        <strong>{coluna.etapa}</strong>
+                      </div>
+                      <span className="crm-kanban-count">{coluna.itens.length}</span>
+                    </header>
+                    <div className="crm-kanban-cards">
+                      {coluna.itens.length ? coluna.itens.map((item) => (
+                        <article
+                          key={`kanban-${item.id}`}
+                          className={`crm-kanban-card${leadSelecionado?.id === item.id ? " active" : ""}${kanbanArrastandoId === item.id ? " dragging" : ""}`}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData("text/plain", String(item.id));
+                            event.dataTransfer.effectAllowed = "move";
+                            setKanbanArrastandoId(item.id);
+                          }}
+                          onDragEnd={() => setKanbanArrastandoId(null)}
+                          onClick={() => setLeadSelecionadoId(item.id)}
+                        >
+                          <div className="crm-kanban-card-top">
+                            <strong>{item.nome}</strong>
+                            <span>{item.prontuario || "Sem prontuário"}</span>
+                          </div>
+                          <div className="crm-kanban-card-meta">
+                            <span>{item.telefone || "Sem telefone"}</span>
+                            <span>{item.responsavel || "Sem responsável"}</span>
+                            <span>{item.proximoContato ? `Próx. contato ${item.proximoContato}` : "Sem próximo contato"}</span>
+                          </div>
+                          <div className="crm-inline-actions">
+                            {item.pacienteId ? (
+                              <button
+                                type="button"
+                                className="ghost-action compact"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onAbrirPaciente?.(item.pacienteId);
+                                }}
+                              >
+                                Abrir
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="ghost-action compact"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setLeadSelecionadoId(item.id);
+                              }}
+                            >
+                              Editar
+                            </button>
+                          </div>
+                        </article>
+                      )) : (
+                        <div className="crm-kanban-empty">Nenhum lead nesta etapa.</div>
+                      )}
+                    </div>
+                  </section>
+                ))}
               </div>
               <div className="crm-funnel-grid-shell">
                 <table className="crm-funnel-table">

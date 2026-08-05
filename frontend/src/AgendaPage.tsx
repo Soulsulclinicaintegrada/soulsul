@@ -38,7 +38,7 @@ import {
   type AgendaProcedimentoPayload,
   type AgendaSalvarPayload
 } from "./agendaApi";
-import { buscarProximoProntuarioApi, criarPacienteApi, listarPacientesApi, listarUsuariosApi, type PacienteApiPayload, type UsuarioResumoApi } from "./pacientesApi";
+import { criarPacienteApi, listarPacientesApi, listarUsuariosApi, type PacienteApiPayload, type UsuarioResumoApi } from "./pacientesApi";
 import { tiposAtendimentoAgenda } from "./mockData";
 import type { UsuarioSessao } from "./auth";
 
@@ -100,6 +100,13 @@ type DesmarqueConsultaForm = {
   responsavel: "Paciente" | "Profissional";
 };
 
+type AgendaLembreteOperacional = {
+  tipo: "confirmacao" | "avaliacao" | "reagendamento";
+  titulo: string;
+  descricao: string;
+  evento: AgendaEventoUI;
+};
+
 const SLOT_HEIGHT = 24;
 const AGENDA_HEADER_HEIGHT = 44;
 const HORARIOS = gerarSlotsQuinzeMinutos("07:00", "20:00");
@@ -156,6 +163,32 @@ type AgendaPageProps = {
 function statusOcultoNaAgenda(status?: string) {
   const normalizado = String(status || "").trim().toLowerCase();
   return normalizado === "desmarcado" || normalizado === "cancelado";
+}
+
+function normalizarStatusAgendaTexto(status?: string) {
+  return String(status || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function eventoEhAvaliacaoAgenda(evento: AgendaEventoUI) {
+  const blocos = [
+    evento.tipoAtendimento || "",
+    ...(Array.isArray(evento.procedimentos) ? evento.procedimentos : []),
+    evento.observacoes || "",
+  ];
+  const texto = blocos
+    .join(" ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return texto.includes("avaliacao") || /\baval\b/.test(texto);
+}
+
+function compararHorarioTexto(a: string, b: string) {
+  return paraMinutos(a) - paraMinutos(b);
 }
 
 type ConfigProfissionalAgenda = {
@@ -586,7 +619,8 @@ function corTipo(tipoId: number) {
   return tiposAtendimentoAgenda.find((item) => item.id === tipoId)?.cor ?? "#c7efd6";
 }
 
-function corEventoAgenda(evento: Pick<AgendaEventoUI, "tipoAtendimentoId" | "tipoAtendimento" | "procedimentos" | "financeiro">) {
+function corEventoAgenda(evento: Pick<AgendaEventoUI, "tipoAtendimentoId" | "tipoAtendimento" | "procedimentos" | "financeiro" | "tratamentoSuspenso">) {
+  if (evento.tratamentoSuspenso) return "#6b4423";
   if (classeFinanceiroAgenda(evento.financeiro) === "devedor") return "#111111";
   return corTipo(evento.tipoAtendimentoId);
 }
@@ -765,6 +799,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [financeiroPacienteAgenda, setFinanceiroPacienteAgenda] = useState("");
   const [pacienteBloqueadoAtendimento, setPacienteBloqueadoAtendimento] = useState(false);
   const [mensagemBloqueioPaciente, setMensagemBloqueioPaciente] = useState("");
+  const [pacienteTratamentoSuspenso, setPacienteTratamentoSuspenso] = useState(false);
   const [guiasEmitidasPaciente, setGuiasEmitidasPaciente] = useState<Array<{ id: number; procedimentoNome: string; retornoSolicitado?: string; documentoNome: string; elementoArcada?: string; dataEmissao?: string; etapasResumo?: string }>>([]);
   const [procedimentosSelecionados, setProcedimentosSelecionados] = useState<ProcedimentoSelecionado[]>([]);
   const [procedimentoContratoSelecionado, setProcedimentoContratoSelecionado] = useState("");
@@ -932,6 +967,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         setFinanceiroPacienteAgenda(contexto.financeiro || "");
         setPacienteBloqueadoAtendimento(Boolean(contexto.bloqueadoAtendimento));
         setMensagemBloqueioPaciente(contexto.mensagemBloqueio || "");
+        setPacienteTratamentoSuspenso(Boolean(contexto.tratamentoSuspenso));
         setForm((atual) => ({
           ...atual,
           nomePaciente: atual.nomePaciente || contexto.nome,
@@ -1100,6 +1136,45 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     () => eventosFiltradosProfissionais.filter((evento) => diasSemana.map(isoParaBr).includes(evento.data)),
     [eventosFiltradosProfissionais, diasSemana]
   );
+  const lembretesOperacionais = useMemo(() => {
+    const eventosDiaSelecionado = eventosFiltradosProfissionais
+      .filter((evento) => evento.data === isoParaBr(dataSelecionada))
+      .sort((a, b) => compararHorarioTexto(a.inicio, b.inicio));
+    const confirmacoes = eventosDiaSelecionado
+      .filter((evento) => {
+        const status = normalizarStatusAgendaTexto(evento.status);
+        return status === "agendado" || status === "aguardando";
+      })
+      .slice(0, 5)
+      .map<AgendaLembreteOperacional>((evento) => ({
+        tipo: "confirmacao",
+        titulo: `${evento.inicio} · Confirmar presença`,
+        descricao: `${evento.paciente} · ${evento.telefone || "Sem telefone"}`,
+        evento,
+      }));
+    const avaliacoesDia = eventosDiaSelecionado
+      .filter((evento) => eventoEhAvaliacaoAgenda(evento))
+      .slice(0, 5)
+      .map<AgendaLembreteOperacional>((evento) => ({
+        tipo: "avaliacao",
+        titulo: `${evento.inicio} · Avaliação marcada`,
+        descricao: `${evento.paciente} · ${evento.profissional}`,
+        evento,
+      }));
+    const reagendamentos = eventosDiaSelecionado
+      .filter((evento) => {
+        const status = normalizarStatusAgendaTexto(evento.status);
+        return status === "faltou" || status === "desmarcado";
+      })
+      .slice(0, 5)
+      .map<AgendaLembreteOperacional>((evento) => ({
+        tipo: "reagendamento",
+        titulo: `${evento.inicio} · Reagendar retorno`,
+        descricao: `${evento.paciente} · ${evento.status}`,
+        evento,
+      }));
+    return [...confirmacoes, ...avaliacoesDia, ...reagendamentos];
+  }, [dataSelecionada, eventosFiltradosProfissionais]);
   function nomeProfissionalPorId(profissionalId: number) {
     return profissionaisTodos.find((item) => item.id === profissionalId)?.nome ?? "Profissional";
   }
@@ -1517,6 +1592,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
       setFinanceiroPacienteAgenda(contexto.financeiro || "");
       setPacienteBloqueadoAtendimento(Boolean(contexto.bloqueadoAtendimento));
       setMensagemBloqueioPaciente(contexto.mensagemBloqueio || "");
+      setPacienteTratamentoSuspenso(Boolean(contexto.tratamentoSuspenso));
       setProcedimentoContratoSelecionado("");
       setForm((atual) => ({
         ...atual,
@@ -1529,6 +1605,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     } else {
       setContextoPaciente([]);
       setGuiasEmitidasPaciente([]);
+      setFinanceiroPacienteAgenda("");
+      setPacienteBloqueadoAtendimento(false);
+      setMensagemBloqueioPaciente("");
+      setPacienteTratamentoSuspenso(false);
       setProcedimentoContratoSelecionado("");
     }
     setProcedimentosSelecionados(
@@ -1560,12 +1640,14 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setFinanceiroPacienteAgenda(item.financeiro || "");
     setPacienteBloqueadoAtendimento(Boolean(item.bloqueadoAtendimento));
     setMensagemBloqueioPaciente(item.mensagemBloqueio || "");
+    setPacienteTratamentoSuspenso(Boolean(item.tratamentoSuspenso));
     const contexto = await buscarContextoPacienteAgenda(item.id, isoParaBr(form.data));
     setContextoPaciente(contexto.procedimentosContratados);
     setGuiasEmitidasPaciente(contexto.guiasEmitidas);
     setFinanceiroPacienteAgenda(contexto.financeiro || item.financeiro || "");
     setPacienteBloqueadoAtendimento(Boolean(contexto.bloqueadoAtendimento));
     setMensagemBloqueioPaciente(contexto.mensagemBloqueio || item.mensagemBloqueio || "");
+    setPacienteTratamentoSuspenso(Boolean(contexto.tratamentoSuspenso || item.tratamentoSuspenso));
     setProcedimentoContratoSelecionado("");
     setForm((atual) => ({
       ...atual,
@@ -1595,6 +1677,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     setFinanceiroPacienteAgenda("");
     setPacienteBloqueadoAtendimento(false);
     setMensagemBloqueioPaciente("");
+    setPacienteTratamentoSuspenso(false);
+    setPacienteTratamentoSuspenso(false);
     setProcedimentoContratoSelecionado("");
     setModoNovoPacienteRapido(true);
   }
@@ -1603,12 +1687,11 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     const nome = form.pacienteBusca.trim();
     const celular = form.celular.trim();
     if (!nome || !celular) return null;
-    const { prontuario } = await buscarProximoProntuarioApi();
     const payload: PacienteApiPayload = {
       nome,
       apelido: "",
       sexo: "",
-      prontuario: String(prontuario || "").trim(),
+      prontuario: "",
       cpf: "",
       rg: "",
       data_nascimento: "",
@@ -1781,6 +1864,11 @@ function atualizarConfigProfissionalDia(
     const ehConsulta = abaModal === "Nova Consulta";
     if (!nomePrincipal || !slotsSelecionados.length || (ehConsulta && !form.celular.trim())) return;
     let autorizacaoSenha = "";
+    if (ehConsulta && pacienteTratamentoSuspenso) {
+      window.alert("ESTE PACIENTE ESTÁ BLOQUEADO, NÃO PODE SER AGENDADO.");
+      setErroAgendaModal("ESTE PACIENTE ESTÁ BLOQUEADO, NÃO PODE SER AGENDADO.");
+      return;
+    }
     if (ehConsulta && pacienteBloqueadoAtendimento) {
       autorizacaoSenha = solicitarSenhaAutorizacaoBloqueio();
       if (!autorizacaoSenha && !usuarioPodeLiberarBloqueioFinanceiro) {
@@ -2184,6 +2272,10 @@ function atualizarConfigProfissionalDia(
   async function atualizarStatusAgendamento(id: number, status: AgendaEventoUI["status"]) {
     const evento = eventos.find((item) => item.id === id);
     if (!evento) return;
+    if (evento.tratamentoSuspenso) {
+      window.alert("ESTE PACIENTE ESTÁ BLOQUEADO, NÃO PODE TER O STATUS ALTERADO.");
+      return;
+    }
     try {
       await persistirAtualizacaoRapidaAgendamento(evento, { status }, { status });
       if (statusOcultoNaAgenda(status)) {
@@ -2514,7 +2606,7 @@ function atualizarConfigProfissionalDia(
                       <button
                         key={evento.id}
                         type="button"
-                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
+                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}${evento.tratamentoSuspenso ? " treatment-suspended" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
                         style={{
                           top: `${topo}px`,
                           height: `${altura}px`,
@@ -2641,13 +2733,13 @@ function atualizarConfigProfissionalDia(
                       <button
                         key={evento.id}
                         type="button"
-                        className={`agenda-week-event-block${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
+                        className={`agenda-week-event-block${evento.tratamentoSuspenso ? " treatment-suspended" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
                         style={{
                           top: `${topo}px`,
                           height: `${Math.max(altura, 18)}px`,
                           width: largura,
                           left: esquerda,
-                          background: corProfissionalPorId(evento.profissionalId)
+                          background: evento.tratamentoSuspenso ? "#6b4423" : corProfissionalPorId(evento.profissionalId)
                         }}
                         onClick={(event) => {
                           event.stopPropagation();
@@ -2731,6 +2823,41 @@ function atualizarConfigProfissionalDia(
       <section className="agenda-shell">
         <aside className="panel agenda-leftbar">
           {renderCalendarioLateral()}
+          <div className="agenda-reminders-panel">
+            <div className="section-title-row">
+              <div><span className="panel-kicker">Operação</span><h2>Lembretes do dia</h2></div>
+            </div>
+            <div className="agenda-reminders-list">
+              {lembretesOperacionais.length ? lembretesOperacionais.map((item) => (
+                <article key={`${item.tipo}-${item.evento.id}`} className={`agenda-reminder-card ${item.tipo}`}>
+                  <div className="agenda-reminder-copy">
+                    <strong>{item.titulo}</strong>
+                    <span>{item.descricao}</span>
+                  </div>
+                  <div className="crm-inline-actions">
+                    {item.evento.pacienteId ? (
+                      <button
+                        type="button"
+                        className="ghost-action compact"
+                        onClick={() => onAbrirPaciente?.(item.evento.pacienteId!, "cadastro")}
+                      >
+                        Paciente
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="ghost-action compact"
+                      onClick={() => void abrirEdicaoAgendamento(item.evento)}
+                    >
+                      Editar
+                    </button>
+                  </div>
+                </article>
+              )) : (
+                <div className="module-subitem"><strong>Nenhum lembrete operacional para esta data.</strong></div>
+              )}
+            </div>
+          </div>
           <div className="agenda-profissionais-panel">
             <div className="section-title-row">
               <div><span className="panel-kicker">Equipe</span><h2>Profissionais</h2></div>
@@ -2862,13 +2989,21 @@ function atualizarConfigProfissionalDia(
               <span>Status</span>
               <div className="agenda-status-select-row">
                 <span className={`agenda-event-status-dot ${classeStatusAgendamento(detalheAtivo.status)}`} style={{ background: corStatusAgendamento(detalheAtivo.status) }} />
-                <select value={detalheAtivo.status} onChange={(event) => void atualizarStatusAgendamento(detalheAtivo.id, event.target.value as AgendaEventoUI["status"])}>
+                <select
+                  value={detalheAtivo.status}
+                  disabled={Boolean(detalheAtivo.tratamentoSuspenso)}
+                  title={detalheAtivo.tratamentoSuspenso ? "Paciente com tratamento suspenso" : undefined}
+                  onChange={(event) => void atualizarStatusAgendamento(detalheAtivo.id, event.target.value as AgendaEventoUI["status"])}
+                >
                   {STATUS_AGENDA_OPCOES.map((status) => (
                     <option key={status} value={status}>{status}</option>
                   ))}
                 </select>
               </div>
             </label>
+            {detalheAtivo.tratamentoSuspenso ? (
+              <div className="agenda-inline-hint blocked">Paciente com tratamento suspenso. O status deste agendamento não pode ser alterado.</div>
+            ) : null}
             <div><strong>Agendado por:</strong> {detalheAtivo.agendadoPor || "Sistema"}</div>
             <div><strong>Agendado em:</strong> {detalheAtivo.agendadoEm ?? "Agora"}</div>
             <div><strong>Profissional:</strong> {detalheAtivo.profissional}</div>

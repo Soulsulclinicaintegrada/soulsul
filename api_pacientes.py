@@ -1373,6 +1373,58 @@ class LoginResposta(BaseModel):
     precisaTrocarSenha: bool = False
 
 
+class ChecklistUsuarioItemPayload(BaseModel):
+    titulo: str
+    descricao: str = ""
+    tipo_meta: str = "manual"
+    meta_diaria: int = 1
+    ativo: bool = True
+
+
+class ChecklistUsuarioItemAtualizacaoPayload(BaseModel):
+    titulo: str = ""
+    descricao: str = ""
+    tipo_meta: str = ""
+    meta_diaria: int = 0
+    ativo: bool | None = None
+    ordem: int | None = None
+
+
+class ChecklistUsuarioRegistroPayload(BaseModel):
+    progresso_manual: int | None = None
+    concluido_manual: bool | None = None
+
+
+class ChecklistUsuarioItemResposta(BaseModel):
+    id: int
+    titulo: str
+    descricao: str = ""
+    tipoMeta: str = "manual"
+    metaDiaria: int = 1
+    progressoAtual: int = 0
+    progressoManual: int = 0
+    progressoAutomatico: int = 0
+    concluido: bool = False
+    concluidoManual: bool = False
+    ativo: bool = True
+    ordem: int = 0
+    atualizadoEm: str = ""
+
+
+class ChecklistUsuarioResumoResposta(BaseModel):
+    total: int = 0
+    concluidos: int = 0
+    pendentes: int = 0
+    progressoPercentual: int = 0
+
+
+class ChecklistUsuarioPainelResposta(BaseModel):
+    dataReferencia: str
+    itens: list[ChecklistUsuarioItemResposta] = Field(default_factory=list)
+    resumo: ChecklistUsuarioResumoResposta = Field(default_factory=ChecklistUsuarioResumoResposta)
+    tiposAutomaticos: list[dict[str, str]] = Field(default_factory=list)
+
+
 app = FastAPI(title="SoulSul Pacientes API", version="0.1.0")
 
 app.add_middleware(
@@ -1599,6 +1651,11 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
 
 MODULOS_USUARIOS = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"]
 ABAS_PACIENTES_USUARIOS = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"]
+CHECKLIST_TIPOS_AUTOMATICOS = {
+    "crm_contatos": "Contatos salvos no CRM",
+    "crm_agendou_avaliacao": "Leads movidos para Agendou avaliação",
+    "crm_avaliacao_enviada": "Avaliações levadas ao CRM",
+}
 
 
 def permissoes_padrao_backend(cargo: str, perfil: str) -> tuple[dict[str, str], dict[str, str], str]:
@@ -1636,6 +1693,163 @@ def permissoes_padrao_backend(cargo: str, perfil: str) -> tuple[dict[str, str], 
         agenda_escopo = "TODA_CLINICA"
 
     return modulos, pacientes_abas, agenda_escopo
+
+
+def data_hoje_iso() -> str:
+    return agora_local().date().isoformat()
+
+
+def buscar_usuario_por_identificador(conn: sqlite3.Connection, identificador: str) -> sqlite3.Row | None:
+    texto = str(identificador or "").strip()
+    if not texto:
+        return None
+    return conn.execute(
+        "SELECT * FROM usuarios WHERE lower(usuario)=lower(?) OR lower(nome)=lower(?) LIMIT 1",
+        (texto, texto),
+    ).fetchone()
+
+
+def usuario_logado_row(conn: sqlite3.Connection, request: Request) -> sqlite3.Row:
+    usuario = usuario_request(request)
+    row = buscar_usuario_por_identificador(conn, usuario)
+    if row is None:
+        raise HTTPException(status_code=401, detail="Usuario nao identificado para o checklist.")
+    return row
+
+
+def contar_progresso_automatico_checklist(
+    conn: sqlite3.Connection,
+    *,
+    usuario_row: sqlite3.Row,
+    tipo_meta: str,
+    data_referencia: str,
+) -> int:
+    usuario_id = int(usuario_row["id"])
+    usuario_nome = str(usuario_row["usuario"] or usuario_row["nome"] or "").strip()
+    tipo_limpo = str(tipo_meta or "manual").strip().lower()
+    if tipo_limpo == "crm_contatos":
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM acoes_usuario
+            WHERE usuario_id=?
+              AND substr(COALESCE(data_hora, ''), 1, 10)=?
+              AND COALESCE(acao, '')='CRM'
+              AND COALESCE(tipo, '')='Atualização do funil'
+            """,
+            (usuario_id, data_referencia),
+        ).fetchone()
+        return int(row["total"] or 0) if row else 0
+    if tipo_limpo == "crm_agendou_avaliacao":
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM crm_pacientes
+            WHERE substr(COALESCE(atualizado_em, ''), 1, 10)=?
+              AND lower(COALESCE(atualizado_por, ''))=lower(?)
+              AND COALESCE(etapa_funil, '')='Agendou avaliação'
+            """,
+            (data_referencia, usuario_nome),
+        ).fetchone()
+        return int(row["total"] or 0) if row else 0
+    if tipo_limpo == "crm_avaliacao_enviada":
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM acoes_usuario
+            WHERE usuario_id=?
+              AND substr(COALESCE(data_hora, ''), 1, 10)=?
+              AND COALESCE(rota, '') LIKE '/api/crm/pacientes/%/avaliacao'
+            """,
+            (usuario_id, data_referencia),
+        ).fetchone()
+        return int(row["total"] or 0) if row else 0
+    return 0
+
+
+def montar_item_checklist_usuario(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    *,
+    usuario_row: sqlite3.Row,
+    data_referencia: str,
+) -> ChecklistUsuarioItemResposta:
+    tipo_meta = str(row["tipo_meta"] or "manual").strip().lower() or "manual"
+    registro = conn.execute(
+        """
+        SELECT progresso_manual, concluido_manual, atualizado_em
+        FROM checklist_usuario_registros
+        WHERE checklist_id=? AND data_referencia=?
+        LIMIT 1
+        """,
+        (int(row["id"]), data_referencia),
+    ).fetchone()
+    progresso_manual = int(registro["progresso_manual"] or 0) if registro else 0
+    concluido_manual = bool(int(registro["concluido_manual"] or 0)) if registro else False
+    progresso_automatico = contar_progresso_automatico_checklist(
+        conn,
+        usuario_row=usuario_row,
+        tipo_meta=tipo_meta,
+        data_referencia=data_referencia,
+    )
+    meta_diaria = max(int(row["meta_diaria"] or 1), 1)
+    progresso_atual = progresso_manual if tipo_meta == "manual" else progresso_automatico
+    concluido = concluido_manual if tipo_meta == "manual" else progresso_atual >= meta_diaria
+    atualizado_em = str((registro["atualizado_em"] if registro else row["atualizado_em"]) or "")
+    return ChecklistUsuarioItemResposta(
+        id=int(row["id"]),
+        titulo=str(row["titulo"] or "").strip(),
+        descricao=str(row["descricao"] or "").strip(),
+        tipoMeta=tipo_meta,
+        metaDiaria=meta_diaria,
+        progressoAtual=max(progresso_atual, 0),
+        progressoManual=max(progresso_manual, 0),
+        progressoAutomatico=max(progresso_automatico, 0),
+        concluido=concluido,
+        concluidoManual=concluido_manual,
+        ativo=bool(int(row["ativo"] or 0)),
+        ordem=int(row["ordem"] or 0),
+        atualizadoEm=atualizado_em,
+    )
+
+
+def carregar_painel_checklist_usuario(
+    conn: sqlite3.Connection,
+    *,
+    usuario_row: sqlite3.Row,
+    data_referencia: str,
+) -> ChecklistUsuarioPainelResposta:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM checklist_usuario_itens
+        WHERE usuario_id=? AND COALESCE(ativo, 1)=1
+        ORDER BY COALESCE(ordem, 0), id
+        """,
+        (int(usuario_row["id"]),),
+    ).fetchall()
+    itens = [montar_item_checklist_usuario(conn, row, usuario_row=usuario_row, data_referencia=data_referencia) for row in rows]
+    total = len(itens)
+    concluidos = len([item for item in itens if item.concluido])
+    pendentes = max(total - concluidos, 0)
+    percentual = int(round((concluidos / total) * 100)) if total else 0
+    return ChecklistUsuarioPainelResposta(
+        dataReferencia=data_referencia,
+        itens=itens,
+        resumo=ChecklistUsuarioResumoResposta(
+            total=total,
+            concluidos=concluidos,
+            pendentes=pendentes,
+            progressoPercentual=percentual,
+        ),
+        tiposAutomaticos=[
+            {"id": "manual", "label": "Manual"},
+            *[
+                {"id": chave, "label": valor}
+                for chave, valor in CHECKLIST_TIPOS_AUTOMATICOS.items()
+            ],
+        ],
+    )
 
 
 def json_dict_seguro(texto: object, padrao: dict[str, str]) -> dict[str, str]:
@@ -1809,6 +2023,178 @@ def trocar_senha_primeiro_acesso(payload: TrocaSenhaPayload):
         rota="/api/auth/trocar-senha",
     )
     return detalhar_usuario_login(usuario_row)
+
+
+@app.get("/api/checklist/me", response_model=ChecklistUsuarioPainelResposta)
+def listar_checklist_meu(request: Request, data_referencia: str = Query(default_factory=data_hoje_iso)):
+    conn = conectar()
+    try:
+        usuario_row = usuario_logado_row(conn, request)
+        return carregar_painel_checklist_usuario(conn, usuario_row=usuario_row, data_referencia=data_referencia)
+    finally:
+        conn.close()
+
+
+@app.post("/api/checklist/me", response_model=ChecklistUsuarioItemResposta)
+def criar_item_checklist_meu(payload: ChecklistUsuarioItemPayload, request: Request):
+    titulo = str(payload.titulo or "").strip()
+    if not titulo:
+        raise HTTPException(status_code=400, detail="Informe o título da tarefa.")
+    tipo_meta = str(payload.tipo_meta or "manual").strip().lower() or "manual"
+    if tipo_meta != "manual" and tipo_meta not in CHECKLIST_TIPOS_AUTOMATICOS:
+        raise HTTPException(status_code=400, detail="Selecione um tipo de tarefa válido.")
+    meta_diaria = max(int(payload.meta_diaria or 1), 1)
+    conn = conectar()
+    try:
+        usuario_row = usuario_logado_row(conn, request)
+        ordem_row = conn.execute(
+            "SELECT COALESCE(MAX(ordem), 0) AS ordem_maxima FROM checklist_usuario_itens WHERE usuario_id=?",
+            (int(usuario_row["id"]),),
+        ).fetchone()
+        ordem = int(ordem_row["ordem_maxima"] or 0) + 1
+        conn.execute(
+            """
+            INSERT INTO checklist_usuario_itens
+            (usuario_id, titulo, descricao, tipo_meta, meta_diaria, ativo, ordem, criado_em, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(usuario_row["id"]),
+                titulo,
+                str(payload.descricao or "").strip(),
+                tipo_meta,
+                meta_diaria,
+                1 if payload.ativo else 0,
+                ordem,
+                agora_str(),
+                agora_str(),
+            ),
+        )
+        checklist_id = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+        conn.commit()
+        row = conn.execute("SELECT * FROM checklist_usuario_itens WHERE id=? LIMIT 1", (checklist_id,)).fetchone()
+        return montar_item_checklist_usuario(conn, row, usuario_row=usuario_row, data_referencia=data_hoje_iso())
+    finally:
+        conn.close()
+
+
+@app.put("/api/checklist/{checklist_id}", response_model=ChecklistUsuarioItemResposta)
+def atualizar_item_checklist(checklist_id: int, payload: ChecklistUsuarioItemAtualizacaoPayload, request: Request):
+    conn = conectar()
+    try:
+        usuario_row = usuario_logado_row(conn, request)
+        row = conn.execute(
+            "SELECT * FROM checklist_usuario_itens WHERE id=? AND usuario_id=? LIMIT 1",
+            (int(checklist_id), int(usuario_row["id"])),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+        titulo = str(payload.titulo or row["titulo"] or "").strip()
+        if not titulo:
+            raise HTTPException(status_code=400, detail="Informe o título da tarefa.")
+        tipo_meta = str(payload.tipo_meta or row["tipo_meta"] or "manual").strip().lower() or "manual"
+        if tipo_meta != "manual" and tipo_meta not in CHECKLIST_TIPOS_AUTOMATICOS:
+            raise HTTPException(status_code=400, detail="Selecione um tipo de tarefa válido.")
+        meta_diaria = max(int(payload.meta_diaria or row["meta_diaria"] or 1), 1)
+        ativo = int(row["ativo"] or 0) if payload.ativo is None else (1 if payload.ativo else 0)
+        ordem = int(row["ordem"] or 0) if payload.ordem is None else max(int(payload.ordem or 0), 0)
+        conn.execute(
+            """
+            UPDATE checklist_usuario_itens
+            SET titulo=?, descricao=?, tipo_meta=?, meta_diaria=?, ativo=?, ordem=?, atualizado_em=?
+            WHERE id=?
+            """,
+            (
+                titulo,
+                str(payload.descricao or row["descricao"] or "").strip(),
+                tipo_meta,
+                meta_diaria,
+                ativo,
+                ordem,
+                agora_str(),
+                int(checklist_id),
+            ),
+        )
+        conn.commit()
+        atualizado = conn.execute("SELECT * FROM checklist_usuario_itens WHERE id=? LIMIT 1", (int(checklist_id),)).fetchone()
+        return montar_item_checklist_usuario(conn, atualizado, usuario_row=usuario_row, data_referencia=data_hoje_iso())
+    finally:
+        conn.close()
+
+
+@app.post("/api/checklist/{checklist_id}/registro", response_model=ChecklistUsuarioItemResposta)
+def atualizar_registro_checklist(checklist_id: int, payload: ChecklistUsuarioRegistroPayload, request: Request):
+    conn = conectar()
+    try:
+        usuario_row = usuario_logado_row(conn, request)
+        item_row = conn.execute(
+            "SELECT * FROM checklist_usuario_itens WHERE id=? AND usuario_id=? LIMIT 1",
+            (int(checklist_id), int(usuario_row["id"])),
+        ).fetchone()
+        if item_row is None:
+            raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+        data_referencia = data_hoje_iso()
+        registro = conn.execute(
+            """
+            SELECT *
+            FROM checklist_usuario_registros
+            WHERE checklist_id=? AND data_referencia=?
+            LIMIT 1
+            """,
+            (int(checklist_id), data_referencia),
+        ).fetchone()
+        progresso_manual = int(registro["progresso_manual"] or 0) if registro else 0
+        concluido_manual = bool(int(registro["concluido_manual"] or 0)) if registro else False
+        if payload.progresso_manual is not None:
+            progresso_manual = max(int(payload.progresso_manual), 0)
+        if payload.concluido_manual is not None:
+            concluido_manual = bool(payload.concluido_manual)
+        if registro is None:
+            conn.execute(
+                """
+                INSERT INTO checklist_usuario_registros
+                (checklist_id, data_referencia, progresso_manual, concluido_manual, atualizado_em)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (int(checklist_id), data_referencia, progresso_manual, 1 if concluido_manual else 0, agora_str()),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE checklist_usuario_registros
+                SET progresso_manual=?, concluido_manual=?, atualizado_em=?
+                WHERE checklist_id=? AND data_referencia=?
+                """,
+                (progresso_manual, 1 if concluido_manual else 0, agora_str(), int(checklist_id), data_referencia),
+            )
+        conn.commit()
+        atualizado = conn.execute("SELECT * FROM checklist_usuario_itens WHERE id=? LIMIT 1", (int(checklist_id),)).fetchone()
+        return montar_item_checklist_usuario(conn, atualizado, usuario_row=usuario_row, data_referencia=data_referencia)
+    finally:
+        conn.close()
+
+
+@app.delete("/api/checklist/{checklist_id}", response_model=ChecklistUsuarioItemResposta)
+def arquivar_item_checklist(checklist_id: int, request: Request):
+    conn = conectar()
+    try:
+        usuario_row = usuario_logado_row(conn, request)
+        row = conn.execute(
+            "SELECT * FROM checklist_usuario_itens WHERE id=? AND usuario_id=? LIMIT 1",
+            (int(checklist_id), int(usuario_row["id"])),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+        conn.execute(
+            "UPDATE checklist_usuario_itens SET ativo=0, atualizado_em=? WHERE id=?",
+            (agora_str(), int(checklist_id)),
+        )
+        conn.commit()
+        arquivado = dict(row)
+        arquivado["ativo"] = 0
+        return montar_item_checklist_usuario(conn, arquivado, usuario_row=usuario_row, data_referencia=data_hoje_iso())
+    finally:
+        conn.close()
 
 
 @app.post("/api/usuarios/{usuario_id}/redefinir-senha", response_model=LoginResposta)
