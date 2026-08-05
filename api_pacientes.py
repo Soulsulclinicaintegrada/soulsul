@@ -309,6 +309,10 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "pacientes", "profissao TEXT")
         garantir_coluna(conn, "pacientes", "origem TEXT")
         garantir_coluna(conn, "pacientes", "foto_path TEXT")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso INTEGER DEFAULT 0")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso_observacao TEXT")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso_por TEXT")
+        garantir_coluna(conn, "pacientes", "tratamento_suspenso_em TEXT")
         garantir_coluna(conn, "contratos", "status TEXT DEFAULT 'EM_ABERTO'")
         garantir_coluna(conn, "contratos", "aprovado_por TEXT")
         garantir_coluna(conn, "contratos", "data_aprovacao TEXT")
@@ -569,6 +573,11 @@ class PacientePayload(BaseModel):
     cpf_responsavel: str = ""
 
 
+class TratamentoSuspensaoPayload(BaseModel):
+    suspenso: bool = False
+    observacao: str = ""
+
+
 class PacienteResumo(BaseModel):
     id: int
     nome: str
@@ -579,6 +588,7 @@ class PacienteResumo(BaseModel):
     email: str = ""
     dataNascimento: str = ""
     fotoUrl: str = ""
+    tratamentoSuspenso: bool = False
 
 
 class PacienteDetalhe(BaseModel):
@@ -607,6 +617,10 @@ class PacienteDetalhe(BaseModel):
     responsavel: str = ""
     cpfResponsavel: str = ""
     fotoUrl: str = ""
+    tratamentoSuspenso: bool = False
+    tratamentoSuspensoObservacao: str = ""
+    tratamentoSuspensoPor: str = ""
+    tratamentoSuspensoEm: str = ""
 
 
 class ProximoProntuarioResposta(BaseModel):
@@ -1382,6 +1396,7 @@ def usuario_request(request: Request) -> str:
 
 
 USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO = {"juliana", "eliane"}
+USUARIOS_AUTORIZADOS_BLOQUEIO_TRATAMENTO = {"juliana", "eliane"}
 
 
 def validar_usuario_aprovacao_orcamento(request: Request) -> str:
@@ -1389,6 +1404,14 @@ def validar_usuario_aprovacao_orcamento(request: Request) -> str:
     usuario_normalizado = normalizar_texto(usuario).replace(" ", "")
     if usuario_normalizado not in USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO:
         raise HTTPException(status_code=403, detail="Somente Juliana e Eliane podem aprovar ou reabrir orcamentos.")
+    return usuario
+
+
+def validar_usuario_bloqueio_tratamento(request: Request) -> str:
+    usuario = usuario_request(request)
+    usuario_normalizado = normalizar_texto(usuario).replace(" ", "")
+    if usuario_normalizado not in USUARIOS_AUTORIZADOS_BLOQUEIO_TRATAMENTO:
+        raise HTTPException(status_code=403, detail="Somente Juliana e Eliane podem suspender ou liberar tratamentos.")
     return usuario
 
 
@@ -2416,6 +2439,7 @@ def mapear_paciente_resumo(row: sqlite3.Row) -> PacienteResumo:
         email=str(row["email"] or ""),
         dataNascimento=formatar_data_br_valor(row["data_nascimento"]),
         fotoUrl=url_foto_paciente(row),
+        tratamentoSuspenso=bool(int(row["tratamento_suspenso"] or 0)),
     )
 
 
@@ -2446,7 +2470,41 @@ def mapear_paciente_detalhe(row: sqlite3.Row) -> PacienteDetalhe:
         responsavel=str(row["responsavel"] or ""),
         cpfResponsavel=str(row["cpf_responsavel"] or ""),
         fotoUrl=url_foto_paciente(row),
+        tratamentoSuspenso=bool(int(row["tratamento_suspenso"] or 0)),
+        tratamentoSuspensoObservacao=str(row["tratamento_suspenso_observacao"] or ""),
+        tratamentoSuspensoPor=str(row["tratamento_suspenso_por"] or ""),
+        tratamentoSuspensoEm=str(row["tratamento_suspenso_em"] or ""),
     )
+
+
+def atualizar_suspensao_tratamento_paciente_db(
+    conn: sqlite3.Connection,
+    *,
+    paciente_id: int,
+    suspenso: bool,
+    observacao: str,
+    usuario: str,
+) -> sqlite3.Row:
+    carregar_paciente_por_id(conn, paciente_id)
+    conn.execute(
+        """
+        UPDATE pacientes
+        SET tratamento_suspenso=?,
+            tratamento_suspenso_observacao=?,
+            tratamento_suspenso_por=?,
+            tratamento_suspenso_em=?
+        WHERE id=?
+        """,
+        (
+            int(bool(suspenso)),
+            observacao.strip() if suspenso else "",
+            usuario.strip() if suspenso else "",
+            datetime.now().strftime("%d/%m/%Y %H:%M") if suspenso else "",
+            int(paciente_id),
+        ),
+    )
+    conn.commit()
+    return carregar_paciente_por_id(conn, paciente_id)
 
 
 def carregar_paciente_por_id(conn: sqlite3.Connection, paciente_id: int) -> sqlite3.Row:
@@ -8858,6 +8916,23 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
         )
         conn.commit()
         row = carregar_paciente_por_id(conn, paciente_id)
+        return mapear_paciente_detalhe(row)
+    finally:
+        conn.close()
+
+
+@app.put("/api/pacientes/{paciente_id}/tratamento-suspensao", response_model=PacienteDetalhe)
+def atualizar_tratamento_suspensao_paciente(paciente_id: int, payload: TratamentoSuspensaoPayload, request: Request):
+    conn = conectar()
+    try:
+        usuario = validar_usuario_bloqueio_tratamento(request)
+        row = atualizar_suspensao_tratamento_paciente_db(
+            conn,
+            paciente_id=int(paciente_id),
+            suspenso=bool(payload.suspenso),
+            observacao=str(payload.observacao or ""),
+            usuario=usuario,
+        )
         return mapear_paciente_detalhe(row)
     finally:
         conn.close()

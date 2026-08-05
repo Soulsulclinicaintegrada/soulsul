@@ -272,6 +272,7 @@ class AgendamentoResposta(BaseModel):
     recorrenciaIntervaloDias: int | None = None
     recorrenciaTotal: int | None = None
     recorrenciaIndice: int | None = None
+    tratamentoSuspenso: bool = False
     historico: list[AgendamentoHistoricoItem] = Field(default_factory=list)
 
 
@@ -287,6 +288,7 @@ class PacienteBuscaItem(BaseModel):
     financeiro: str = ""
     bloqueadoAtendimento: bool = False
     mensagemBloqueio: str = ""
+    tratamentoSuspenso: bool = False
 
 
 class ProcedimentoContratoItem(BaseModel):
@@ -317,6 +319,7 @@ class PacienteContextoResposta(BaseModel):
     financeiro: str = ""
     bloqueadoAtendimento: bool = False
     mensagemBloqueio: str = ""
+    tratamentoSuspenso: bool = False
     procedimentosContratados: list[ProcedimentoContratoItem]
     guiasEmitidas: list[GuiaEmitidaItem] = Field(default_factory=list)
 
@@ -865,6 +868,11 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         row_val(row, "procedimento_nome_snapshot", "") or row_val(row, "procedimento", "") or ""
     )
     contrato_id = row_val(row, "contrato_id")
+    tratamento_suspenso, _mensagem_suspensao = obter_suspensao_tratamento_paciente(
+        conn,
+        paciente_id=row_val(row, "paciente_id"),
+        prontuario=row_val(row, "prontuario_snapshot", "") or "",
+    )
     financeiro = resumir_financeiro_agendamento(
         conn,
         paciente_id=row_val(row, "paciente_id"),
@@ -906,6 +914,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         recorrenciaIntervaloDias=row_val(row, "recorrencia_intervalo_dias"),
         recorrenciaTotal=row_val(row, "recorrencia_total"),
         recorrenciaIndice=row_val(row, "recorrencia_indice"),
+        tratamentoSuspenso=tratamento_suspenso,
         historico=carregar_historico_agendamento(conn, row["id"]),
     )
 
@@ -1017,6 +1026,38 @@ def resumir_financeiro_agendamento(
     return "Financeiro Ok"
 
 
+def obter_suspensao_tratamento_paciente(
+    conn: sqlite3.Connection,
+    *,
+    paciente_id: int | None,
+    prontuario: str,
+) -> tuple[bool, str]:
+    row = None
+    if paciente_id:
+        row = conn.execute(
+            """
+            SELECT tratamento_suspenso
+            FROM pacientes
+            WHERE id=?
+            LIMIT 1
+            """,
+            (int(paciente_id),),
+        ).fetchone()
+    if row is None and str(prontuario or "").strip():
+        row = conn.execute(
+            """
+            SELECT tratamento_suspenso
+            FROM pacientes
+            WHERE trim(COALESCE(prontuario, ''))=?
+            LIMIT 1
+            """,
+            (str(prontuario or "").strip(),),
+        ).fetchone()
+    suspenso = bool(int(row["tratamento_suspenso"] or 0)) if row else False
+    mensagem = "ESTE PACIENTE ESTÁ BLOQUEADO, NÃO PODE SER AGENDADO." if suspenso else ""
+    return suspenso, mensagem
+
+
 def avaliar_bloqueio_atendimento_paciente(
     conn: sqlite3.Connection,
     *,
@@ -1025,6 +1066,13 @@ def avaliar_bloqueio_atendimento_paciente(
     contrato_id: int | None = None,
     data_agendamento: str = "",
 ) -> tuple[bool, str, str]:
+    suspenso, mensagem_suspensao = obter_suspensao_tratamento_paciente(
+        conn,
+        paciente_id=paciente_id,
+        prontuario=prontuario,
+    )
+    if suspenso:
+        return True, "Tratamento suspenso", mensagem_suspensao
     resumo = resumir_financeiro_agendamento(
         conn,
         paciente_id=paciente_id,
@@ -1322,6 +1370,11 @@ def buscar_pacientes(q: str = Query(..., min_length=1), data_agendamento: str = 
                 prontuario=str(row["prontuario"] or ""),
                 data_agendamento=data_agendamento,
             )
+            tratamento_suspenso, _mensagem_suspensao = obter_suspensao_tratamento_paciente(
+                conn,
+                paciente_id=int(row["id"]),
+                prontuario=str(row["prontuario"] or ""),
+            )
             itens.append(
                 PacienteBuscaItem(
                     id=row["id"],
@@ -1331,6 +1384,7 @@ def buscar_pacientes(q: str = Query(..., min_length=1), data_agendamento: str = 
                     financeiro=financeiro,
                     bloqueadoAtendimento=bloqueado,
                     mensagemBloqueio=mensagem,
+                    tratamentoSuspenso=tratamento_suspenso,
                 )
             )
         return itens
@@ -1449,6 +1503,11 @@ def buscar_contexto_paciente(paciente_id: int, data_agendamento: str = Query(def
             prontuario=str(paciente["prontuario"] or ""),
             data_agendamento=data_agendamento,
         )
+        tratamento_suspenso, _mensagem_suspensao = obter_suspensao_tratamento_paciente(
+            conn,
+            paciente_id=int(paciente["id"]),
+            prontuario=str(paciente["prontuario"] or ""),
+        )
 
         return PacienteContextoResposta(
             id=paciente["id"],
@@ -1458,6 +1517,7 @@ def buscar_contexto_paciente(paciente_id: int, data_agendamento: str = Query(def
             financeiro=financeiro,
             bloqueadoAtendimento=bloqueado,
             mensagemBloqueio=mensagem,
+            tratamentoSuspenso=tratamento_suspenso,
             procedimentosContratados=itens,
             guiasEmitidas=guias_emitidas,
         )
