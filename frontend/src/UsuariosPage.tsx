@@ -209,6 +209,7 @@ export function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<UsuarioPermissao[]>([]);
   const [agendaConfig, setAgendaConfig] = useState<Record<number, AgendaConfigUsuario>>({});
   const [usuarioSelecionadoId, setUsuarioSelecionadoId] = useState<number>(0);
+  const [mostrarTodosUsuarios, setMostrarTodosUsuarios] = useState(false);
   const [novoUsuario, setNovoUsuario] = useState({
     nome: "",
     nomeAgenda: "",
@@ -229,7 +230,7 @@ export function UsuariosPage() {
         if (cancelado) return;
         const mapeados = resultado.map(mapUsuarioApi);
         setUsuarios(mapeados);
-        setUsuarioSelecionadoId((atual) => atual || mapeados[0]?.id || 0);
+        setUsuarioSelecionadoId((atual) => atual || mapeados.find((item) => item.status === "Ativo")?.id || 0);
       })
       .catch(() => {
         if (cancelado) return;
@@ -301,9 +302,13 @@ export function UsuariosPage() {
     })();
   }, [usuarios]);
 
+  const usuariosVisiveis = useMemo(
+    () => mostrarTodosUsuarios ? usuarios : usuarios.filter((item) => item.status === "Ativo"),
+    [mostrarTodosUsuarios, usuarios]
+  );
   const usuarioSelecionado = useMemo(
-    () => usuarios.find((item) => item.id === usuarioSelecionadoId) || usuarios[0] || null,
-    [usuarioSelecionadoId, usuarios]
+    () => usuariosVisiveis.find((item) => item.id === usuarioSelecionadoId) || usuariosVisiveis[0] || null,
+    [usuarioSelecionadoId, usuariosVisiveis]
   );
   const agendaUsuarioSelecionado = usuarioSelecionado ? agendaConfig[usuarioSelecionado.id] || agendaConfigPadraoUsuario() : null;
 
@@ -640,10 +645,16 @@ export function UsuariosPage() {
               <span className="panel-kicker">Equipe</span>
               <h2>Usuarios e cargos</h2>
             </div>
-            <UserCog size={18} />
+            <button
+              type="button"
+              className="ghost-action compact"
+              onClick={() => setMostrarTodosUsuarios((atual) => !atual)}
+            >
+              {mostrarTodosUsuarios ? "Mostrar somente ativos" : "Mostrar todos"}
+            </button>
           </div>
           <div className="module-sublist">
-            {usuarios.map((usuario) => (
+            {usuariosVisiveis.map((usuario) => (
               <button
                 key={usuario.id}
                 type="button"
@@ -660,6 +671,9 @@ export function UsuariosPage() {
                 </div>
               </button>
             ))}
+            {!usuariosVisiveis.length ? (
+              <div className="module-subitem"><strong>Nenhum usuário ativo.</strong></div>
+            ) : null}
           </div>
         </article>
 
