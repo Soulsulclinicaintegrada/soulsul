@@ -100,13 +100,6 @@ type DesmarqueConsultaForm = {
   responsavel: "Paciente" | "Profissional";
 };
 
-type AgendaLembreteOperacional = {
-  tipo: "confirmacao" | "avaliacao" | "reagendamento";
-  titulo: string;
-  descricao: string;
-  evento: AgendaEventoUI;
-};
-
 const SLOT_HEIGHT = 24;
 const AGENDA_HEADER_HEIGHT = 44;
 const HORARIOS = gerarSlotsQuinzeMinutos("07:00", "20:00");
@@ -1136,45 +1129,6 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     () => eventosFiltradosProfissionais.filter((evento) => diasSemana.map(isoParaBr).includes(evento.data)),
     [eventosFiltradosProfissionais, diasSemana]
   );
-  const lembretesOperacionais = useMemo(() => {
-    const eventosDiaSelecionado = eventosFiltradosProfissionais
-      .filter((evento) => evento.data === isoParaBr(dataSelecionada))
-      .sort((a, b) => compararHorarioTexto(a.inicio, b.inicio));
-    const confirmacoes = eventosDiaSelecionado
-      .filter((evento) => {
-        const status = normalizarStatusAgendaTexto(evento.status);
-        return status === "agendado" || status === "aguardando";
-      })
-      .slice(0, 5)
-      .map<AgendaLembreteOperacional>((evento) => ({
-        tipo: "confirmacao",
-        titulo: `${evento.inicio} · Confirmar presença`,
-        descricao: `${evento.paciente} · ${evento.telefone || "Sem telefone"}`,
-        evento,
-      }));
-    const avaliacoesDia = eventosDiaSelecionado
-      .filter((evento) => eventoEhAvaliacaoAgenda(evento))
-      .slice(0, 5)
-      .map<AgendaLembreteOperacional>((evento) => ({
-        tipo: "avaliacao",
-        titulo: `${evento.inicio} · Avaliação marcada`,
-        descricao: `${evento.paciente} · ${evento.profissional}`,
-        evento,
-      }));
-    const reagendamentos = eventosDiaSelecionado
-      .filter((evento) => {
-        const status = normalizarStatusAgendaTexto(evento.status);
-        return status === "faltou" || status === "desmarcado";
-      })
-      .slice(0, 5)
-      .map<AgendaLembreteOperacional>((evento) => ({
-        tipo: "reagendamento",
-        titulo: `${evento.inicio} · Reagendar retorno`,
-        descricao: `${evento.paciente} · ${evento.status}`,
-        evento,
-      }));
-    return [...confirmacoes, ...avaliacoesDia, ...reagendamentos];
-  }, [dataSelecionada, eventosFiltradosProfissionais]);
   function nomeProfissionalPorId(profissionalId: number) {
     return profissionaisTodos.find((item) => item.id === profissionalId)?.nome ?? "Profissional";
   }
@@ -2823,41 +2777,6 @@ function atualizarConfigProfissionalDia(
       <section className="agenda-shell">
         <aside className="panel agenda-leftbar">
           {renderCalendarioLateral()}
-          <div className="agenda-reminders-panel">
-            <div className="section-title-row">
-              <div><span className="panel-kicker">Operação</span><h2>Lembretes do dia</h2></div>
-            </div>
-            <div className="agenda-reminders-list">
-              {lembretesOperacionais.length ? lembretesOperacionais.map((item) => (
-                <article key={`${item.tipo}-${item.evento.id}`} className={`agenda-reminder-card ${item.tipo}`}>
-                  <div className="agenda-reminder-copy">
-                    <strong>{item.titulo}</strong>
-                    <span>{item.descricao}</span>
-                  </div>
-                  <div className="crm-inline-actions">
-                    {item.evento.pacienteId ? (
-                      <button
-                        type="button"
-                        className="ghost-action compact"
-                        onClick={() => onAbrirPaciente?.(item.evento.pacienteId!, "cadastro")}
-                      >
-                        Paciente
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="ghost-action compact"
-                      onClick={() => void abrirEdicaoAgendamento(item.evento)}
-                    >
-                      Editar
-                    </button>
-                  </div>
-                </article>
-              )) : (
-                <div className="module-subitem"><strong>Nenhum lembrete operacional para esta data.</strong></div>
-              )}
-            </div>
-          </div>
           <div className="agenda-profissionais-panel">
             <div className="section-title-row">
               <div><span className="panel-kicker">Equipe</span><h2>Profissionais</h2></div>

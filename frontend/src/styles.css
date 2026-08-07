@@ -6035,52 +6035,6 @@ textarea::placeholder {
   gap: 12px;
 }
 
-.agenda-reminders-panel {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.agenda-reminders-list {
-  display: grid;
-  gap: 8px;
-}
-
-.agenda-reminder-card {
-  display: grid;
-  gap: 0.7rem;
-  padding: 10px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(199, 170, 120, 0.16);
-  background: rgba(255, 255, 255, 0.94);
-}
-
-.agenda-reminder-card.confirmacao {
-  border-left: 4px solid #bc9155;
-}
-
-.agenda-reminder-card.avaliacao {
-  border-left: 4px solid #2f6a52;
-}
-
-.agenda-reminder-card.reagendamento {
-  border-left: 4px solid #b44b39;
-}
-
-.agenda-reminder-copy {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.agenda-reminder-copy strong {
-  color: #2f241d;
-}
-
-.agenda-reminder-copy span {
-  color: #7a685a;
-  font-size: 0.82rem;
-}
-
 .agenda-profissionais-list {
   display: grid;
   gap: 8px;
