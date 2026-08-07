@@ -32,6 +32,9 @@ type NavegacaoPaciente = {
   chave: number;
 };
 
+// Rotinas temporariamente retiradas da interface para revisao do fluxo e das permissoes.
+const ROTINAS_ATIVAS = false;
+
 const MENU_TO_MODULO: Record<MenuKey, string> = {
   Dashboard: "Dashboard",
   Pacientes: "Pacientes",
@@ -330,6 +333,11 @@ function App() {
   }
 
   useEffect(() => {
+    if (!ROTINAS_ATIVAS) {
+      setChecklistPainel(null);
+      setChecklistAberto(false);
+      return;
+    }
     if (!usuarioLogado) {
       setChecklistPainel(null);
       setChecklistAberto(false);
@@ -762,7 +770,7 @@ function App() {
         </div>
       ) : null}
 
-      {checklistAberto ? (
+      {ROTINAS_ATIVAS && checklistAberto ? (
         <div className="drawer-backdrop" onClick={() => setChecklistAberto(false)}>
           <aside className="drawer-shell checklist-drawer" onClick={(event) => event.stopPropagation()}>
             <div className="drawer-header">
@@ -1110,10 +1118,12 @@ function App() {
               <Search size={18} />
               <input type="text" placeholder={paginaAtual.busca} value={buscaGlobal} onChange={(event) => setBuscaGlobal(event.target.value)} />
             </label>
-            <button type="button" className="ghost-action checklist-topbar-button" onClick={() => setChecklistAberto(true)}>
-              <CheckSquare2 size={16} />
-              {checklistResumo ? `Rotina ${checklistResumo.concluidos}/${checklistResumo.total}` : "Minha rotina"}
-            </button>
+            {ROTINAS_ATIVAS ? (
+              <button type="button" className="ghost-action checklist-topbar-button" onClick={() => setChecklistAberto(true)}>
+                <CheckSquare2 size={16} />
+                {checklistResumo ? `Rotina ${checklistResumo.concluidos}/${checklistResumo.total}` : "Minha rotina"}
+              </button>
+            ) : null}
             <div className="header-user">
               <div className="header-user-text">
                 <span className="header-user-kicker">{usuarioLogado.cargo || "Usuario"}</span>
