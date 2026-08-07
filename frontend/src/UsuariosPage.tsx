@@ -368,13 +368,6 @@ export function UsuariosPage() {
             proximo.pacientesAbas[aba] = "Sem acesso";
           });
         }
-        if (modulo === "Pacientes" && nivel !== "Sem acesso") {
-          ABAS_PACIENTES.forEach((aba) => {
-            if (proximo.pacientesAbas[aba] === "Sem acesso") {
-              proximo.pacientesAbas[aba] = nivel === "Edicao" ? "Visualizacao" : nivel;
-            }
-          });
-        }
         return proximo;
       })
     );

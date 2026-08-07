@@ -128,15 +128,25 @@ function mesclarPermissoes(
   padrao: { modulos: Record<string, string>; pacientesAbas: Record<string, string> },
   sessao?: UsuarioSessao | null
 ) {
-  const modulos = { ...padrao.modulos };
-  Object.entries(sessao?.modulos || {}).forEach(([chave, valor]) => {
-    modulos[chave] = textoPermissao(Math.max(nivelPermissao(modulos[chave]), nivelPermissao(valor)));
-  });
+  const modulosSalvos = sessao?.modulos || {};
+  const abasSalvas = sessao?.pacientesAbas || {};
+  const temModulosSalvos = Object.keys(modulosSalvos).length > 0;
+  const temAbasSalvas = Object.keys(abasSalvas).length > 0;
 
-  const pacientesAbas = { ...padrao.pacientesAbas };
-  Object.entries(sessao?.pacientesAbas || {}).forEach(([chave, valor]) => {
-    pacientesAbas[chave] = textoPermissao(Math.max(nivelPermissao(pacientesAbas[chave]), nivelPermissao(valor)));
-  });
+  // Permissoes gravadas para a pessoa sao a fonte de verdade. O padrao do cargo
+  // so atende contas antigas que ainda nao possuem nenhuma configuracao salva.
+  const modulos = Object.fromEntries(
+    Object.keys(padrao.modulos).map((chave) => [
+      chave,
+      temModulosSalvos ? textoPermissao(nivelPermissao(modulosSalvos[chave])) : padrao.modulos[chave]
+    ])
+  );
+  const pacientesAbas = Object.fromEntries(
+    Object.keys(padrao.pacientesAbas).map((chave) => [
+      chave,
+      temAbasSalvas ? textoPermissao(nivelPermissao(abasSalvas[chave])) : padrao.pacientesAbas[chave]
+    ])
+  );
 
   return { modulos, pacientesAbas };
 }
@@ -243,19 +253,65 @@ function App() {
 
   useEffect(() => {
     let cancelado = false;
-    void (async () => {
+    async function sincronizarUsuarios() {
       try {
         const usuarios = await listarUsuariosApi();
         if (cancelado) return;
         setUsuariosSistema(usuarios);
         setUsuarioLoginDigitado((atual) => atual || usuarios[0]?.usuario || usuarios[0]?.nome || "");
+        setUsuarioLogado((sessaoAtual) => {
+          if (!sessaoAtual) return sessaoAtual;
+          const cadastroAtual = usuarios.find(
+            (item) => item.id === sessaoAtual.id || normalizarBusca(item.usuario) === normalizarBusca(sessaoAtual.usuario)
+          );
+          if (!cadastroAtual || normalizarBusca(cadastroAtual.status) !== "ativo") {
+            salvarUsuarioSessao(null);
+            return null;
+          }
+          const sessaoAtualizada: UsuarioSessao = {
+            ...sessaoAtual,
+            nome: cadastroAtual.nome,
+            usuario: cadastroAtual.usuario,
+            perfil: cadastroAtual.perfil,
+            cargo: cadastroAtual.cargo,
+            agendaEscopo: cadastroAtual.agendaEscopo,
+            agendaDisponivel: cadastroAtual.agendaDisponivel,
+            nomeAgenda: cadastroAtual.nomeAgenda,
+            modulos: cadastroAtual.modulos,
+            pacientesAbas: cadastroAtual.pacientesAbas
+          };
+          const semAlteracao =
+            JSON.stringify(sessaoAtualizada.modulos) === JSON.stringify(sessaoAtual.modulos)
+            && JSON.stringify(sessaoAtualizada.pacientesAbas) === JSON.stringify(sessaoAtual.pacientesAbas)
+            && sessaoAtualizada.nome === sessaoAtual.nome
+            && sessaoAtualizada.usuario === sessaoAtual.usuario
+            && sessaoAtualizada.perfil === sessaoAtual.perfil
+            && sessaoAtualizada.cargo === sessaoAtual.cargo
+            && sessaoAtualizada.agendaEscopo === sessaoAtual.agendaEscopo
+            && sessaoAtualizada.agendaDisponivel === sessaoAtual.agendaDisponivel
+            && sessaoAtualizada.nomeAgenda === sessaoAtual.nomeAgenda;
+          if (semAlteracao) return sessaoAtual;
+          salvarUsuarioSessao(sessaoAtualizada);
+          return sessaoAtualizada;
+        });
       } catch {
         if (cancelado) return;
-        setUsuariosSistema([]);
+        // Uma falha temporaria de rede nao deve encerrar a sessao nem restaurar permissoes antigas.
       }
-    })();
+    }
+
+    void sincronizarUsuarios();
+    const intervalo = window.setInterval(() => void sincronizarUsuarios(), 30_000);
+    const aoRetomar = () => {
+      if (document.visibilityState === "visible") void sincronizarUsuarios();
+    };
+    window.addEventListener("focus", aoRetomar);
+    document.addEventListener("visibilitychange", aoRetomar);
     return () => {
       cancelado = true;
+      window.clearInterval(intervalo);
+      window.removeEventListener("focus", aoRetomar);
+      document.removeEventListener("visibilitychange", aoRetomar);
     };
   }, []);
 
