@@ -416,17 +416,6 @@ function construirProfissionaisBase(usuarios: UsuarioResumoApi[]) {
   }));
 }
 
-function construirProfissionalImportado(nome: string, indice: number) {
-  const nomeLimpo = nome.trim() || "Profissional";
-  return {
-    id: idProfissionalImportado(nomeLimpo),
-    nome: nomeLimpo,
-    usuarioVinculado: nomeLimpo,
-    cor: CORES_AGENDA[indice % CORES_AGENDA.length],
-    corSuave: suavizarCor(CORES_AGENDA[indice % CORES_AGENDA.length])
-  };
-}
-
 function normalizarTextoAgenda(valor: string) {
   return (valor || "")
     .normalize("NFD")
@@ -462,34 +451,6 @@ function idProfissionalImportado(nome: string) {
     hash = (hash * 31 + texto.charCodeAt(indice)) >>> 0;
   }
   return 100000 + (hash % 900000);
-}
-
-function construirProfissionaisImportados(
-  eventos: AgendaApiAgendamento[],
-  profissionaisBase: Array<{ id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>
-) {
-  const nomesExistentes = new Set(
-    profissionaisBase.flatMap((item) => [nomeCanonicoProfissionalAgenda(item.nome), nomeCanonicoProfissionalAgenda(item.usuarioVinculado)])
-  );
-  const nomesImportados = Array.from(
-    new Set(
-      eventos
-        .map((evento) => String(evento.profissional || "").trim())
-        .filter(Boolean)
-        .filter((nome) => !nomesExistentes.has(nomeCanonicoProfissionalAgenda(nome)))
-    )
-  );
-
-  return nomesImportados.map((nome, indice) => {
-    const cor = CORES_AGENDA[(profissionaisBase.length + indice) % CORES_AGENDA.length];
-    return {
-      id: idProfissionalImportado(nome),
-      nome,
-      usuarioVinculado: nome,
-      cor,
-      corSuave: suavizarCor(cor)
-    };
-  });
 }
 
 function criarConfiguracaoDiasPadrao() {
@@ -755,18 +716,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioResumoApi[]>([]);
   const [eventos, setEventos] = useState<AgendaEventoUI[]>(() => construirEventosIniciais());
   const profissionaisUsuariosBase = useMemo(() => construirProfissionaisBase(usuariosAgenda), [usuariosAgenda]);
-  const profissionaisImportadosAtuais = useMemo(
-    () => construirProfissionaisImportados(eventos, profissionaisUsuariosBase),
-    [eventos, profissionaisUsuariosBase]
-  );
-  const profissionaisTodos = useMemo(() => {
-    const mapa = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
-    profissionaisUsuariosBase.forEach((item) => mapa.set(item.id, item));
-    profissionaisImportadosAtuais.forEach((item) => {
-      if (!mapa.has(item.id)) mapa.set(item.id, item);
-    });
-    return Array.from(mapa.values());
-  }, [profissionaisImportadosAtuais, profissionaisUsuariosBase]);
+  const profissionaisTodos = profissionaisUsuariosBase;
   const usuariosAgendaDisponiveis = useMemo(() => profissionaisUsuariosBase.map((item) => item.nome), [profissionaisUsuariosBase]);
   const dataInicialHoje = hojeIso();
   const [visao, setVisao] = useState<AgendaView>("Dia");
@@ -860,10 +810,8 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   );
   const profissionaisDisponiveis = useMemo(
     () => {
-      const profissionaisComEventos = new Set(eventos.map((evento) => evento.profissionalId));
-      const baseConfigurada = profissionaisOrdenados.filter((item) => item.mostrar || profissionaisComEventos.has(item.id));
-      const importados = profissionaisImportadosAtuais.filter((item) => profissionaisComEventos.has(item.id));
-      if (usuarioEhAdministrador || !agendaSomentePropria) return [...baseConfigurada, ...importados];
+      const baseConfigurada = profissionaisOrdenados.filter((item) => item.mostrar);
+      if (usuarioEhAdministrador || !agendaSomentePropria) return baseConfigurada;
       const usuarioAtual = normalizarTextoAgenda(String(usuarioLogado?.usuario || ""));
       const nomeAtual = normalizarTextoAgenda(String(usuarioLogado?.nome || ""));
       const nomeAgendaAtual = normalizarTextoAgenda(String(usuarioLogado?.nomeAgenda || ""));
@@ -875,9 +823,9 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
           || nomeColuna === nomeAgendaAtual
           || nomeColuna === nomeAtual;
       });
-      return [...filtrados, ...importados];
+      return filtrados;
     },
-    [agendaSomentePropria, eventos, profissionaisImportadosAtuais, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
+    [agendaSomentePropria, profissionaisOrdenados, usuarioEhAdministrador, usuarioLogado?.nome, usuarioLogado?.nomeAgenda, usuarioLogado?.usuario]
   );
   const profissionaisSelecionadosAtivos = useMemo(
     () => profissionaisSelecionados.filter((id) => profissionaisDisponiveis.some((item) => item.id === id)),
@@ -2305,23 +2253,7 @@ function atualizarConfigProfissionalDia(
     }
     if (carregamentoAgendaRef.current !== carregamentoId) return;
 
-    const importadosMap = new Map<number, { id: number; nome: string; usuarioVinculado: string; cor: string; corSuave: string }>();
-    const ajustados: AgendaEventoUI[] = carregados.map((evento) => {
-      const ajustado = resolverProfissionalEvento(evento);
-      const profissionalMapeado = normalizarTextoAgenda(evento.profissional)
-        ? profissionaisUsuariosBase.find((profissional) => profissional.id === ajustado.profissionalId)
-        : undefined;
-      if (!profissionalMapeado && evento.profissional.trim()) {
-        importadosMap.set(
-          ajustado.profissionalId,
-          construirProfissionalImportado(evento.profissional, importadosMap.size + profissionaisUsuariosBase.length)
-        );
-      }
-      return ajustado;
-    });
-
-    const idsImportados = Array.from(importadosMap.keys());
-    setProfissionaisSelecionados((atual) => [...new Set([...atual, ...idsImportados])]);
+    const ajustados: AgendaEventoUI[] = carregados.map((evento) => resolverProfissionalEvento(evento));
     setEventos(ajustados);
   }
 
