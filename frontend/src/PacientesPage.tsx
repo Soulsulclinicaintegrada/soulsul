@@ -1,5 +1,6 @@
 ﻿import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, ChevronDown, FileText, IdCard, Mail, MoreVertical, Pencil, Phone, Plus, Printer, Search, Wallet, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Ban } from "lucide-react";
 import {
   adicionarPacienteAvaliacaoCrmApi,
   atualizarCrmApi,
@@ -43,17 +44,20 @@ import {
   type PacienteResumoApi,
   type ProcedimentoResumoApi,
   type OrdemServicoResumoApi,
-  atualizarPacienteApi
+  atualizarPacienteApi,
+  atualizarSuspensaoTratamentoPacienteApi
 } from "./pacientesApi";
 import { adicionarMinutos, salvarAgendamentoAgenda } from "./agendaApi";
-import { carregarUsuarioSessao } from "./auth";
+import { carregarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { Odontograma } from "./Odontograma";
 import logoSoulSul from "./assets/logo-soul-sul.png";
 
 type PacientesPageProps = {
   busca: string;
   onLimparBusca?: () => void;
+  onNavegacaoConsumida?: (chave: number) => void;
   pacientesAbas?: Record<string, string>;
+  usuarioLogado?: UsuarioSessao | null;
   navegacao?: {
     pacienteId?: number;
     abaPrincipal?: "Cadastro" | "Financeiro" | "Agendamentos" | "Ordem de serviço";
@@ -177,26 +181,6 @@ const FORMAS_PAGAMENTO: Array<{ value: FormaPagamentoOpcao; label: string }> = [
 ];
 const FORMAS_A_VISTA = new Set<FormaPagamentoOpcao>(["PIX", "CARTAO_DEBITO", "DINHEIRO"]);
 const MAX_PARCELAS_CARTAO_CREDITO = 18;
-const TAXA_CARTAO_CREDITO: Record<number, number> = {
-  1: 1,
-  2: 1,
-  3: 1,
-  4: 1,
-  5: 1,
-  6: 1,
-  7: 1,
-  8: 1,
-  9: 1,
-  10: 1,
-  11: 1,
-  12: 1,
-  13: 1,
-  14: 1,
-  15: 1,
-  16: 1,
-  17: 1,
-  18: 1
-};
 const STATUS_RESGATE_ORCAMENTO = ["Em tratativa", "Ligar novamente", "Desistente", "Convertido"] as const;
 
 type ProcedimentoCatalogo = {
@@ -415,11 +399,6 @@ function adicionarMesesData(dataIso: string, quantidadeMeses: number) {
   return `${anoFinal}-${mesFinal}-${diaFinal}`;
 }
 
-function aplicarTaxaCartaoCredito(valor: number, parcelasCartao: number) {
-  const fator = TAXA_CARTAO_CREDITO[Math.max(1, parcelasCartao)] ?? 1;
-  return Math.round(valor * fator * 100) / 100;
-}
-
 function dataParcelaPagamento(dataBase: string, indice: number, entrada: boolean, forma: FormaPagamentoOpcao) {
   if (forma !== "BOLETO") return dataBase || dataHojeIso();
   const deslocamento = entrada ? Math.max(0, indice - 1) : indice;
@@ -478,14 +457,16 @@ function normalizarPlanoPagamento(
   const entrada = Boolean(plano?.entrada);
   const parcelas = Math.min(MAX_PARCELAS_CONTRATO, Math.max(1, plano?.parcelas || 1));
   const totalLinhas = parcelas + (entrada ? 1 : 0);
-  const valores = distribuirTotalParcelas(valorTotal, totalLinhas);
+  const valoresIniciais = distribuirTotalParcelas(valorTotal, totalLinhas);
 
   const linhas = Array.from({ length: totalLinhas }, (_, indice) => {
     const linhaAnterior = plano?.linhas[indice];
     const descricao = entrada && indice === 0 ? "Entrada" : String(entrada ? indice : indice + 1);
     const forma = linhaAnterior?.forma || "PIX";
     const parcelasCartao = Math.max(1, linhaAnterior?.parcelasCartao || 1);
-    const valorBase = valores[indice] || 0;
+    const valor = linhaAnterior && Number.isFinite(linhaAnterior.valor)
+      ? linhaAnterior.valor
+      : (valoresIniciais[indice] || 0);
     const dataLinha = String(linhaAnterior?.data || "").trim() || dataParcelaPagamento(dataBase, indice, entrada, forma);
     return {
       indice,
@@ -493,56 +474,11 @@ function normalizarPlanoPagamento(
       forma,
       parcelasCartao,
       data: dataLinha,
-      valor: forma === "CARTAO_CREDITO" ? aplicarTaxaCartaoCredito(valorBase, parcelasCartao) : valorBase
+      valor
     };
   });
 
   return { entrada, parcelas, linhas };
-}
-
-function recalcularPlanoPagamentoAPartir(
-  plano: PlanoPagamento,
-  valorTotal: number,
-  dataBase: string,
-  indiceBase: number
-) {
-  const linhas = [...plano.linhas];
-  if (!linhas.length) return normalizarPlanoPagamento(plano, valorTotal, dataBase);
-
-  const indiceSeguro = Math.min(Math.max(indiceBase, 0), linhas.length - 1);
-  const somaAteBase = linhas
-    .slice(0, indiceSeguro + 1)
-    .reduce((total, linha) => total + (Number.isFinite(linha.valor) ? linha.valor : 0), 0);
-  const restantes = linhas.length - (indiceSeguro + 1);
-  const saldoRestante = Math.max(0, Math.round((valorTotal - somaAteBase) * 100) / 100);
-  const distribuicao = distribuirTotalParcelas(saldoRestante, Math.max(restantes, 1));
-  const dataBaseLinha = linhas[indiceSeguro]?.data || dataBase || dataHojeIso();
-
-  const linhasRecalculadas = linhas.map((linha, indice) => {
-    if (indice < indiceSeguro) return linha;
-    if (indice === indiceSeguro) {
-      return {
-        ...linha,
-        data: linha.data || dataBaseLinha,
-        valor: linha.forma === "CARTAO_CREDITO"
-          ? aplicarTaxaCartaoCredito(linha.valor, linha.parcelasCartao)
-          : linha.valor
-      };
-    }
-    const valorBase = distribuicao[indice - indiceSeguro - 1] || 0;
-    return {
-      ...linha,
-      data: adicionarMesesData(dataBaseLinha, indice - indiceSeguro),
-      valor: linha.forma === "CARTAO_CREDITO"
-        ? aplicarTaxaCartaoCredito(valorBase, linha.parcelasCartao)
-        : valorBase
-    };
-  });
-
-  return {
-    ...plano,
-    linhas: linhasRecalculadas
-  };
 }
 
 function planoPagamentoParaApi(plano: PlanoPagamento): ParcelaPagamentoApi[] {
@@ -636,7 +572,8 @@ function mapPacienteDetalheParaResumo(paciente: PacienteDetalheApi): PacienteRes
     telefone: paciente.telefone || "",
     email: paciente.email || "",
     dataNascimento: paciente.dataNascimento || "",
-    fotoUrl: paciente.fotoUrl || ""
+    fotoUrl: paciente.fotoUrl || "",
+    tratamentoSuspenso: Boolean(paciente.tratamentoSuspenso)
   };
 }
 
@@ -949,9 +886,10 @@ function mapProcedimentoCatalogoApi(item: ProcedimentoResumoApi): ProcedimentoCa
   };
 }
 
-export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas = {} }: PacientesPageProps) {
+export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, navegacao, pacientesAbas = {}, usuarioLogado = null }: PacientesPageProps) {
   const feedbackRef = useRef<HTMLDivElement | null>(null);
-  const usuarioSessao = carregarUsuarioSessao();
+  const navegacaoProcessadaRef = useRef<number | null>(null);
+  const usuarioSessao = usuarioLogado || carregarUsuarioSessao();
   const usuarioPodeAprovarOrcamento = useMemo(() => {
     const identidade = `${usuarioSessao?.usuario || ""} ${usuarioSessao?.nome || ""}`
       .normalize("NFD")
@@ -959,6 +897,17 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
       .toLowerCase();
     return identidade.includes("juliana") || identidade.includes("eliane");
   }, [usuarioSessao?.nome, usuarioSessao?.usuario]);
+  const usuarioPodeSuspenderTratamento = usuarioPodeAprovarOrcamento;
+  const nivelFinanceiroModulo = useMemo(
+    () => nivelPermissao(String(usuarioSessao?.modulos?.Financeiro || "Sem acesso")),
+    [usuarioSessao?.modulos]
+  );
+  const nivelOrcamentosAba = useMemo(
+    () => nivelPermissao(String(pacientesAbas.Orcamentos || "Sem acesso")),
+    [pacientesAbas]
+  );
+  const usuarioPodeEditarOrcamento = nivelFinanceiroModulo >= 2 && nivelOrcamentosAba >= 2;
+  const usuarioPodeAprovarOrcamentoComPermissao = usuarioPodeAprovarOrcamento && usuarioPodeEditarOrcamento;
   const [pacientes, setPacientes] = useState<PacienteResumoApi[]>([]);
   const [pacienteAtivoId, setPacienteAtivoId] = useState<number | null>(null);
   const [ficha, setFicha] = useState<FichaPacienteApi | null>(null);
@@ -975,7 +924,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const [feedback, setFeedback] = useState<string | null>(null);
   const [agendamentoAvaliacaoNovo, setAgendamentoAvaliacaoNovo] = useState<AgendamentoAvaliacaoForm>(AGENDAMENTO_AVALIACAO_INICIAL);
   const [agendamentoAvaliacaoEdicao, setAgendamentoAvaliacaoEdicao] = useState<AgendamentoAvaliacaoForm>(AGENDAMENTO_AVALIACAO_INICIAL);
-  const [abaPrincipal, setAbaPrincipal] = useState<AbaPrincipal>("Cadastro");
+  const [abaPrincipal, setAbaPrincipal] = useState<AbaPrincipal>(() => {
+    const salva = window.sessionStorage.getItem("soul-sul-paciente-aba-principal");
+    return ABAS_PRINCIPAIS.some((aba) => aba.key === salva) ? salva as AbaPrincipal : "Cadastro";
+  });
   const [abaClinica, setAbaClinica] = useState<AbaClinica>("Plano e ficha clínica");
   const [abaDocumentos, setAbaDocumentos] = useState<AbaDocumentos>("Documentos");
   const [secaoCadastro, setSecaoCadastro] = useState<CadastroSecao>("dados");
@@ -1041,7 +993,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   const fotoPacienteSrc = pacienteDetalhe?.fotoUrl ? `${urlFotoPaciente(pacienteDetalhe.id)}?v=${fotoVersao}` : "";
   const buscaAtiva = busca.trim().length > 0;
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
-  const orcamentoBloqueado = false;
+  const orcamentoBloqueado = !usuarioPodeEditarOrcamento;
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
   const recebiveisVisiveisPaciente = useMemo(
     () => (ficha?.recebiveis || []).filter((item) =>
@@ -1278,6 +1230,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   useEffect(() => {
     if (!navegacao) return;
+    if (navegacaoProcessadaRef.current === navegacao.chave) return;
+    navegacaoProcessadaRef.current = navegacao.chave;
     if (navegacao.abrirNovoPaciente) {
       setModalNovoAberto(true);
       setPacienteAtivoId(null);
@@ -1288,7 +1242,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     }
     if (navegacao.abrirOrcamento) setAbaPrincipal("Comercial");
     else if (navegacao.abaPrincipal) setAbaPrincipal(navegacao.abaPrincipal);
-  }, [navegacao, onLimparBusca]);
+    onNavegacaoConsumida?.(navegacao.chave);
+  }, [navegacao, onLimparBusca, onNavegacaoConsumida]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem("soul-sul-paciente-aba-principal", abaPrincipal);
+  }, [abaPrincipal]);
 
   useEffect(() => {
     if (acessoAbaAtual > 0) return;
@@ -1574,6 +1533,45 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
     }
   }
 
+  async function alternarSuspensaoTratamentoPaciente(suspender: boolean) {
+    if (!pacienteAtivoId || !pacienteDetalhe || !usuarioPodeSuspenderTratamento) return;
+    if (suspender) {
+      const confirmou = window.confirm(`Confirma suspender o tratamento de ${pacienteDetalhe.nome}?`);
+      if (!confirmou) return;
+    } else {
+      const confirmou = window.confirm(`Confirma liberar o tratamento de ${pacienteDetalhe.nome}?`);
+      if (!confirmou) return;
+    }
+    const observacao = suspender
+      ? String(
+          window.prompt(
+            "Observação da suspensão do tratamento (opcional):",
+            pacienteDetalhe.tratamentoSuspensoObservacao || ""
+          ) || ""
+        ).trim()
+      : "";
+    setErro(null);
+    try {
+      const atualizado = await atualizarSuspensaoTratamentoPacienteApi(pacienteAtivoId, {
+        suspenso: suspender,
+        observacao
+      });
+      setEditForm(mapPacienteParaForm(atualizado));
+      setFicha((atual) => (atual ? { ...atual, paciente: atualizado } : atual));
+      setPacientes((atual) => {
+        const resumoAtualizado = mapPacienteDetalheParaResumo(atualizado);
+        const indice = atual.findIndex((item) => item.id === atualizado.id);
+        if (indice < 0) return atual;
+        const proximo = [...atual];
+        proximo[indice] = resumoAtualizado;
+        return proximo;
+      });
+      setFeedback(suspender ? "Tratamento suspenso com sucesso." : "Tratamento liberado com sucesso.");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao atualizar o tratamento do paciente.");
+    }
+  }
+
   async function enviarPacienteFinalizadoParaCrm() {
     if (!pacienteAtivoId) return;
     setSalvandoCrmFinalizado(true);
@@ -1710,9 +1708,35 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function atualizarPlanoPagamentoBase(campo: "entrada" | "parcelas", valor: boolean | number) {
+    if (campo === "entrada") {
+      setPlanoPagamentoEditor((atual) => {
+        const habilitar = Boolean(valor);
+        if (habilitar === atual.entrada) return atual;
+        if (habilitar) {
+          const linhas = [
+            {
+              indice: 0,
+              descricao: "Entrada",
+              data: orcamentoDraft.data || dataHojeIso(),
+              forma: "PIX" as FormaPagamentoOpcao,
+              valor: 0,
+              parcelasCartao: 1
+            },
+            ...atual.linhas.map((linha, indice) => ({ ...linha, indice: indice + 1, descricao: String(indice + 1) }))
+          ];
+          return { ...atual, entrada: true, linhas };
+        }
+        return {
+          ...atual,
+          entrada: false,
+          linhas: atual.linhas.slice(1).map((linha, indice) => ({ ...linha, indice, descricao: String(indice + 1) }))
+        };
+      });
+      return;
+    }
     setPlanoPagamentoEditor((atual) => normalizarPlanoPagamento({
       ...atual,
-      [campo]: valor
+      parcelas: Number(valor)
     }, totalOrcamentoFinal, orcamentoDraft.data));
   }
 
@@ -1731,32 +1755,31 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function atualizarFormaParcela(indice: number, forma: FormaPagamentoOpcao) {
-    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
+    setPlanoPagamentoEditor((atual) => ({
       ...atual,
-      linhas: atual.linhas.map((linha, linhaIndice) => {
-        if (linhaIndice < indice) return linha;
-        return {
+      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice
+        ? {
           ...linha,
           forma,
           parcelasCartao: forma === "CARTAO_CREDITO" ? Math.max(1, linha.parcelasCartao || 1) : 1
-        };
-      })
-    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
+        }
+        : linha)
+    }));
   }
 
   function atualizarParcelasCartao(indice: number, parcelasCartao: number) {
-    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
+    setPlanoPagamentoEditor((atual) => ({
       ...atual,
       linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, parcelasCartao: Math.min(MAX_PARCELAS_CARTAO_CREDITO, Math.max(1, parcelasCartao)) } : linha)
-    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
+    }));
   }
 
   function atualizarValorParcela(indice: number, valorTexto: string) {
     const valor = parseMoeda(valorTexto);
-    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
+    setPlanoPagamentoEditor((atual) => ({
       ...atual,
       linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, valor } : linha)
-    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
+    }));
   }
 
   function iniciarEdicaoValorParcela(indice: number, valor: number) {
@@ -1786,10 +1809,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function atualizarDataParcela(indice: number, data: string) {
-    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
+    setPlanoPagamentoEditor((atual) => ({
       ...atual,
       linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, data } : linha)
-    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
+    }));
   }
 
   function abrirRecebivel(item: RecebivelResumoApi) {
@@ -1965,6 +1988,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function abrirNovoOrcamento() {
+    if (!usuarioPodeEditarOrcamento) {
+      setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
+      return;
+    }
     setOrcamentoDraft(ORCAMENTO_INICIAL(dataHojeIso()));
     setNovaObservacaoOrcamento("");
     setHistoricoOrcamento([]);
@@ -2400,7 +2427,16 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
   }
 
   function excluirProcedimentoOrcamento(procedimentoId: number) {
-    setProcedimentosOrcamento((atual) => atual.filter((item) => item.id !== procedimentoId));
+    setProcedimentosOrcamento((atual) => atual.map((item) => {
+      if (item.id !== procedimentoId) return item;
+      const restaurar = item.regioes.length > 0 && item.regioes.every((regiao) => !regiao.ativo);
+      return {
+        ...item,
+        expandido: restaurar,
+        regioes: item.regioes.map((regiao) => ({ ...regiao, ativo: restaurar }))
+      };
+    }));
+    setFeedback("O procedimento foi retirado do total, mas continuará visível no orçamento como histórico.");
   }
 
   function editarProcedimentoOrcamento(procedimentoId: number) {
@@ -2489,15 +2525,28 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
           ativo: regiao.ativo,
           faces: regiao.faces
         }))
-      }))
-      .filter((item) => item.regioes.some((regiao) => regiao.ativo));
+      }));
 
-    if (!itens.length) {
+    if (!itens.some((item) => item.regioes.some((regiao) => regiao.ativo))) {
       setErro("Adicione ao menos um procedimento com dentes/regiões ativos.");
       return;
     }
     if (!orcamentoDraft.dataRetornoCrm) {
       setErro("Informe a data de retorno do CRM para este orçamento.");
+      return;
+    }
+    const linhasPagamentoAtivas = planoPagamento.linhas.filter((linha) => Number(linha.valor || 0) > 0);
+    if (!linhasPagamentoAtivas.length) {
+      setErro("Informe ao menos uma forma de pagamento com valor maior que zero.");
+      return;
+    }
+    if (linhasPagamentoAtivas.some((linha) => !linha.data)) {
+      setErro("Informe a data de cada pagamento. As datas serão replicadas no contrato e no financeiro.");
+      return;
+    }
+    const totalPlanoPagamento = linhasPagamentoAtivas.reduce((total, linha) => total + Number(linha.valor || 0), 0);
+    if (Math.abs(arredondarCentavos(totalPlanoPagamento) - arredondarCentavos(totalOrcamentoFinal)) > 0) {
+      setErro(`A soma das formas de pagamento (${formatarMoeda(totalPlanoPagamento)}) precisa ser igual ao total do orçamento (${formatarMoeda(totalOrcamentoFinal)}).`);
       return;
     }
 
@@ -2571,8 +2620,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   async function aprovarOrcamento(contratoId: number) {
     if (!pacienteAtivoId) return;
-    if (!usuarioPodeAprovarOrcamento) {
-      setErro("Somente Juliana e Eliane podem aprovar orçamentos.");
+    if (!usuarioPodeEditarOrcamento) {
+      setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
+      return;
+    }
+    if (!usuarioPodeAprovarOrcamentoComPermissao) {
+      setErro("Somente Juliana e Eliane com permissão de edição em Financeiro/Orçamentos podem aprovar orçamentos.");
       return;
     }
     try {
@@ -2589,8 +2642,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   async function desaprovarOrcamento() {
     if (!pacienteAtivoId || !confirmarDesaprovarId) return;
-    if (!usuarioPodeAprovarOrcamento) {
-      setErro("Somente Juliana e Eliane podem reabrir orçamentos.");
+    if (!usuarioPodeEditarOrcamento) {
+      setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
+      return;
+    }
+    if (!usuarioPodeAprovarOrcamentoComPermissao) {
+      setErro("Somente Juliana e Eliane com permissão de edição em Financeiro/Orçamentos podem reabrir orçamentos.");
       return;
     }
     try {
@@ -2608,6 +2665,10 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
 
   async function excluirOrcamento(contratoId: number, status: string) {
     if (!pacienteAtivoId) return;
+    if (!usuarioPodeEditarOrcamento) {
+      setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
+      return;
+    }
     if ((status || "").toUpperCase() === "APROVADO") {
       window.alert("Desaprove o orçamento antes de excluir.");
       return;
@@ -2697,7 +2758,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
           <div className="patient-hero-copy">
             <span className="panel-kicker">Paciente</span>
             <h2>{pacienteDetalhe.nome}</h2>
-            <span className="patient-status">Ativo</span>
+            <span className="patient-status">{pacienteDetalhe.tratamentoSuspenso ? "Tratamento suspenso" : "Ativo"}</span>
             <div className="patient-hero-meta">
               <span><Phone size={15} /> {pacienteDetalhe.telefone || "Telefone não informado"}</span>
               <span><Mail size={15} /> {pacienteDetalhe.email || "E-mail não informado"}</span>
@@ -2719,6 +2780,16 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             <Wallet size={18} />
             Financeiro
           </button>
+          {usuarioPodeSuspenderTratamento ? (
+            <button
+              type="button"
+              className="icon-action"
+              onClick={() => void alternarSuspensaoTratamentoPaciente(!Boolean(pacienteDetalhe.tratamentoSuspenso))}
+            >
+              <Ban size={18} />
+              {pacienteDetalhe.tratamentoSuspenso ? "Liberar" : "Suspender"}
+            </button>
+          ) : null}
         </div>
       </article>
 
@@ -2745,6 +2816,26 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             ) : (
               <span className="empty-inline">Sem agendamento futuro.</span>
             )}
+          </article>
+
+          <article className="panel summary-card">
+            <div className="summary-card-title">Tratamento</div>
+            <div className="summary-card-body">
+              <div><span>Status</span><strong>{pacienteDetalhe.tratamentoSuspenso ? "Suspenso" : "Liberado"}</strong></div>
+              <div><span>Por</span><strong>{pacienteDetalhe.tratamentoSuspensoPor || "-"}</strong></div>
+              <div><span>Obs.</span><strong>{pacienteDetalhe.tratamentoSuspensoObservacao || "-"}</strong></div>
+            </div>
+            {usuarioPodeSuspenderTratamento ? (
+              <div className="summary-card-actions">
+                <button
+                  type="button"
+                  className="ghost-action compact"
+                  onClick={() => void alternarSuspensaoTratamentoPaciente(!Boolean(pacienteDetalhe.tratamentoSuspenso))}
+                >
+                  {pacienteDetalhe.tratamentoSuspenso ? "Liberar tratamento" : "Suspender tratamento"}
+                </button>
+              </div>
+            ) : null}
           </article>
 
           <article className={`panel summary-card finance-alert ${resumoFinanceiroIndicador(ficha?.financeiro.indicador)}`}>
@@ -2836,6 +2927,15 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   <button type="button" className="ghost-action" onClick={() => setEditForm(mapPacienteParaForm(pacienteDetalhe))}>
                     Cancelar
                   </button>
+                  {usuarioPodeSuspenderTratamento ? (
+                    <button
+                      type="button"
+                      className="ghost-action"
+                      onClick={() => void alternarSuspensaoTratamentoPaciente(!Boolean(pacienteDetalhe.tratamentoSuspenso))}
+                    >
+                      {pacienteDetalhe.tratamentoSuspenso ? "Liberar tratamento" : "Suspender tratamento"}
+                    </button>
+                  ) : null}
                   <button type="button" className="primary-action" onClick={() => void salvarEdicaoPaciente()} disabled={salvandoEdicao}>
                     {salvandoEdicao ? "Salvando..." : "Salvar paciente"}
                   </button>
@@ -3001,7 +3101,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                     <span className="panel-kicker">Orçamentos</span>
                     <h3>Orçamentos do paciente</h3>
                   </div>
-                  <button type="button" className="primary-action" onClick={abrirNovoOrcamento}>
+                  <button type="button" className="primary-action" onClick={abrirNovoOrcamento} disabled={!usuarioPodeEditarOrcamento}>
                     <Plus size={18} />
                     Novo orçamento
                   </button>
@@ -3152,6 +3252,20 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                       <div className="patient-photo-upload-copy">
                         <strong>Foto do paciente</strong>
                         <span>Envie uma imagem com fundo limpo para identificação na ficha.</span>
+                        {pacienteDetalhe?.tratamentoSuspenso ? (
+                          <span>Tratamento suspenso por {pacienteDetalhe.tratamentoSuspensoPor || "usuário autorizado"}.</span>
+                        ) : null}
+                        {usuarioPodeSuspenderTratamento ? (
+                          <div className="patient-photo-upload-actions">
+                            <button
+                              type="button"
+                              className="ghost-action compact"
+                              onClick={() => void alternarSuspensaoTratamentoPaciente(!Boolean(pacienteDetalhe?.tratamentoSuspenso))}
+                            >
+                              {pacienteDetalhe?.tratamentoSuspenso ? "Liberar tratamento" : "Suspender tratamento"}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="patient-form-grid two">
@@ -3329,6 +3443,15 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                   <button type="button" className="ghost-action" onClick={() => setEditForm(mapPacienteParaForm(pacienteDetalhe))}>
                     Cancelar
                   </button>
+                  {usuarioPodeSuspenderTratamento ? (
+                    <button
+                      type="button"
+                      className="ghost-action"
+                      onClick={() => void alternarSuspensaoTratamentoPaciente(!Boolean(pacienteDetalhe.tratamentoSuspenso))}
+                    >
+                      {pacienteDetalhe.tratamentoSuspenso ? "Liberar tratamento" : "Suspender tratamento"}
+                    </button>
+                  ) : null}
                   <button type="button" className="ghost-action" onClick={() => void salvarEdicaoPaciente(true)} disabled={salvandoEdicao || agendandoAvaliacao}>
                     {salvandoEdicao && agendandoAvaliacao ? "Agendando..." : "Salvar e agendar avaliação"}
                   </button>
@@ -3575,7 +3698,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                           {orcamentoAtivoId ? `Contrato #${orcamentoAtivoId}` : "Contrato"}
                         </button>
                       </div>
-                      <button type="button" className="primary-action" onClick={abrirNovoOrcamento}>
+                      <button type="button" className="primary-action" onClick={abrirNovoOrcamento} disabled={!usuarioPodeEditarOrcamento}>
                         <Plus size={18} />
                         Novo orçamento
                       </button>
@@ -3806,8 +3929,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                                     EDITAR
                                   </button>
                                   <button type="button" className="budget-preview-value-action budget-preview-value-action-danger" onClick={() => excluirProcedimentoOrcamento(item.id)}>
-                                    <X size={16} />
-                                    EXCLUIR
+                                    {item.regioes.every((regiao) => !regiao.ativo) ? <Plus size={16} /> : <X size={16} />}
+                                    {item.regioes.every((regiao) => !regiao.ativo) ? "RESTAURAR" : "RETIRAR"}
                                   </button>
                                 </div>
                               </div>
@@ -3869,12 +3992,12 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                             <button
                               type="button"
                               className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : "open"}`}
-                              disabled={alterandoStatusOrcamentoId === contrato.id || !usuarioPodeAprovarOrcamento}
+                              disabled={alterandoStatusOrcamentoId === contrato.id || !usuarioPodeAprovarOrcamentoComPermissao}
                               onClick={() => {
                                 if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
                                 else void aprovarOrcamento(contrato.id);
                               }}
-                              title={usuarioPodeAprovarOrcamento ? undefined : "Somente Juliana e Eliane podem aprovar orçamentos"}
+                              title={usuarioPodeAprovarOrcamentoComPermissao ? undefined : "Aprovação exige Juliana ou Eliane com edição em Financeiro/Orçamentos"}
                             >
                               {alterandoStatusOrcamentoId === contrato.id
                                 ? "Salvando..."
@@ -3899,7 +4022,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                               type="button"
                               className="ghost-action danger compact"
                               onClick={() => void excluirOrcamento(contrato.id, contrato.status || "")}
-                              disabled={excluindoOrcamentoId === contrato.id}
+                              disabled={excluindoOrcamentoId === contrato.id || !usuarioPodeEditarOrcamento}
                             >
                               {excluindoOrcamentoId === contrato.id ? "Excluindo..." : "Excluir"}
                             </button>
@@ -4733,7 +4856,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                         {menuOrcamentoAberto ? (
                           <div className="budget-menu-dropdown">
                             <button type="button" className="budget-menu-item" onClick={abrirModalDesconto}>DESCONTO</button>
-                            {usuarioPodeAprovarOrcamento ? (
+                            {usuarioPodeAprovarOrcamentoComPermissao ? (
                               <button
                                 type="button"
                                 className="budget-menu-item"
@@ -4837,8 +4960,8 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
                                 onClick={() => excluirProcedimentoOrcamento(item.id)}
                                 disabled={orcamentoBloqueado}
                               >
-                                <X size={16} />
-                                EXCLUIR
+                                {item.regioes.every((regiao) => !regiao.ativo) ? <Plus size={16} /> : <X size={16} />}
+                                {item.regioes.every((regiao) => !regiao.ativo) ? "RESTAURAR" : "RETIRAR"}
                               </button>
                             </div>
                           </div>
@@ -5049,7 +5172,7 @@ export function PacientesPage({ busca, onLimparBusca, navegacao, pacientesAbas =
             <footer className="modal-footer">
               <div className="sticky-actions">
                 <button type="button" className="ghost-action" onClick={() => setConfirmarDesaprovarId(null)}>Fechar</button>
-                <button type="button" className="primary-action" onClick={desaprovarOrcamento}>Confirmar</button>
+                <button type="button" className="primary-action" onClick={desaprovarOrcamento} disabled={!usuarioPodeAprovarOrcamentoComPermissao}>Confirmar</button>
               </div>
             </footer>
           </article>

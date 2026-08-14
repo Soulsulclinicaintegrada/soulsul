@@ -516,8 +516,12 @@ function App() {
         <PacientesPage
           busca={buscaGlobal}
           onLimparBusca={() => setBuscaGlobal("")}
+          onNavegacaoConsumida={(chave) => {
+            setNavegacaoPaciente((atual) => atual?.chave === chave ? null : atual);
+          }}
           navegacao={navegacaoPaciente}
           pacientesAbas={pacientesAbasUsuario}
+          usuarioLogado={usuarioLogado}
         />
       );
     }

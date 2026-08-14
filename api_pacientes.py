@@ -2924,7 +2924,16 @@ def carregar_procedimentos_contrato(conn: sqlite3.Connection, contrato_id: int) 
         "SELECT procedimento FROM procedimentos_contrato WHERE contrato_id=? ORDER BY id",
         (contrato_id,),
     ).fetchall()
-    return [str(row["procedimento"] or "") for row in rows if str(row["procedimento"] or "").strip()]
+    procedimentos: list[str] = []
+    vistos: set[str] = set()
+    for row in rows:
+        procedimento = str(row["procedimento"] or "").strip()
+        chave = normalizar_texto(procedimento)
+        if not procedimento or chave in vistos:
+            continue
+        vistos.add(chave)
+        procedimentos.append(procedimento)
+    return procedimentos
 
 
 def carregar_dentes_contratados(conn: sqlite3.Connection, paciente_id: int) -> list[int]:
@@ -3001,47 +3010,39 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         (contrato_id,),
     ).fetchall()
 
-    dentes_por_grupo: dict[int, list[sqlite3.Row]] = {}
-    dentes_sem_grupo_por_procedimento: dict[str, list[sqlite3.Row]] = {}
+    procedimentos_agrupados: dict[str, dict[str, object]] = {}
+    ordem_procedimentos: list[str] = []
+    for proc_row in procedimentos_rows:
+        procedimento_nome = str(proc_row["procedimento"] or "").strip()
+        chave = normalizar_texto(procedimento_nome)
+        if not procedimento_nome or not chave:
+            continue
+        if chave not in procedimentos_agrupados:
+            ordem_procedimentos.append(chave)
+            procedimentos_agrupados[chave] = {
+                "nome": procedimento_nome,
+                "profissional": str(proc_row["profissional_snapshot"] or ""),
+                "denticao": str(proc_row["denticao_snapshot"] or ""),
+                "valor": 0.0,
+            }
+        procedimentos_agrupados[chave]["valor"] = float(procedimentos_agrupados[chave]["valor"] or 0) + float(proc_row["valor"] or 0)
+
+    dentes_por_procedimento: dict[str, list[sqlite3.Row]] = {}
     for row in dentes_rows:
-        if row["grupo_item"] is not None:
-            dentes_por_grupo.setdefault(int(row["grupo_item"]), []).append(row)
-        else:
-            dentes_sem_grupo_por_procedimento.setdefault(normalizar_texto(row["procedimento"]), []).append(row)
+        dentes_por_procedimento.setdefault(normalizar_texto(row["procedimento"]), []).append(row)
 
     itens: list[OrcamentoItemPayload] = []
-    for indice_proc, proc_row in enumerate(procedimentos_rows, start=1):
-        procedimento_nome = str(proc_row["procedimento"] or "").strip()
-        grupo_rows = dentes_por_grupo.get(indice_proc)
-        if grupo_rows is None:
-            chave = normalizar_texto(procedimento_nome)
-            restantes = dentes_sem_grupo_por_procedimento.get(chave, [])
-            alvo = float(proc_row["valor"] or 0)
-            if not restantes:
-                grupo_rows = []
-            elif alvo <= 0:
-                grupo_rows = restantes
-                dentes_sem_grupo_por_procedimento[chave] = []
-            else:
-                grupo_rows = []
-                acumulado = 0.0
-                while restantes:
-                    row = restantes.pop(0)
-                    grupo_rows.append(row)
-                    acumulado += float(row["valor"] or 0)
-                    if acumulado + 0.009 >= alvo:
-                        break
-                dentes_sem_grupo_por_procedimento[chave] = restantes
+    for chave in ordem_procedimentos:
+        grupo = procedimentos_agrupados[chave]
+        grupo_rows = dentes_por_procedimento.get(chave, [])
         if not grupo_rows:
-            grupo_rows = [
-                {
-                    "regiao": "Sem região informada",
-                    "dente": None,
-                    "valor": float(proc_row["valor"] or 0),
-                    "status": "ATIVO",
-                    "faces": "",
-                }
-            ]
+            grupo_rows = [{
+                "regiao": "Sem região informada",
+                "dente": None,
+                "valor": float(grupo["valor"] or 0),
+                "status": "ATIVO",
+                "faces": "",
+            }]
         regioes = [
             OrcamentoRegiaoPayload(
                 regiao=str(row["regiao"] or row["dente"] or "Sem região informada").strip(),
@@ -3054,10 +3055,10 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         ]
         itens.append(
             OrcamentoItemPayload(
-                procedimento=procedimento_nome,
-                profissional=str(proc_row["profissional_snapshot"] or ""),
-                denticao=str(proc_row["denticao_snapshot"] or ""),
-                valor_unitario=float(proc_row["valor"] or 0),
+                procedimento=str(grupo["nome"] or ""),
+                profissional=str(grupo["profissional"] or ""),
+                denticao=str(grupo["denticao"] or ""),
+                valor_unitario=float(grupo["valor"] or 0),
                 regioes=regioes,
             )
         )
@@ -3251,6 +3252,57 @@ def assinatura_orcamento_atual(conn: sqlite3.Connection, contrato_id: int) -> st
     return json.dumps(assinatura, ensure_ascii=False, sort_keys=True)
 
 
+FORMAS_PAGAMENTO_ORCAMENTO = {
+    "PIX",
+    "BOLETO",
+    "CARTAO_CREDITO",
+    "CARTAO_DEBITO",
+    "DINHEIRO",
+}
+
+
+def validar_plano_pagamento_orcamento(
+    parcelas: list[ParcelaPagamentoPayload],
+    valor_total: float,
+    data_base: str,
+) -> list[ParcelaPagamentoPayload]:
+    plano: list[ParcelaPagamentoPayload] = []
+    for indice, parcela in enumerate(parcelas):
+        valor = round(float(parcela.valor or 0), 2)
+        if valor <= 0:
+            continue
+        forma = str(parcela.forma or "").strip().upper().replace(" ", "_")
+        forma = forma.replace("CARTÃO", "CARTAO").replace("CRÉDITO", "CREDITO").replace("DÉBITO", "DEBITO")
+        if forma not in FORMAS_PAGAMENTO_ORCAMENTO:
+            raise HTTPException(status_code=400, detail=f"Forma de pagamento inválida na linha {indice + 1}.")
+        data_informada = str(parcela.data or "").strip()
+        if not data_informada:
+            raise HTTPException(status_code=400, detail=f"Informe a data da forma de pagamento na linha {indice + 1}.")
+        data_normalizada = normalizar_data_contrato_iso(data_informada, "")
+        if not data_normalizada:
+            raise HTTPException(status_code=400, detail=f"Data de pagamento inválida na linha {indice + 1}.")
+        plano.append(
+            parcela.model_copy(
+                update={
+                    "indice": len(plano),
+                    "data": data_normalizada,
+                    "forma": forma,
+                    "valor": valor,
+                    "parcelas_cartao": max(1, int(parcela.parcelas_cartao or 1)) if forma == "CARTAO_CREDITO" else 1,
+                }
+            )
+        )
+    if not plano:
+        raise HTTPException(status_code=400, detail="Informe ao menos uma forma de pagamento com valor maior que zero.")
+    soma_plano = round(sum(float(parcela.valor or 0) for parcela in plano), 2)
+    if abs(soma_plano - round(float(valor_total or 0), 2)) > 0.009:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A soma das formas de pagamento ({formatar_moeda_br(soma_plano)}) deve ser igual ao total do orçamento ({formatar_moeda_br(valor_total)}).",
+        )
+    return plano
+
+
 def salvar_orcamento_paciente(
     conn: sqlite3.Connection,
     paciente_id: int,
@@ -3271,11 +3323,7 @@ def salvar_orcamento_paciente(
     desconto_valor = max(0.0, float(payload.desconto_valor or 0))
     valor_total = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
     data_base = normalizar_data_contrato_iso(payload.data, date.today().isoformat())
-    parcelas_plano = [
-        parcela.model_copy(update={"data": normalizar_data_contrato_iso(parcela.data, data_base)})
-        for parcela in payload.plano_pagamento
-        if str(parcela.forma or "").strip() and float(parcela.valor or 0) >= 0
-    ]
+    parcelas_plano = validar_plano_pagamento_orcamento(payload.plano_pagamento, valor_total, data_base)
     forma_pagamento = payload.forma_pagamento.strip() or "A Definir"
     quantidade_parcelas = max(int(payload.parcelas or 1), 1)
     entrada_valor = sum(float(parcela.valor or 0) for parcela in parcelas_plano if normalizar_texto(parcela.descricao) == "entrada")
@@ -3412,11 +3460,7 @@ def salvar_orcamento_paciente_com_pagamento(
     desconto_valor = max(0.0, float(payload.desconto_valor or 0))
     valor_total = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
     data_base = normalizar_data_contrato_iso(payload.data, date.today().isoformat())
-    parcelas_plano = [
-        parcela.model_copy(update={"data": normalizar_data_contrato_iso(parcela.data, data_base)})
-        for parcela in payload.plano_pagamento
-        if str(parcela.forma or "").strip() and float(parcela.valor or 0) >= 0
-    ]
+    parcelas_plano = validar_plano_pagamento_orcamento(payload.plano_pagamento, valor_total, data_base)
     forma_pagamento = payload.forma_pagamento.strip() or "A Definir"
     quantidade_parcelas = max(int(payload.parcelas or 1), 1)
     entrada_valor = sum(float(parcela.valor or 0) for parcela in parcelas_plano if normalizar_texto(parcela.descricao) == "entrada")
@@ -5378,9 +5422,8 @@ def gerar_documento_recebimento_boletos(
         paragrafo_principal = doc.add_paragraph("")
     paragrafo_principal.text = montar_texto_recebimento_boletos(paciente_row)
 
-    linha_assinatura = next((p for p in doc.paragraphs if "___" in p.text), None)
-    if linha_assinatura is not None:
-        indice_linha = doc.paragraphs.index(linha_assinatura)
+    indice_linha = next((indice for indice, p in enumerate(doc.paragraphs) if "___" in p.text), None)
+    if indice_linha is not None:
         for indice in range(indice_linha + 1, min(indice_linha + 3, len(doc.paragraphs))):
             texto_atual = normalizar_texto_maiusculo(doc.paragraphs[indice].text)
             if texto_atual.startswith("CPF"):
@@ -6092,10 +6135,24 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
 
     regioes_por_procedimento: dict[str, list[str]] = {}
     regioes_texto_por_procedimento: dict[str, list[str]] = {}
-    denticao_por_procedimento: dict[str, str] = {
-        normalizar_texto(str(row["procedimento"] or "").strip()): str(row["denticao_snapshot"] or "")
-        for row in procedimentos
-    }
+    denticao_por_procedimento: dict[str, str] = {}
+    procedimentos_agrupados: dict[str, dict[str, object]] = {}
+    ordem_procedimentos: list[str] = []
+    for row in procedimentos:
+        procedimento = str(row["procedimento"] or "").strip()
+        chave = normalizar_texto(procedimento)
+        if not procedimento or not chave:
+            continue
+        denticao_por_procedimento.setdefault(chave, str(row["denticao_snapshot"] or ""))
+        if chave not in procedimentos_agrupados:
+            ordem_procedimentos.append(chave)
+            procedimentos_agrupados[chave] = {
+                "procedimento": procedimento,
+                "valor": 0.0,
+                "profissional_snapshot": str(row["profissional_snapshot"] or ""),
+                "denticao_snapshot": str(row["denticao_snapshot"] or ""),
+            }
+        procedimentos_agrupados[chave]["valor"] = float(procedimentos_agrupados[chave]["valor"] or 0) + float(row["valor"] or 0)
     for row in dentes:
         chave = normalizar_texto(row["procedimento"])
         valor = str(row["dente"]) if row["dente"] is not None else str(row["regiao"] or "").strip()
@@ -6116,9 +6173,9 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
             regioes_por_procedimento[chave].append(valor)
 
     itens: list[dict] = []
-    for row in procedimentos:
-        procedimento = str(row["procedimento"] or "").strip()
-        chave = normalizar_texto(procedimento)
+    for chave in ordem_procedimentos:
+        grupo = procedimentos_agrupados[chave]
+        procedimento = str(grupo["procedimento"] or "")
         regioes = regioes_por_procedimento.get(chave, [])
         regioes_texto = regioes_texto_por_procedimento.get(chave, [])
         sufixo = ""
@@ -6132,9 +6189,9 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
         itens.append(
             {
                 "procedimento": f"{procedimento}{sufixo}",
-                "valor": float(row["valor"] or 0),
-                "profissional_snapshot": str(row["profissional_snapshot"] or ""),
-                "denticao_snapshot": str(row["denticao_snapshot"] or ""),
+                "valor": float(grupo["valor"] or 0),
+                "profissional_snapshot": str(grupo["profissional_snapshot"] or ""),
+                "denticao_snapshot": str(grupo["denticao_snapshot"] or ""),
                 "regioes": regioes,
             }
         )
@@ -6479,10 +6536,6 @@ def inserir_secao_antes_titulo(doc, marcador: str, reiniciar_em: int = 1) -> Non
         sect_pr.insert(0, type_el)
     type_el.set(qn("w:val"), "nextPage")
 
-    pg_num_anterior = sect_pr.find(qn("w:pgNumType"))
-    if pg_num_anterior is not None:
-        sect_pr.remove(pg_num_anterior)
-
     pg_num_type = sect_pr_body.find(qn("w:pgNumType"))
     if pg_num_type is None:
         pg_num_type = OxmlElement("w:pgNumType")
@@ -6513,10 +6566,10 @@ def limpar_reinicio_numeracao_secoes_adicionais(doc) -> None:
 
 
 def configurar_numeracao_paginas_contrato(doc) -> None:
-    inserir_secao_antes_titulo(doc, "CLÁUSULA 01 - DO OBJETO DO CONTRATO", 1)
+    inserir_secao_antes_titulo(doc, "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICOS", 1)
+    inserir_secao_antes_titulo(doc, "DECLARAÇÃO DE CONSENTIMENTO", 1)
     remover_quebra_proxima_marcador(doc, "PRONTUÁRIO")
     remover_quebra_proxima_marcador(doc, "PRONTUÁRIO Nº")
-    limpar_reinicio_numeracao_secoes_adicionais(doc)
     substituir_total_paginas_por_secao(doc)
     for secao in getattr(doc, "sections", []):
         substituir_total_paginas_por_secao(secao.header)
@@ -6744,44 +6797,26 @@ def valor_unitario_parcela_contrato(item: dict, quantidade_parcelas: int, forma_
 
 def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) -> str:
     valor_total = float(contrato["valor_total"] or 0)
-    entrada_valor = float(contrato["entrada"] or 0)
-    forma = str(contrato["forma_pagamento"] or "").replace("_", " ").upper()
-    formas_no_dia = {"CARTAO CREDITO", "CARTAO DE CREDITO", "PIX", "CARTAO DE DEBITO", "CARTAO DEBITO", "DINHEIRO"}
-
     itens_ativos = [item for item in plano if float(item.get("valor", 0) or 0) > 0]
-    entrada = next((item for item in itens_ativos if normalizar_texto(item.get("descricao", "")) == "entrada"), None)
-    posteriores = [item for item in itens_ativos if normalizar_texto(item.get("descricao", "")) != "entrada"]
-
-    if not posteriores and entrada:
-        return f"VALOR TOTAL {formatar_moeda_br(valor_total)}. PAGO NO {str(entrada.get('forma', forma)).replace('_', ' ').upper()} NO DIA {formatar_data_br_valor(entrada.get('data'))}."
-
-    if not posteriores:
+    if not itens_ativos:
         return f"VALOR TOTAL {formatar_moeda_br(valor_total)}."
 
-    valor_restante = sum(float(item.get("valor", 0) or 0) for item in posteriores)
-    primeira = posteriores[0]
-    forma_primeira = str(primeira.get("forma", forma)).replace("_", " ").upper()
-    quantidade_parcelas = quantidade_parcelas_contrato_pagamento(posteriores, forma)
-    valor_parcela = valor_unitario_parcela_contrato(primeira, quantidade_parcelas, forma)
-    sufixo_primeira = (
-        f"NO DIA {formatar_data_br_valor(primeira.get('data'))}."
-        if forma_primeira in formas_no_dia
-        else f"COM PRIMEIRO VENCIMENTO EM {formatar_data_br_valor(primeira.get('data'))}."
-    )
-    if entrada and entrada_valor > 0:
-        forma_entrada = str(entrada.get("forma", forma)).replace("_", " ").upper()
-        return (
-            f"VALOR TOTAL {formatar_moeda_br(valor_total)}. "
-            f"ENTRADA {formatar_moeda_br(entrada_valor)} PAGA NO {forma_entrada} NO DIA {formatar_data_br_valor(entrada.get('data'))}. "
-            f"RESTANTE {formatar_moeda_br(valor_restante)} EM {quantidade_parcelas} PARCELAS DE {formatar_moeda_br(valor_parcela)} NO {forma_primeira} "
-            f"{sufixo_primeira}"
+    descricoes: list[str] = []
+    for indice, item in enumerate(itens_ativos, start=1):
+        descricao_bruta = str(item.get("descricao", "") or "").strip()
+        rotulo = "ENTRADA" if normalizar_texto(descricao_bruta) == "entrada" else f"PAGAMENTO {descricao_bruta or indice}"
+        forma = str(item.get("forma", "A DEFINIR") or "A DEFINIR").replace("_", " ").upper()
+        forma = forma.replace("CARTAO CREDITO", "CARTÃO DE CRÉDITO").replace("CARTAO DEBITO", "CARTÃO DE DÉBITO")
+        valor = float(item.get("valor", 0) or 0)
+        data_pagamento = formatar_data_br_valor(item.get("data"))
+        parcelas_cartao = max(1, int(item.get("parcelas_cartao", 1) or 1))
+        detalhe_cartao = ""
+        if "CRÉDITO" in forma and parcelas_cartao > 1:
+            detalhe_cartao = f" EM {parcelas_cartao}X DE {formatar_moeda_br(valor / parcelas_cartao)}"
+        descricoes.append(
+            f"{rotulo}: {formatar_moeda_br(valor)} VIA {forma}{detalhe_cartao}, NA DATA {data_pagamento}"
         )
-
-    return (
-        f"VALOR TOTAL {formatar_moeda_br(valor_total)}. "
-        f"PAGO EM {quantidade_parcelas} PARCELAS DE {formatar_moeda_br(valor_parcela)} NO {forma_primeira} "
-        f"{sufixo_primeira}"
-    )
+    return f"VALOR TOTAL {formatar_moeda_br(valor_total)}. FORMA DE PAGAMENTO: {'; '.join(descricoes)}."
 
 
 def carregar_plano_pagamento_contrato(contrato: sqlite3.Row) -> list[dict]:
@@ -7048,9 +7083,17 @@ def limpar_documento_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> No
 
 
 def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqlite3.Row, contrato: sqlite3.Row, contrato_id: int) -> None:
-    conn.execute("DELETE FROM recebiveis WHERE contrato_id=?", (contrato_id,))
     plano = carregar_plano_pagamento_contrato(contrato)
     prontuario = formatar_prontuario_valor(paciente_row["prontuario"])
+    existentes = conn.execute(
+        "SELECT * FROM recebiveis WHERE contrato_id=? ORDER BY parcela_numero, id",
+        (contrato_id,),
+    ).fetchall()
+    existentes_por_numero: dict[int, list[sqlite3.Row]] = {}
+    for row in existentes:
+        existentes_por_numero.setdefault(int(row["parcela_numero"] or 0), []).append(row)
+    ids_utilizados: set[int] = set()
+    numero_posterior = 0
     for item in plano:
         forma = str(item.get("forma", "") or "").strip().upper()
         valor_item = float(item.get("valor", 0) or 0)
@@ -7060,31 +7103,62 @@ def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqli
         if descricao_item == "entrada":
             parcela_numero = 0
         else:
-            try:
-                parcela_numero = int(str(item.get("descricao", "")).strip())
-            except (TypeError, ValueError):
-                parcela_numero = int(item.get("indice", 0) or 0) + 1
-        conn.execute(
-            """
-            INSERT INTO recebiveis (
-                contrato_id, paciente_id, paciente_nome, prontuario, parcela_numero, vencimento, valor,
-                forma_pagamento, status, observacao, data_criacao, data_pagamento
+            numero_posterior += 1
+            parcela_numero = numero_posterior
+        parcelas_cartao = max(1, int(item.get("parcelas_cartao", 1) or 1))
+        detalhe = f"CONTRATO_APROVADO_{contrato_id} | {str(item.get('descricao', '') or '').strip() or parcela_numero}"
+        if forma == "CARTAO_CREDITO":
+            detalhe += f" | CARTAO {parcelas_cartao}X"
+        candidatos = existentes_por_numero.get(parcela_numero, [])
+        existente = next((row for row in candidatos if int(row["id"]) not in ids_utilizados), None)
+        if existente is not None:
+            ids_utilizados.add(int(existente["id"]))
+            conn.execute(
+                """
+                UPDATE recebiveis
+                SET paciente_id=?, paciente_nome=?, prontuario=?, vencimento=?, valor=?,
+                    forma_pagamento=?, observacao=?
+                WHERE id=?
+                """,
+                (
+                    int(paciente_row["id"]),
+                    str(paciente_row["nome"] or ""),
+                    prontuario,
+                    str(item.get("data", "") or ""),
+                    valor_item,
+                    forma.replace("_", " "),
+                    detalhe,
+                    int(existente["id"]),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, NULL)
-            """,
-            (
-                contrato_id,
-                int(paciente_row["id"]),
-                str(paciente_row["nome"] or ""),
-                prontuario,
-                parcela_numero,
-                str(item.get("data", "") or ""),
-                valor_item,
-                forma.replace("_", " "),
-                f"CONTRATO_APROVADO_{contrato_id}",
-                agora_str(),
-            ),
-        )
+        else:
+            cursor = conn.execute(
+                """
+                INSERT INTO recebiveis (
+                    contrato_id, paciente_id, paciente_nome, prontuario, parcela_numero, vencimento, valor,
+                    forma_pagamento, status, observacao, data_criacao, data_pagamento
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, NULL)
+                """,
+                (
+                    contrato_id,
+                    int(paciente_row["id"]),
+                    str(paciente_row["nome"] or ""),
+                    prontuario,
+                    parcela_numero,
+                    str(item.get("data", "") or ""),
+                    valor_item,
+                    forma.replace("_", " "),
+                    detalhe,
+                    agora_str(),
+                ),
+            )
+            ids_utilizados.add(int(cursor.lastrowid))
+    for row in existentes:
+        row_id = int(row["id"])
+        if row_id in ids_utilizados or normalizar_texto(row["status"]) == "pago":
+            continue
+        conn.execute("DELETE FROM recebiveis WHERE id=?", (row_id,))
 
 
 def sincronizar_financeiro_contrato(conn: sqlite3.Connection, paciente_row: sqlite3.Row, contrato: sqlite3.Row, contrato_id: int) -> None:
