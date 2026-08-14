@@ -1250,15 +1250,6 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   }, [abaPrincipal]);
 
   useEffect(() => {
-    if (acessoAbaAtual > 0) return;
-    const primeiraAba = abasFichaDisponiveis[0];
-    if (!primeiraAba) return;
-    setAbaPrincipal(primeiraAba.principal);
-    if (primeiraAba.clinica) setAbaClinica(primeiraAba.clinica);
-    if (primeiraAba.documentos) setAbaDocumentos(primeiraAba.documentos);
-  }, [abasFichaDisponiveis, acessoAbaAtual]);
-
-  useEffect(() => {
     if (!feedback) return;
     const timer = window.setTimeout(() => setFeedback(null), 3500);
     return () => window.clearTimeout(timer);
