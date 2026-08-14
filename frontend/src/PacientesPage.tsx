@@ -517,6 +517,40 @@ function planoPagamentoDaApi(
   return normalizarPlanoPagamento(base, valorTotal, dataBase);
 }
 
+function recalcularPlanoPagamentoAPartir(
+  plano: PlanoPagamento,
+  valorTotal: number,
+  dataBase: string,
+  indiceBase: number
+) {
+  const linhas = [...plano.linhas];
+  if (!linhas.length) return normalizarPlanoPagamento(plano, valorTotal, dataBase);
+
+  const indiceSeguro = Math.min(Math.max(indiceBase, 0), linhas.length - 1);
+  const somaAteBase = linhas
+    .slice(0, indiceSeguro + 1)
+    .reduce((total, linha) => total + (Number.isFinite(linha.valor) ? linha.valor : 0), 0);
+  const restantes = linhas.length - indiceSeguro - 1;
+  const saldoRestante = Math.max(0, Math.round((valorTotal - somaAteBase) * 100) / 100);
+  const distribuicao = distribuirTotalParcelas(saldoRestante, Math.max(restantes, 1));
+  const linhaBase = linhas[indiceSeguro];
+  const dataBaseLinha = linhaBase.data || dataBase || dataHojeIso();
+
+  return {
+    ...plano,
+    linhas: linhas.map((linha, indice) => {
+      if (indice <= indiceSeguro) return linha;
+      return {
+        ...linha,
+        data: adicionarMesesData(dataBaseLinha, indice - indiceSeguro),
+        forma: linhaBase.forma,
+        parcelasCartao: linhaBase.forma === "CARTAO_CREDITO" ? linhaBase.parcelasCartao : 1,
+        valor: distribuicao[indice - indiceSeguro - 1] || 0
+      };
+    })
+  };
+}
+
 function iniciais(nome: string) {
   return nome
     .split(" ")
@@ -1746,31 +1780,33 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   }
 
   function atualizarFormaParcela(indice: number, forma: FormaPagamentoOpcao) {
-    setPlanoPagamentoEditor((atual) => ({
+    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
       ...atual,
-      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice
+      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice >= indice
         ? {
           ...linha,
           forma,
-          parcelasCartao: forma === "CARTAO_CREDITO" ? Math.max(1, linha.parcelasCartao || 1) : 1
+          parcelasCartao: forma === "CARTAO_CREDITO" ? Math.max(1, atual.linhas[indice]?.parcelasCartao || 1) : 1
         }
         : linha)
-    }));
+    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
   }
 
   function atualizarParcelasCartao(indice: number, parcelasCartao: number) {
-    setPlanoPagamentoEditor((atual) => ({
+    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
       ...atual,
-      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, parcelasCartao: Math.min(MAX_PARCELAS_CARTAO_CREDITO, Math.max(1, parcelasCartao)) } : linha)
-    }));
+      linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice >= indice && linha.forma === "CARTAO_CREDITO"
+        ? { ...linha, parcelasCartao: Math.min(MAX_PARCELAS_CARTAO_CREDITO, Math.max(1, parcelasCartao)) }
+        : linha)
+    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
   }
 
   function atualizarValorParcela(indice: number, valorTexto: string) {
     const valor = parseMoeda(valorTexto);
-    setPlanoPagamentoEditor((atual) => ({
+    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
       ...atual,
       linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, valor } : linha)
-    }));
+    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
   }
 
   function iniciarEdicaoValorParcela(indice: number, valor: number) {
@@ -1800,10 +1836,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   }
 
   function atualizarDataParcela(indice: number, data: string) {
-    setPlanoPagamentoEditor((atual) => ({
+    setPlanoPagamentoEditor((atual) => recalcularPlanoPagamentoAPartir({
       ...atual,
       linhas: atual.linhas.map((linha, linhaIndice) => linhaIndice === indice ? { ...linha, data } : linha)
-    }));
+    }, totalOrcamentoFinal, orcamentoDraft.data, indice));
   }
 
   function abrirRecebivel(item: RecebivelResumoApi) {

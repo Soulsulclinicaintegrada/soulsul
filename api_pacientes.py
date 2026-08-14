@@ -6801,21 +6801,57 @@ def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) ->
     if not itens_ativos:
         return f"VALOR TOTAL {formatar_moeda_br(valor_total)}."
 
-    descricoes: list[str] = []
-    for indice, item in enumerate(itens_ativos, start=1):
-        descricao_bruta = str(item.get("descricao", "") or "").strip()
-        rotulo = "ENTRADA" if normalizar_texto(descricao_bruta) == "entrada" else f"PAGAMENTO {descricao_bruta or indice}"
+    def forma_legivel(item: dict) -> str:
         forma = str(item.get("forma", "A DEFINIR") or "A DEFINIR").replace("_", " ").upper()
-        forma = forma.replace("CARTAO CREDITO", "CARTÃO DE CRÉDITO").replace("CARTAO DEBITO", "CARTÃO DE DÉBITO")
+        return forma.replace("CARTAO CREDITO", "CARTÃO DE CRÉDITO").replace("CARTAO DEBITO", "CARTÃO DE DÉBITO")
+
+    def faz_parte_do_mesmo_grupo(anterior: dict, atual: dict) -> bool:
+        if normalizar_texto(anterior.get("descricao", "")) == "entrada":
+            return False
+        if normalizar_texto(atual.get("descricao", "")) == "entrada":
+            return False
+        if forma_legivel(anterior) != forma_legivel(atual):
+            return False
+        if abs(float(anterior.get("valor", 0) or 0) - float(atual.get("valor", 0) or 0)) > 0.009:
+            return False
+        if int(anterior.get("parcelas_cartao", 1) or 1) != int(atual.get("parcelas_cartao", 1) or 1):
+            return False
+        data_anterior = parse_data_contrato(anterior.get("data"))
+        data_atual = parse_data_contrato(atual.get("data"))
+        if data_anterior is None or data_atual is None:
+            return False
+        proximo_mes = adicionar_meses(data_anterior, 1)
+        return data_atual == proximo_mes
+
+    grupos: list[list[dict]] = []
+    for item in itens_ativos:
+        if grupos and faz_parte_do_mesmo_grupo(grupos[-1][-1], item):
+            grupos[-1].append(item)
+        else:
+            grupos.append([item])
+
+    descricoes: list[str] = []
+    for indice, grupo in enumerate(grupos, start=1):
+        item = grupo[0]
+        descricao_bruta = str(item.get("descricao", "") or "").strip()
+        entrada = normalizar_texto(descricao_bruta) == "entrada"
+        rotulo = "ENTRADA" if entrada else "SALDO"
+        forma = forma_legivel(item)
         valor = float(item.get("valor", 0) or 0)
         data_pagamento = formatar_data_br_valor(item.get("data"))
         parcelas_cartao = max(1, int(item.get("parcelas_cartao", 1) or 1))
-        detalhe_cartao = ""
-        if "CRÉDITO" in forma and parcelas_cartao > 1:
-            detalhe_cartao = f" EM {parcelas_cartao}X DE {formatar_moeda_br(valor / parcelas_cartao)}"
-        descricoes.append(
-            f"{rotulo}: {formatar_moeda_br(valor)} VIA {forma}{detalhe_cartao}, NA DATA {data_pagamento}"
-        )
+        if len(grupo) > 1:
+            descricoes.append(
+                f"{rotulo}: {len(grupo)} PARCELAS DE {formatar_moeda_br(valor)} VIA {forma}, "
+                f"COM PRIMEIRO VENCIMENTO EM {data_pagamento}"
+            )
+        elif "CRÉDITO" in forma and parcelas_cartao > 1:
+            descricoes.append(
+                f"{rotulo}: {formatar_moeda_br(valor)} VIA {forma}, EM {parcelas_cartao}X DE "
+                f"{formatar_moeda_br(valor / parcelas_cartao)}, NA DATA {data_pagamento}"
+            )
+        else:
+            descricoes.append(f"{rotulo}: {formatar_moeda_br(valor)} VIA {forma}, NA DATA {data_pagamento}")
     return f"VALOR TOTAL {formatar_moeda_br(valor_total)}. FORMA DE PAGAMENTO: {'; '.join(descricoes)}."
 
 
