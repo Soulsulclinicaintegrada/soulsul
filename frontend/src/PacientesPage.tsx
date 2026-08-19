@@ -478,6 +478,21 @@ function normalizarPlanoPagamento(
     };
   });
 
+  const totalAtual = linhas.reduce((total, linha) => total + (Number.isFinite(linha.valor) ? linha.valor : 0), 0);
+  const diferencaCentavos = arredondarCentavos(valorTotal) - arredondarCentavos(totalAtual);
+  if (linhas.length && diferencaCentavos !== 0) {
+    const ultimoIndice = linhas.length - 1;
+    const novoValorUltima = Math.round((linhas[ultimoIndice].valor + diferencaCentavos / 100) * 100) / 100;
+    if (novoValorUltima >= 0) {
+      linhas[ultimoIndice] = { ...linhas[ultimoIndice], valor: novoValorUltima };
+    } else {
+      const valoresRecalculados = distribuirTotalParcelas(valorTotal, linhas.length);
+      linhas.forEach((linha, indice) => {
+        linhas[indice] = { ...linha, valor: valoresRecalculados[indice] || 0 };
+      });
+    }
+  }
+
   return { entrada, parcelas, linhas };
 }
 
