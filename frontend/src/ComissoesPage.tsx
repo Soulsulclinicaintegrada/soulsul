@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { atualizarResponsaveisComissaoApi, relatorioComissoesApi, urlExportarRelatorioComissoes, type RelatorioComissoesApi } from "./pacientesApi";
+import { atualizarAgendadorAvaliacaoComissaoApi, atualizarResponsaveisComissaoApi, relatorioComissoesApi, urlExportarRelatorioComissoes, type RelatorioComissoesApi } from "./pacientesApi";
 
 type Visualizacao = "vendas" | "avaliacoes";
 function isoHoje() { return new Date().toISOString().slice(0, 10); }
@@ -20,6 +20,8 @@ export function ComissoesPage() {
   const [pagamento, setPagamento] = useState("");
   const [responsaveisEdicao, setResponsaveisEdicao] = useState<Record<number, { agendador: string; fechamento: string }>>({});
   const [salvandoContrato, setSalvandoContrato] = useState<number | null>(null);
+  const [agendadoresAvaliacaoEdicao, setAgendadoresAvaliacaoEdicao] = useState<Record<number, string>>({});
+  const [salvandoAvaliacao, setSalvandoAvaliacao] = useState<number | null>(null);
   const [mensagem, setMensagem] = useState("");
 
   async function carregar() {
@@ -93,6 +95,18 @@ export function ComissoesPage() {
     } catch (e) { setMensagem(e instanceof Error ? e.message : "Não foi possível salvar os responsáveis."); }
     finally { setSalvandoContrato(null); }
   }
+  async function salvarAgendadorAvaliacao(agendamentoId: number, agendadorAtual: string) {
+    const agendador = (agendadoresAvaliacaoEdicao[agendamentoId] ?? agendadorAtual).trim();
+    if (!agendador) { setMensagem("Informe quem agendou a avaliação."); return; }
+    setSalvandoAvaliacao(agendamentoId); setMensagem("");
+    try {
+      await atualizarAgendadorAvaliacaoComissaoApi(agendamentoId, agendador);
+      setMensagem("Responsável pelo agendamento atualizado.");
+      setAgendadoresAvaliacaoEdicao((atual) => { const copia = { ...atual }; delete copia[agendamentoId]; return copia; });
+      await carregar();
+    } catch (e) { setMensagem(e instanceof Error ? e.message : "Não foi possível salvar o responsável."); }
+    finally { setSalvandoAvaliacao(null); }
+  }
 
   return <div className="commission-page">
     <section className="module-panel commission-header-panel">
@@ -145,7 +159,7 @@ export function ComissoesPage() {
           <td><span className={`commission-status ${item.status === "Completo" ? "complete" : "review"}`}>{item.status}</span>{responsaveisEdicao[item.contratoId] ? <button type="button" className="primary-action compact commission-save-owner" disabled={salvandoContrato === item.contratoId} onClick={() => void salvarResponsaveis(item.contratoId, item.agendadorAvaliacao, item.agendadorFechamento)}>{salvandoContrato === item.contratoId ? "Salvando..." : "Salvar responsáveis"}</button> : null}</td>
         </tr>)}</tbody></table>{!vendas.length ? <div className="empty-inline">Nenhuma venda encontrada com esses filtros.</div> : null}</div>
         : <div className="commission-table-wrap"><table className="finance-table commission-table"><thead><tr><th>Paciente</th><th>Comparecimento</th><th>Quem agendou</th><th>Agendado em</th><th>Procedimentos</th></tr></thead><tbody>
-          {avaliacoes.map((item) => <tr key={item.agendamentoId}><td><strong>{item.paciente}</strong>{item.primeiraAvaliacao ? <span className="commission-first-evaluation">Primeira avaliação · R$ 1,90</span> : <small>Retorno/avaliação posterior · sem comissão fixa</small>}</td><td><strong>{item.data}</strong><small>{item.hora} · {item.status}</small></td><td><strong>{item.agendadoPor}</strong></td><td>{item.agendadoEm || "-"}</td><td>{item.procedimentos || "-"}</td></tr>)}
+          {avaliacoes.map((item) => <tr key={item.agendamentoId}><td><strong>{item.paciente}</strong>{item.primeiraAvaliacao ? <span className="commission-first-evaluation">Primeira avaliação · R$ 1,90</span> : <small>Já possuía comparecimento anterior · sem comissão fixa</small>}</td><td><strong>{item.data}</strong><small>{item.hora} · {item.status}</small></td><td><input className="commission-owner-input" list="commission-collaborators" aria-label={`Quem agendou a avaliação de ${item.paciente}`} value={agendadoresAvaliacaoEdicao[item.agendamentoId] ?? item.agendadoPor} onChange={(e) => setAgendadoresAvaliacaoEdicao((atual) => ({ ...atual, [item.agendamentoId]: e.target.value }))} />{agendadoresAvaliacaoEdicao[item.agendamentoId] !== undefined ? <button type="button" className="primary-action compact commission-save-owner" disabled={salvandoAvaliacao === item.agendamentoId} onClick={() => void salvarAgendadorAvaliacao(item.agendamentoId, item.agendadoPor)}>{salvandoAvaliacao === item.agendamentoId ? "Salvando..." : "Salvar"}</button> : null}</td><td>{item.agendadoEm || "-"}</td><td>Avaliação</td></tr>)}
         </tbody></table>{!avaliacoes.length ? <div className="empty-inline">Nenhuma avaliação encontrada com esses filtros.</div> : null}</div>}
 
         {visualizacao === "vendas" ? <div className="commission-person-summary">

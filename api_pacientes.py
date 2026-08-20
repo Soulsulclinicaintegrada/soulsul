@@ -331,6 +331,7 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
         garantir_coluna(conn, "contratos", "comissao_agendador TEXT")
         garantir_coluna(conn, "contratos", "comissao_fechamento TEXT")
+        garantir_coluna(conn, "agendamentos", "comissao_agendador TEXT")
         garantir_coluna(conn, "crm_pacientes", "origem_cancelado INTEGER DEFAULT 0")
         garantir_coluna(conn, "crm_pacientes", "cancelado_em TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "profissional_snapshot TEXT")
@@ -1053,6 +1054,10 @@ class ComissaoRelatorioResposta(BaseModel):
 class ComissaoResponsaveisPayload(BaseModel):
     agendador: str = ""
     fechamento: str = ""
+
+
+class ComissaoAgendadorAvaliacaoPayload(BaseModel):
+    agendador: str = ""
 
 
 class FichaPacienteResposta(BaseModel):
@@ -8824,7 +8829,7 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
     def agendador(item: sqlite3.Row | None) -> str:
         if item is None:
             return "Não localizado"
-        return str(item["criado_por"] or item["status_usuario"] or "Não registrado").strip()
+        return str(item["comissao_agendador"] or item["criado_por"] or item["status_usuario"] or "Não registrado").strip()
 
     vendas: list[ComissaoVendaItemResposta] = []
     for contrato in contratos:
@@ -8863,8 +8868,8 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         ))
 
     avaliacoes_periodo = []
-    primeira_avaliacao_por_paciente = {
-        paciente_id: next((registro for registro in registros if avaliacao(registro) and compareceu(registro)), None)
+    primeiro_comparecimento_por_paciente = {
+        paciente_id: next((registro for registro in registros if compareceu(registro)), None)
         for paciente_id, registros in por_paciente.items()
     }
     for item in agenda:
@@ -8876,10 +8881,10 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
             paciente=str(item["paciente_nome"] or item["nome_paciente_snapshot"] or ""), data=formatar_data_br(data_item),
             hora=str(item["hora_inicio"] or ""), status=str(item["status"] or ""), agendadoPor=agendador(item),
             agendadoEm=str(item["data_agendamento"] or item["data_criacao"] or item["criado_em"] or ""),
-            procedimentos=str(item["procedimentos_lista"] or ""),
+            procedimentos="Avaliação",
             primeiraAvaliacao=bool(
-                primeira_avaliacao_por_paciente.get(crm_int(item["paciente_id"]))
-                and crm_int(primeira_avaliacao_por_paciente[crm_int(item["paciente_id"])]["id"]) == crm_int(item["id"])
+                primeiro_comparecimento_por_paciente.get(crm_int(item["paciente_id"]))
+                and crm_int(primeiro_comparecimento_por_paciente[crm_int(item["paciente_id"])]["id"]) == crm_int(item["id"])
             ),
         ))
     return ComissaoRelatorioResposta(
@@ -8916,6 +8921,23 @@ def atualizar_responsaveis_comissao(contrato_id: int, payload: ComissaoResponsav
         )
         conn.commit()
         return {"ok": True, "agendador": agendador, "fechamento": fechamento}
+    finally:
+        conn.close()
+
+
+@app.put("/api/relatorios/comissoes/avaliacoes/{agendamento_id}/responsavel")
+def atualizar_agendador_avaliacao_comissao(agendamento_id: int, payload: ComissaoAgendadorAvaliacaoPayload):
+    agendador = payload.agendador.strip()
+    if not agendador:
+        raise HTTPException(status_code=400, detail="Informe quem agendou a avaliação.")
+    conn = conectar()
+    try:
+        existente = conn.execute("SELECT id FROM agendamentos WHERE id=?", (agendamento_id,)).fetchone()
+        if not existente:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+        conn.execute("UPDATE agendamentos SET comissao_agendador=? WHERE id=?", (agendador, agendamento_id))
+        conn.commit()
+        return {"ok": True, "agendador": agendador}
     finally:
         conn.close()
 

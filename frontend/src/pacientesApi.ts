@@ -1319,6 +1319,13 @@ export async function atualizarResponsaveisComissaoApi(contratoId: number, agend
   });
 }
 
+export async function atualizarAgendadorAvaliacaoComissaoApi(agendamentoId: number, agendador: string) {
+  return fetchJson<{ ok: true; agendador: string }>(`${API_BASE_URL}/api/relatorios/comissoes/avaliacoes/${agendamentoId}/responsavel`, {
+    method: "PUT",
+    body: JSON.stringify({ agendador })
+  });
+}
+
 export function urlExportarRelatorioComissoes(inicio: string, fim: string) {
   const params = new URLSearchParams({ inicio, fim });
   return `${API_BASE_URL}/api/relatorios/comissoes/export.xlsx?${params.toString()}`;
