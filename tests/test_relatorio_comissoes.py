@@ -16,11 +16,13 @@ def test_relatorio_calcula_pagamento_misto_e_divisao_30_70():
         CREATE TABLE agendamento_procedimentos (agendamento_id INTEGER, procedimento_nome_snapshot TEXT);
     """)
     conn.execute("INSERT INTO pacientes VALUES (1, 'Paciente Teste')")
+    conn.execute("INSERT INTO pacientes VALUES (2, 'Paciente Nova')")
     plano = json.dumps([{"forma": "PIX", "valor": 400}, {"forma": "BOLETO", "valor": 600}])
     conn.execute("INSERT INTO contratos VALUES (10,1,1000,'Misto',?,'APROVADO','2026-08-10','2026-08-10','2026-08-10','','')", (plano,))
     conn.execute("INSERT INTO agendamentos VALUES (0,'2026-08-04','09:00',1,'Paciente Teste','CLÍNICO','Consulta','Atendido','2026-08-01','Paciente Teste','2026-08-01','importacao','','2026-08-01','')")
     conn.execute("INSERT INTO agendamentos VALUES (1,'2026-08-05','09:00',1,'Paciente Teste','AVALIAÇÃO','Avaliação','Atendido','2026-08-01','Paciente Teste','2026-08-01','captacao','','2026-08-01','')")
     conn.execute("INSERT INTO agendamentos VALUES (2,'2026-08-10','09:00',1,'Paciente Teste','AVALIAÇÃO','Avaliação','Atendido','2026-08-09','Paciente Teste','2026-08-09','resgate','','2026-08-09','')")
+    conn.execute("INSERT INTO agendamentos VALUES (3,'06/08/2026','10:00',2,'Paciente Nova','AVALIAÇÃO','Outro texto importado','Atendido','2026-08-02','Paciente Nova','2026-08-02','recepcao','','2026-08-02','')")
 
     relatorio = carregar_relatorio_comissoes(conn, date(2026, 8, 1), date(2026, 8, 31))
 
@@ -28,6 +30,7 @@ def test_relatorio_calcula_pagamento_misto_e_divisao_30_70():
     assert relatorio.vendas[0].comissaoTotal == 6.40
     assert relatorio.vendas[0].comissaoCaptacao == 1.92
     assert relatorio.vendas[0].comissaoResgate == 4.48
-    assert len(relatorio.avaliacoes) == 2
-    assert [item.primeiraAvaliacao for item in relatorio.avaliacoes] == [False, False]
+    assert len(relatorio.avaliacoes) == 1
+    assert [item.paciente for item in relatorio.avaliacoes] == ["Paciente Nova"]
+    assert [item.primeiraAvaliacao for item in relatorio.avaliacoes] == [True]
     assert all(item.procedimentos == "Avaliação" for item in relatorio.avaliacoes)

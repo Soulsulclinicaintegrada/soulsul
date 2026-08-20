@@ -8814,6 +8814,14 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         GROUP BY a.id ORDER BY a.data, a.hora_inicio, a.id
         """
     ).fetchall()
+    agenda = sorted(
+        agenda,
+        key=lambda item: (
+            parse_data_contrato(str(item["data"] or "")) or date.max,
+            str(item["hora_inicio"] or "00:00"),
+            crm_int(item["id"]),
+        ),
+    )
     por_paciente: dict[int, list[sqlite3.Row]] = {}
     for agendamento in agenda:
         paciente_id = crm_int(agendamento["paciente_id"])
@@ -8876,16 +8884,16 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         data_item = parse_data_contrato(str(item["data"] or ""))
         if not data_item or data_item < inicio or data_item > fim or not avaliacao(item) or not compareceu(item):
             continue
+        primeiro_comparecimento = primeiro_comparecimento_por_paciente.get(crm_int(item["paciente_id"]))
+        if not primeiro_comparecimento or crm_int(primeiro_comparecimento["id"]) != crm_int(item["id"]):
+            continue
         avaliacoes_periodo.append(ComissaoAvaliacaoItemResposta(
             agendamentoId=crm_int(item["id"]), pacienteId=crm_int(item["paciente_id"]) or None,
             paciente=str(item["paciente_nome"] or item["nome_paciente_snapshot"] or ""), data=formatar_data_br(data_item),
             hora=str(item["hora_inicio"] or ""), status=str(item["status"] or ""), agendadoPor=agendador(item),
             agendadoEm=str(item["data_agendamento"] or item["data_criacao"] or item["criado_em"] or ""),
             procedimentos="Avaliação",
-            primeiraAvaliacao=bool(
-                primeiro_comparecimento_por_paciente.get(crm_int(item["paciente_id"]))
-                and crm_int(primeiro_comparecimento_por_paciente[crm_int(item["paciente_id"])]["id"]) == crm_int(item["id"])
-            ),
+            primeiraAvaliacao=True,
         ))
     return ComissaoRelatorioResposta(
         inicio=inicio.isoformat(), fim=fim.isoformat(), vendas=vendas, avaliacoes=avaliacoes_periodo,
