@@ -8904,21 +8904,28 @@ def exportar_relatorio_comissoes(inicio: date = Query(...), fim: date = Query(..
     for item in relatorio.avaliacoes:
         av.append([str(item.agendamentoId), item.paciente, item.data, item.hora, item.status, item.agendadoPor, item.agendadoEm, item.procedimentos])
     resumo = wb.create_sheet("Comissão por pessoa")
-    resumo.append(["Colaborador", "Participações", "Comissão de captação", "Comissão de resgate", "Comissão total"])
+    resumo.append(["Colaborador", "Participações em vendas", "Comissão de captação", "Comissão de resgate", "Comparecimentos agendados", "Comissão por comparecimentos", "Comissão total"])
     totais_pessoa: dict[str, dict[str, float]] = {}
     def adicionar_comissao(nome: str, captacao: float = 0, resgate: float = 0) -> None:
         if not nome or normalizar_texto(nome).startswith("nao ") or captacao + resgate <= 0:
             return
-        atual = totais_pessoa.setdefault(nome, {"participacoes": 0, "captacao": 0, "resgate": 0})
+        atual = totais_pessoa.setdefault(nome, {"participacoes": 0, "captacao": 0, "resgate": 0, "comparecimentos": 0})
         atual["participacoes"] += 1
         atual["captacao"] += captacao
         atual["resgate"] += resgate
     for item in relatorio.vendas:
         adicionar_comissao(item.agendadorAvaliacao, captacao=item.comissaoCaptacao)
         adicionar_comissao(item.agendadorFechamento, resgate=item.comissaoResgate)
-    for nome_pessoa, valores in sorted(totais_pessoa.items(), key=lambda par: -(par[1]["captacao"] + par[1]["resgate"])):
-        resumo.append([nome_pessoa, int(valores["participacoes"]), valores["captacao"], valores["resgate"], valores["captacao"] + valores["resgate"]])
-    resumo.append(["TOTAL", "", sum(v["captacao"] for v in totais_pessoa.values()), sum(v["resgate"] for v in totais_pessoa.values()), sum(v["captacao"] + v["resgate"] for v in totais_pessoa.values())])
+    for item in relatorio.avaliacoes:
+        nome = item.agendadoPor
+        if not nome or normalizar_texto(nome).startswith("nao "):
+            continue
+        atual = totais_pessoa.setdefault(nome, {"participacoes": 0, "captacao": 0, "resgate": 0, "comparecimentos": 0})
+        atual["comparecimentos"] += 1
+    total_pessoa = lambda valores: valores["captacao"] + valores["resgate"] + valores["comparecimentos"] * 1.90
+    for nome_pessoa, valores in sorted(totais_pessoa.items(), key=lambda par: -total_pessoa(par[1])):
+        resumo.append([nome_pessoa, int(valores["participacoes"]), valores["captacao"], valores["resgate"], int(valores["comparecimentos"]), valores["comparecimentos"] * 1.90, total_pessoa(valores)])
+    resumo.append(["TOTAL", "", sum(v["captacao"] for v in totais_pessoa.values()), sum(v["resgate"] for v in totais_pessoa.values()), sum(int(v["comparecimentos"]) for v in totais_pessoa.values()), sum(v["comparecimentos"] * 1.90 for v in totais_pessoa.values()), sum(total_pessoa(v) for v in totais_pessoa.values())])
     for planilha in (ws, av, resumo):
         for cell in planilha[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -8932,7 +8939,7 @@ def exportar_relatorio_comissoes(inicio: date = Query(...), fim: date = Query(..
         for coluna in (4, 12, 13, 14):
             ws.cell(linha, coluna).number_format = 'R$ #,##0.00'
     for linha in range(2, resumo.max_row + 1):
-        for coluna in (3, 4, 5):
+        for coluna in (3, 4, 6, 7):
             resumo.cell(linha, coluna).number_format = 'R$ #,##0.00'
     for cell in resumo[resumo.max_row]:
         cell.font = Font(bold=True)

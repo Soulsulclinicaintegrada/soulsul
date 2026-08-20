@@ -51,21 +51,31 @@ export function ComissoesPage() {
   }), [busca, colaborador, dados]);
 
   const totalFiltrado = vendas.reduce((soma, item) => soma + item.valorContrato, 0);
-  const comissaoFiltrada = vendas.reduce((soma, item) => soma + item.comissaoTotal, 0);
+  const comissaoVendasFiltrada = vendas.reduce((soma, item) => soma + item.comissaoTotal, 0);
+  const comissaoComparecimentosFiltrada = avaliacoes.length * 1.90;
   const comissoesPorPessoa = useMemo(() => {
-    const resumo = new Map<string, { captacao: number; resgate: number; total: number; vendas: number }>();
-    const adicionar = (nome: string, captacao: number, resgate: number) => {
-      if (!nome || normalizar(nome).startsWith("nao ") || captacao + resgate <= 0) return;
-      const atual = resumo.get(nome) || { captacao: 0, resgate: 0, total: 0, vendas: 0 };
-      atual.captacao += captacao; atual.resgate += resgate; atual.total += captacao + resgate; atual.vendas += 1;
+    const resumo = new Map<string, { captacao: number; resgate: number; comparecimentos: number; total: number; vendas: number }>();
+    const obter = (nome: string) => {
+      if (!nome || normalizar(nome).startsWith("nao ")) return null;
+      const atual = resumo.get(nome) || { captacao: 0, resgate: 0, comparecimentos: 0, total: 0, vendas: 0 };
       resumo.set(nome, atual);
+      return atual;
+    };
+    const adicionar = (nome: string, captacao: number, resgate: number) => {
+      if (captacao + resgate <= 0) return;
+      const atual = obter(nome); if (!atual) return;
+      atual.captacao += captacao; atual.resgate += resgate; atual.total += captacao + resgate; atual.vendas += 1;
     };
     vendas.forEach((item) => {
       adicionar(item.agendadorAvaliacao, item.comissaoCaptacao, 0);
       adicionar(item.agendadorFechamento, 0, item.comissaoResgate);
     });
+    avaliacoes.forEach((item) => {
+      const atual = obter(item.agendadoPor); if (!atual) return;
+      atual.comparecimentos += 1; atual.total += 1.90;
+    });
     return [...resumo.entries()].map(([nome, valores]) => ({ nome, ...valores })).sort((a, b) => b.total - a.total);
-  }, [vendas]);
+  }, [avaliacoes, vendas]);
   function limparFiltros() { setBusca(""); setColaborador(""); setStatus(""); setPagamento(""); }
 
   return <div className="commission-page">
@@ -86,7 +96,7 @@ export function ComissoesPage() {
       <section className="commission-metrics">
         <article><span>Vendas exibidas</span><strong>{vendas.length}</strong><small>de {dados.vendas.length} no período</small></article>
         <article><span>Valor filtrado</span><strong>{moeda(totalFiltrado)}</strong><small>Permutas excluídas</small></article>
-        <article><span>Comissão liberada</span><strong>{moeda(comissaoFiltrada)}</strong><small>Somente pagamentos confirmados</small></article>
+        <article><span>Comissão total</span><strong>{moeda(comissaoVendasFiltrada + comissaoComparecimentosFiltrada)}</strong><small>Vendas + R$ 1,90 por comparecimento</small></article>
         <article><span>Avaliações exibidas</span><strong>{avaliacoes.length}</strong><small>de {dados.avaliacoes.length} comparecidas</small></article>
       </section>
 
@@ -124,7 +134,7 @@ export function ComissoesPage() {
           <div className="commission-summary-heading"><div><span className="eyebrow">Fechamento do relatório</span><h3>Comissão por pessoa</h3></div><strong>{moeda(comissoesPorPessoa.reduce((soma, item) => soma + item.total, 0))}</strong></div>
           <div className="commission-person-grid">{comissoesPorPessoa.map((item) => <article key={item.nome}>
             <div><strong>{item.nome}</strong><small>{item.vendas} participação(ões)</small></div>
-            <dl><div><dt>Captação</dt><dd>{moeda(item.captacao)}</dd></div><div><dt>Resgate</dt><dd>{moeda(item.resgate)}</dd></div><div className="total"><dt>Total</dt><dd>{moeda(item.total)}</dd></div></dl>
+            <dl><div><dt>Captação</dt><dd>{moeda(item.captacao)}</dd></div><div><dt>Resgate</dt><dd>{moeda(item.resgate)}</dd></div><div><dt>Comparecimentos ({item.comparecimentos})</dt><dd>{moeda(item.comparecimentos * 1.90)}</dd></div><div className="total"><dt>Total</dt><dd>{moeda(item.total)}</dd></div></dl>
           </article>)}</div>
           {!comissoesPorPessoa.length ? <div className="empty-inline">Nenhuma comissão liberada nos resultados filtrados.</div> : null}
         </div> : null}
