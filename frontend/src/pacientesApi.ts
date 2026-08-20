@@ -501,7 +501,7 @@ export type RelatorioComissoesApi = {
   }>;
   avaliacoes: Array<{
     agendamentoId: number; pacienteId?: number | null; paciente: string; data: string; hora: string; status: string;
-    agendadoPor: string; agendadoEm: string; procedimentos: string;
+    agendadoPor: string; agendadoEm: string; procedimentos: string; primeiraAvaliacao: boolean;
   }>;
 };
 

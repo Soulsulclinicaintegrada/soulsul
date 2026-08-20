@@ -55,7 +55,8 @@ export function ComissoesPage() {
 
   const totalFiltrado = vendas.reduce((soma, item) => soma + item.valorContrato, 0);
   const comissaoVendasFiltrada = vendas.reduce((soma, item) => soma + item.comissaoTotal, 0);
-  const comissaoComparecimentosFiltrada = avaliacoes.length * 1.90;
+  const primeirasAvaliacoes = avaliacoes.filter((item) => item.primeiraAvaliacao);
+  const comissaoComparecimentosFiltrada = primeirasAvaliacoes.length * 1.90;
   const comissoesPorPessoa = useMemo(() => {
     const resumo = new Map<string, { captacao: number; resgate: number; comparecimentos: number; total: number; vendas: number }>();
     const obter = (nome: string) => {
@@ -73,7 +74,7 @@ export function ComissoesPage() {
       adicionar(item.agendadorAvaliacao, item.comissaoCaptacao, 0);
       adicionar(item.agendadorFechamento, 0, item.comissaoResgate);
     });
-    avaliacoes.forEach((item) => {
+    avaliacoes.filter((item) => item.primeiraAvaliacao).forEach((item) => {
       const atual = obter(item.agendadoPor); if (!atual) return;
       atual.comparecimentos += 1; atual.total += 1.90;
     });
@@ -111,8 +112,8 @@ export function ComissoesPage() {
       <section className="commission-metrics">
         <article><span>Vendas exibidas</span><strong>{vendas.length}</strong><small>de {dados.vendas.length} no período</small></article>
         <article><span>Valor filtrado</span><strong>{moeda(totalFiltrado)}</strong><small>Permutas excluídas</small></article>
-        <article><span>Comissão total</span><strong>{moeda(comissaoVendasFiltrada + comissaoComparecimentosFiltrada)}</strong><small>Vendas + R$ 1,90 por comparecimento</small></article>
-        <article><span>Avaliações exibidas</span><strong>{avaliacoes.length}</strong><small>de {dados.avaliacoes.length} comparecidas</small></article>
+        <article><span>Comissão total</span><strong>{moeda(comissaoVendasFiltrada + comissaoComparecimentosFiltrada)}</strong><small>Vendas + R$ 1,90 por primeira avaliação</small></article>
+        <article><span>Primeiras avaliações</span><strong>{primeirasAvaliacoes.length}</strong><small>{avaliacoes.length} avaliações comparecidas exibidas</small></article>
       </section>
 
       <section className="module-panel commission-results-panel">
@@ -144,14 +145,14 @@ export function ComissoesPage() {
           <td><span className={`commission-status ${item.status === "Completo" ? "complete" : "review"}`}>{item.status}</span>{responsaveisEdicao[item.contratoId] ? <button type="button" className="primary-action compact commission-save-owner" disabled={salvandoContrato === item.contratoId} onClick={() => void salvarResponsaveis(item.contratoId, item.agendadorAvaliacao, item.agendadorFechamento)}>{salvandoContrato === item.contratoId ? "Salvando..." : "Salvar responsáveis"}</button> : null}</td>
         </tr>)}</tbody></table>{!vendas.length ? <div className="empty-inline">Nenhuma venda encontrada com esses filtros.</div> : null}</div>
         : <div className="commission-table-wrap"><table className="finance-table commission-table"><thead><tr><th>Paciente</th><th>Comparecimento</th><th>Quem agendou</th><th>Agendado em</th><th>Procedimentos</th></tr></thead><tbody>
-          {avaliacoes.map((item) => <tr key={item.agendamentoId}><td><strong>{item.paciente}</strong></td><td><strong>{item.data}</strong><small>{item.hora} · {item.status}</small></td><td><strong>{item.agendadoPor}</strong></td><td>{item.agendadoEm || "-"}</td><td>{item.procedimentos || "-"}</td></tr>)}
+          {avaliacoes.map((item) => <tr key={item.agendamentoId}><td><strong>{item.paciente}</strong>{item.primeiraAvaliacao ? <span className="commission-first-evaluation">Primeira avaliação · R$ 1,90</span> : <small>Retorno/avaliação posterior · sem comissão fixa</small>}</td><td><strong>{item.data}</strong><small>{item.hora} · {item.status}</small></td><td><strong>{item.agendadoPor}</strong></td><td>{item.agendadoEm || "-"}</td><td>{item.procedimentos || "-"}</td></tr>)}
         </tbody></table>{!avaliacoes.length ? <div className="empty-inline">Nenhuma avaliação encontrada com esses filtros.</div> : null}</div>}
 
         {visualizacao === "vendas" ? <div className="commission-person-summary">
           <div className="commission-summary-heading"><div><span className="eyebrow">Fechamento do relatório</span><h3>Comissão por pessoa</h3></div><strong>{moeda(comissoesPorPessoa.reduce((soma, item) => soma + item.total, 0))}</strong></div>
           <div className="commission-person-grid">{comissoesPorPessoa.map((item) => <article key={item.nome}>
             <div><strong>{item.nome}</strong><small>{item.vendas} participação(ões)</small></div>
-            <dl><div><dt>Captação</dt><dd>{moeda(item.captacao)}</dd></div><div><dt>Resgate</dt><dd>{moeda(item.resgate)}</dd></div><div><dt>Comparecimentos ({item.comparecimentos})</dt><dd>{moeda(item.comparecimentos * 1.90)}</dd></div><div className="total"><dt>Total</dt><dd>{moeda(item.total)}</dd></div></dl>
+            <dl><div><dt>Captação</dt><dd>{moeda(item.captacao)}</dd></div><div><dt>Resgate</dt><dd>{moeda(item.resgate)}</dd></div><div><dt>Primeiras avaliações ({item.comparecimentos})</dt><dd>{moeda(item.comparecimentos * 1.90)}</dd></div><div className="total"><dt>Total</dt><dd>{moeda(item.total)}</dd></div></dl>
           </article>)}</div>
           {!comissoesPorPessoa.length ? <div className="empty-inline">Nenhuma comissão liberada nos resultados filtrados.</div> : null}
         </div> : null}

@@ -4371,6 +4371,7 @@ textarea::placeholder {
 .commission-owner-input:focus { outline: 2px solid var(--accent-line); border-color: var(--accent); }
 .commission-save-owner { display: block; width: 100%; margin-top: 8px; white-space: normal; }
 .commission-save-feedback { margin: -6px 0 14px; padding: 10px 12px; border-radius: 9px; color: var(--accent-strong); background: var(--accent-soft); font-weight: 800; }
+.commission-first-evaluation { display: inline-flex; margin-top: 6px; padding: 4px 7px; border-radius: 999px; color: #22663a; background: #e8f5ec; font-size: .72rem; font-weight: 800; }
 .commission-person-summary { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
 .commission-summary-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .commission-summary-heading h3 { margin: 3px 0 0; font-size: 1.25rem; color: var(--text); }

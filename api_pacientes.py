@@ -1038,6 +1038,7 @@ class ComissaoAvaliacaoItemResposta(BaseModel):
     agendadoPor: str = ""
     agendadoEm: str = ""
     procedimentos: str = ""
+    primeiraAvaliacao: bool = False
 
 
 class ComissaoRelatorioResposta(BaseModel):
@@ -8862,6 +8863,10 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         ))
 
     avaliacoes_periodo = []
+    primeira_avaliacao_por_paciente = {
+        paciente_id: next((registro for registro in registros if avaliacao(registro) and compareceu(registro)), None)
+        for paciente_id, registros in por_paciente.items()
+    }
     for item in agenda:
         data_item = parse_data_contrato(str(item["data"] or ""))
         if not data_item or data_item < inicio or data_item > fim or not avaliacao(item) or not compareceu(item):
@@ -8872,6 +8877,10 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
             hora=str(item["hora_inicio"] or ""), status=str(item["status"] or ""), agendadoPor=agendador(item),
             agendadoEm=str(item["data_agendamento"] or item["data_criacao"] or item["criado_em"] or ""),
             procedimentos=str(item["procedimentos_lista"] or ""),
+            primeiraAvaliacao=bool(
+                primeira_avaliacao_por_paciente.get(crm_int(item["paciente_id"]))
+                and crm_int(primeira_avaliacao_por_paciente[crm_int(item["paciente_id"])]["id"]) == crm_int(item["id"])
+            ),
         ))
     return ComissaoRelatorioResposta(
         inicio=inicio.isoformat(), fim=fim.isoformat(), vendas=vendas, avaliacoes=avaliacoes_periodo,
@@ -8928,11 +8937,11 @@ def exportar_relatorio_comissoes(inicio: date = Query(...), fim: date = Query(..
     for item in relatorio.vendas:
         ws.append([str(item.contratoId), item.paciente, item.dataFechamento, item.valorContrato, item.formaPagamento, item.primeiroAgendamento, item.primeiroAgendador, item.avaliacaoComparecida, item.agendadorAvaliacao, item.agendadorFechamento, "Sim" if item.pagamentoConfirmado else "Não", item.comissaoTotal, item.comissaoCaptacao, item.comissaoResgate, item.status])
     av = wb.create_sheet("Avaliações comparecidas")
-    av.append(["Agendamento", "Paciente", "Data", "Hora", "Status", "Quem agendou esta avaliação", "Agendado em", "Procedimentos"])
+    av.append(["Agendamento", "Paciente", "Data", "Hora", "Status", "Primeira avaliação", "Quem agendou esta avaliação", "Agendado em", "Procedimentos"])
     for item in relatorio.avaliacoes:
-        av.append([str(item.agendamentoId), item.paciente, item.data, item.hora, item.status, item.agendadoPor, item.agendadoEm, item.procedimentos])
+        av.append([str(item.agendamentoId), item.paciente, item.data, item.hora, item.status, "Sim" if item.primeiraAvaliacao else "Não", item.agendadoPor, item.agendadoEm, item.procedimentos])
     resumo = wb.create_sheet("Comissão por pessoa")
-    resumo.append(["Colaborador", "Participações em vendas", "Comissão de captação", "Comissão de resgate", "Comparecimentos agendados", "Comissão por comparecimentos", "Comissão total"])
+    resumo.append(["Colaborador", "Participações em vendas", "Comissão de captação", "Comissão de resgate", "Primeiras avaliações comparecidas", "Comissão por primeiras avaliações", "Comissão total"])
     totais_pessoa: dict[str, dict[str, float]] = {}
     def adicionar_comissao(nome: str, captacao: float = 0, resgate: float = 0) -> None:
         if not nome or normalizar_texto(nome).startswith("nao ") or captacao + resgate <= 0:
@@ -8945,6 +8954,8 @@ def exportar_relatorio_comissoes(inicio: date = Query(...), fim: date = Query(..
         adicionar_comissao(item.agendadorAvaliacao, captacao=item.comissaoCaptacao)
         adicionar_comissao(item.agendadorFechamento, resgate=item.comissaoResgate)
     for item in relatorio.avaliacoes:
+        if not item.primeiraAvaliacao:
+            continue
         nome = item.agendadoPor
         if not nome or normalizar_texto(nome).startswith("nao "):
             continue

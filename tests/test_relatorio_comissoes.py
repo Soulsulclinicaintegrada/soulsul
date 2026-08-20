@@ -28,4 +28,4 @@ def test_relatorio_calcula_pagamento_misto_e_divisao_30_70():
     assert relatorio.vendas[0].comissaoCaptacao == 1.92
     assert relatorio.vendas[0].comissaoResgate == 4.48
     assert len(relatorio.avaliacoes) == 2
-
+    assert [item.primeiraAvaliacao for item in relatorio.avaliacoes] == [True, False]
