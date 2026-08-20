@@ -52,6 +52,20 @@ export function ComissoesPage() {
 
   const totalFiltrado = vendas.reduce((soma, item) => soma + item.valorContrato, 0);
   const comissaoFiltrada = vendas.reduce((soma, item) => soma + item.comissaoTotal, 0);
+  const comissoesPorPessoa = useMemo(() => {
+    const resumo = new Map<string, { captacao: number; resgate: number; total: number; vendas: number }>();
+    const adicionar = (nome: string, captacao: number, resgate: number) => {
+      if (!nome || normalizar(nome).startsWith("nao ") || captacao + resgate <= 0) return;
+      const atual = resumo.get(nome) || { captacao: 0, resgate: 0, total: 0, vendas: 0 };
+      atual.captacao += captacao; atual.resgate += resgate; atual.total += captacao + resgate; atual.vendas += 1;
+      resumo.set(nome, atual);
+    };
+    vendas.forEach((item) => {
+      adicionar(item.agendadorAvaliacao, item.comissaoCaptacao, 0);
+      adicionar(item.agendadorFechamento, 0, item.comissaoResgate);
+    });
+    return [...resumo.entries()].map(([nome, valores]) => ({ nome, ...valores })).sort((a, b) => b.total - a.total);
+  }, [vendas]);
   function limparFiltros() { setBusca(""); setColaborador(""); setStatus(""); setPagamento(""); }
 
   return <div className="commission-page">
@@ -105,6 +119,15 @@ export function ComissoesPage() {
         : <div className="commission-table-wrap"><table className="finance-table commission-table"><thead><tr><th>Paciente</th><th>Comparecimento</th><th>Quem agendou</th><th>Agendado em</th><th>Procedimentos</th></tr></thead><tbody>
           {avaliacoes.map((item) => <tr key={item.agendamentoId}><td><strong>{item.paciente}</strong></td><td><strong>{item.data}</strong><small>{item.hora} · {item.status}</small></td><td><strong>{item.agendadoPor}</strong></td><td>{item.agendadoEm || "-"}</td><td>{item.procedimentos || "-"}</td></tr>)}
         </tbody></table>{!avaliacoes.length ? <div className="empty-inline">Nenhuma avaliação encontrada com esses filtros.</div> : null}</div>}
+
+        {visualizacao === "vendas" ? <div className="commission-person-summary">
+          <div className="commission-summary-heading"><div><span className="eyebrow">Fechamento do relatório</span><h3>Comissão por pessoa</h3></div><strong>{moeda(comissoesPorPessoa.reduce((soma, item) => soma + item.total, 0))}</strong></div>
+          <div className="commission-person-grid">{comissoesPorPessoa.map((item) => <article key={item.nome}>
+            <div><strong>{item.nome}</strong><small>{item.vendas} participação(ões)</small></div>
+            <dl><div><dt>Captação</dt><dd>{moeda(item.captacao)}</dd></div><div><dt>Resgate</dt><dd>{moeda(item.resgate)}</dd></div><div className="total"><dt>Total</dt><dd>{moeda(item.total)}</dd></div></dl>
+          </article>)}</div>
+          {!comissoesPorPessoa.length ? <div className="empty-inline">Nenhuma comissão liberada nos resultados filtrados.</div> : null}
+        </div> : null}
       </section>
     </> : null}
   </div>;
