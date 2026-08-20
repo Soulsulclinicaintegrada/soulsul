@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { relatorioComissoesApi, urlExportarRelatorioComissoes, type RelatorioComissoesApi } from "./pacientesApi";
+import { atualizarResponsaveisComissaoApi, relatorioComissoesApi, urlExportarRelatorioComissoes, type RelatorioComissoesApi } from "./pacientesApi";
 
 type Visualizacao = "vendas" | "avaliacoes";
 function isoHoje() { return new Date().toISOString().slice(0, 10); }
@@ -18,6 +18,9 @@ export function ComissoesPage() {
   const [colaborador, setColaborador] = useState("");
   const [status, setStatus] = useState("");
   const [pagamento, setPagamento] = useState("");
+  const [responsaveisEdicao, setResponsaveisEdicao] = useState<Record<number, { agendador: string; fechamento: string }>>({});
+  const [salvandoContrato, setSalvandoContrato] = useState<number | null>(null);
+  const [mensagem, setMensagem] = useState("");
 
   async function carregar() {
     if (!inicio || !fim) return;
@@ -77,6 +80,18 @@ export function ComissoesPage() {
     return [...resumo.entries()].map(([nome, valores]) => ({ nome, ...valores })).sort((a, b) => b.total - a.total);
   }, [avaliacoes, vendas]);
   function limparFiltros() { setBusca(""); setColaborador(""); setStatus(""); setPagamento(""); }
+  async function salvarResponsaveis(contratoId: number, agendadorAtual: string, fechamentoAtual: string) {
+    const edicao = responsaveisEdicao[contratoId] || { agendador: agendadorAtual, fechamento: fechamentoAtual };
+    if (!edicao.agendador.trim() || !edicao.fechamento.trim()) { setMensagem("Informe os dois responsáveis."); return; }
+    setSalvandoContrato(contratoId); setMensagem("");
+    try {
+      await atualizarResponsaveisComissaoApi(contratoId, edicao.agendador, edicao.fechamento);
+      setMensagem("Responsáveis atualizados. As comissões foram recalculadas.");
+      setResponsaveisEdicao((atual) => { const copia = { ...atual }; delete copia[contratoId]; return copia; });
+      await carregar();
+    } catch (e) { setMensagem(e instanceof Error ? e.message : "Não foi possível salvar os responsáveis."); }
+    finally { setSalvandoContrato(null); }
+  }
 
   return <div className="commission-page">
     <section className="module-panel commission-header-panel">
@@ -101,10 +116,12 @@ export function ComissoesPage() {
       </section>
 
       <section className="module-panel commission-results-panel">
+        <datalist id="commission-collaborators">{colaboradores.map((nome) => <option key={nome} value={nome} />)}</datalist>
         <div className="commission-view-tabs">
           <button type="button" className={visualizacao === "vendas" ? "active" : ""} onClick={() => { setVisualizacao("vendas"); limparFiltros(); }}>Vendas e comissões</button>
           <button type="button" className={visualizacao === "avaliacoes" ? "active" : ""} onClick={() => { setVisualizacao("avaliacoes"); limparFiltros(); }}>Avaliações comparecidas</button>
         </div>
+        {mensagem ? <div className="commission-save-feedback">{mensagem}</div> : null}
         <div className="commission-filters">
           <label className="commission-search"><span>Buscar</span><input type="search" placeholder={visualizacao === "vendas" ? "Paciente, contrato ou pagamento" : "Paciente ou procedimento"} value={busca} onChange={(e) => setBusca(e.target.value)} /></label>
           <label><span>Colaborador</span><select value={colaborador} onChange={(e) => setColaborador(e.target.value)}><option value="">Todos</option>{colaboradores.map((nome) => <option key={nome} value={nome}>{nome}</option>)}</select></label>
@@ -121,10 +138,10 @@ export function ComissoesPage() {
           <td><strong>{item.paciente}</strong><small>Contrato #{item.contratoId}</small></td>
           <td><strong>{moeda(item.valorContrato)}</strong><small>{item.dataFechamento} · {item.formaPagamento || "Forma não informada"}</small></td>
           <td><strong>{item.primeiroAgendador}</strong><small>Primeiro contato: {item.primeiroAgendamento || "-"}</small></td>
-          <td><strong>{item.agendadorAvaliacao}</strong><small>Compareceu: {item.avaliacaoComparecida || "-"}</small></td>
-          <td><strong>{item.agendadorFechamento}</strong><small>{item.comissaoResgate ? "Resgate 70%" : "Responsável integral"}</small></td>
+          <td><input className="commission-owner-input" list="commission-collaborators" aria-label={`Responsável pelo agendamento de ${item.paciente}`} value={responsaveisEdicao[item.contratoId]?.agendador ?? item.agendadorAvaliacao} onChange={(e) => setResponsaveisEdicao((atual) => ({ ...atual, [item.contratoId]: { agendador: e.target.value, fechamento: atual[item.contratoId]?.fechamento ?? item.agendadorFechamento } }))} /><small>Compareceu: {item.avaliacaoComparecida || "-"}</small></td>
+          <td><input className="commission-owner-input" list="commission-collaborators" aria-label={`Responsável pelo fechamento de ${item.paciente}`} value={responsaveisEdicao[item.contratoId]?.fechamento ?? item.agendadorFechamento} onChange={(e) => setResponsaveisEdicao((atual) => ({ ...atual, [item.contratoId]: { agendador: atual[item.contratoId]?.agendador ?? item.agendadorAvaliacao, fechamento: e.target.value } }))} /><small>{item.comissaoResgate ? "Resgate 70%" : "Responsável integral"}</small></td>
           <td><strong>{moeda(item.comissaoTotal)}</strong><small>{item.comissaoResgate ? `Captação ${moeda(item.comissaoCaptacao)} · Resgate ${moeda(item.comissaoResgate)}` : item.pagamentoConfirmado ? "Pagamento confirmado" : "Aguardando pagamento"}</small></td>
-          <td><span className={`commission-status ${item.status === "Completo" ? "complete" : "review"}`}>{item.status}</span></td>
+          <td><span className={`commission-status ${item.status === "Completo" ? "complete" : "review"}`}>{item.status}</span>{responsaveisEdicao[item.contratoId] ? <button type="button" className="primary-action compact commission-save-owner" disabled={salvandoContrato === item.contratoId} onClick={() => void salvarResponsaveis(item.contratoId, item.agendadorAvaliacao, item.agendadorFechamento)}>{salvandoContrato === item.contratoId ? "Salvando..." : "Salvar responsáveis"}</button> : null}</td>
         </tr>)}</tbody></table>{!vendas.length ? <div className="empty-inline">Nenhuma venda encontrada com esses filtros.</div> : null}</div>
         : <div className="commission-table-wrap"><table className="finance-table commission-table"><thead><tr><th>Paciente</th><th>Comparecimento</th><th>Quem agendou</th><th>Agendado em</th><th>Procedimentos</th></tr></thead><tbody>
           {avaliacoes.map((item) => <tr key={item.agendamentoId}><td><strong>{item.paciente}</strong></td><td><strong>{item.data}</strong><small>{item.hora} · {item.status}</small></td><td><strong>{item.agendadoPor}</strong></td><td>{item.agendadoEm || "-"}</td><td>{item.procedimentos || "-"}</td></tr>)}

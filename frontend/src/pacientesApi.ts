@@ -1312,6 +1312,13 @@ export async function relatorioComissoesApi(inicio: string, fim: string) {
   return fetchJson<RelatorioComissoesApi>(`${API_BASE_URL}/api/relatorios/comissoes?${params.toString()}`);
 }
 
+export async function atualizarResponsaveisComissaoApi(contratoId: number, agendador: string, fechamento: string) {
+  return fetchJson<{ ok: true; agendador: string; fechamento: string }>(`${API_BASE_URL}/api/relatorios/comissoes/${contratoId}/responsaveis`, {
+    method: "PUT",
+    body: JSON.stringify({ agendador, fechamento })
+  });
+}
+
 export function urlExportarRelatorioComissoes(inicio: string, fim: string) {
   const params = new URLSearchParams({ inicio, fim });
   return `${API_BASE_URL}/api/relatorios/comissoes/export.xlsx?${params.toString()}`;

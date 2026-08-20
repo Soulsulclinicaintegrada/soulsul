@@ -329,6 +329,8 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "contratos", "crm_observacao_contato TEXT")
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
+        garantir_coluna(conn, "contratos", "comissao_agendador TEXT")
+        garantir_coluna(conn, "contratos", "comissao_fechamento TEXT")
         garantir_coluna(conn, "crm_pacientes", "origem_cancelado INTEGER DEFAULT 0")
         garantir_coluna(conn, "crm_pacientes", "cancelado_em TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "profissional_snapshot TEXT")
@@ -1045,6 +1047,11 @@ class ComissaoRelatorioResposta(BaseModel):
     avaliacoes: list[ComissaoAvaliacaoItemResposta] = Field(default_factory=list)
     totalVendido: float = 0
     totalComissao: float = 0
+
+
+class ComissaoResponsaveisPayload(BaseModel):
+    agendador: str = ""
+    fechamento: str = ""
 
 
 class FichaPacienteResposta(BaseModel):
@@ -8833,8 +8840,8 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         no_fechamento = [item for item in registros if parse_data_contrato(str(item["data"] or "")) == fechamento and normalizar_texto(item["status"]) not in {"cancelado", "desmarcado"}]
         preferidos = [item for item in no_fechamento if avaliacao(item) and compareceu(item)] or [item for item in no_fechamento if compareceu(item)] or no_fechamento
         fechamento_agenda = preferidos[0] if preferidos else None
-        captacao = agendador(avaliacao_comparecida)
-        resgate = agendador(fechamento_agenda)
+        captacao = str(contrato["comissao_agendador"] or "").strip() or agendador(avaliacao_comparecida)
+        resgate = str(contrato["comissao_fechamento"] or "").strip() or agendador(fechamento_agenda)
         pago = bool(str(contrato["data_pagamento_entrada"] or "").strip()) or bool(conn.execute(
             "SELECT 1 FROM recebiveis WHERE contrato_id=? AND lower(COALESCE(status,''))='pago' LIMIT 1", (contrato["id"],)
         ).fetchone())
@@ -8879,6 +8886,27 @@ def relatorio_comissoes(inicio: date = Query(...), fim: date = Query(...)):
     conn = conectar()
     try:
         return carregar_relatorio_comissoes(conn, inicio, fim)
+    finally:
+        conn.close()
+
+
+@app.put("/api/relatorios/comissoes/{contrato_id}/responsaveis")
+def atualizar_responsaveis_comissao(contrato_id: int, payload: ComissaoResponsaveisPayload):
+    agendador = payload.agendador.strip()
+    fechamento = payload.fechamento.strip()
+    if not agendador or not fechamento:
+        raise HTTPException(status_code=400, detail="Informe os dois responsáveis.")
+    conn = conectar()
+    try:
+        existente = conn.execute("SELECT id FROM contratos WHERE id=?", (contrato_id,)).fetchone()
+        if not existente:
+            raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+        conn.execute(
+            "UPDATE contratos SET comissao_agendador=?, comissao_fechamento=? WHERE id=?",
+            (agendador, fechamento, contrato_id),
+        )
+        conn.commit()
+        return {"ok": True, "agendador": agendador, "fechamento": fechamento}
     finally:
         conn.close()
 
