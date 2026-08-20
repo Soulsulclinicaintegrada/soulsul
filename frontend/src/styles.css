@@ -4345,6 +4345,41 @@ textarea::placeholder {
   color: #305145;
 }
 
+.commission-page { display: grid; gap: 18px; padding-top: 18px; }
+.commission-header-panel, .commission-results-panel { padding: 22px; }
+.commission-header-panel .module-panel-heading p { margin: 5px 0 0; color: var(--muted); }
+.commission-period-grid { display: grid; grid-template-columns: minmax(170px, 220px) minmax(170px, 220px) auto; gap: 12px; align-items: end; margin-top: 18px; }
+.commission-period-grid label, .commission-filters label { display: grid; gap: 6px; color: var(--muted); font-size: .82rem; font-weight: 700; }
+.commission-period-grid input, .commission-filters input, .commission-filters select { min-height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; background: #fff; color: var(--text); }
+.commission-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.commission-metrics article { display: grid; gap: 4px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 15px; background: linear-gradient(145deg, #fff, #f8fafb); }
+.commission-metrics span, .commission-metrics small { color: var(--muted); }
+.commission-metrics strong { color: var(--accent-strong); font-size: 1.35rem; }
+.commission-view-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: #edf2f5; }
+.commission-view-tabs button { border: 0; border-radius: 9px; padding: 10px 15px; background: transparent; color: var(--muted); font-weight: 800; cursor: pointer; }
+.commission-view-tabs button.active { color: #fff; background: var(--accent-strong); box-shadow: 0 4px 10px rgb(24 59 86 / 18%); }
+.commission-filters { display: grid; grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(150px, 1fr)) auto; gap: 10px; align-items: end; margin: 18px 0; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: #f8fafb; }
+.commission-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 13px; }
+.commission-table { min-width: 1050px; margin: 0; }
+.commission-table td { vertical-align: top; }
+.commission-table td strong, .commission-table td small { display: block; }
+.commission-table td small { margin-top: 4px; color: var(--muted); line-height: 1.35; }
+.commission-status { display: inline-flex; max-width: 170px; padding: 5px 9px; border-radius: 999px; font-size: .75rem; font-weight: 800; line-height: 1.2; }
+.commission-status.complete { color: #22663a; background: #e8f5ec; }
+.commission-status.review { color: #9b2c2c; background: #fce8e6; }
+
+@media (max-width: 1100px) {
+  .commission-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .commission-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .commission-search { grid-column: 1 / -1; }
+}
+
+@media (max-width: 680px) {
+  .commission-period-grid, .commission-metrics, .commission-filters { grid-template-columns: 1fr; }
+  .commission-search { grid-column: auto; }
+  .commission-view-tabs { display: grid; width: 100%; }
+}
+
 .finance-caixa-modos {
   display: flex;
   flex-wrap: wrap;
