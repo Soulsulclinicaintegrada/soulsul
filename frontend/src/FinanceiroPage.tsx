@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { ComissoesPage } from "./ComissoesPage";
 import {
   atualizarContaPagarApi,
   atualizarMetaFinanceiraApi,
@@ -36,7 +37,7 @@ import {
   urlExportarCaixaExcel
 } from "./pacientesApi";
 
-type AbaFinanceiro = "caixa" | "recebiveis" | "cobrancas" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais";
+type AbaFinanceiro = "caixa" | "recebiveis" | "cobrancas" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais" | "comissoes";
 
 type RecebivelForm = {
   id: number;
@@ -1267,10 +1268,12 @@ export function FinanceiroPage() {
           <button type="button" className={aba === "recibo" ? "active" : ""} onClick={() => setAba("recibo")}>Recibo</button>
           <button type="button" className={aba === "metas" ? "active" : ""} onClick={() => setAba("metas")}>Metas</button>
           <button type="button" className={aba === "notas_fiscais" ? "active" : ""} onClick={() => setAba("notas_fiscais")}>NF emitidas</button>
+          <button type="button" className={aba === "comissoes" ? "active" : ""} onClick={() => setAba("comissoes")}>Comissões</button>
         </div>
 
         {erro ? <div className="finance-inline-error">{erro}</div> : null}
         {carregando ? <div className="empty-inline">Carregando financeiro...</div> : null}
+        {aba === "comissoes" ? <ComissoesPage /> : null}
 
         {!carregando && aba === "caixa" ? (
           <div className="finance-legacy-grid">

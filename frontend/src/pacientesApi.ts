@@ -488,6 +488,23 @@ export type FinanceiroPainelApi = {
   saldosConta: SaldoContaResumoApi[];
 };
 
+export type RelatorioComissoesApi = {
+  inicio: string;
+  fim: string;
+  totalVendido: number;
+  totalComissao: number;
+  vendas: Array<{
+    contratoId: number; pacienteId?: number | null; paciente: string; dataFechamento: string; valorContrato: number;
+    formaPagamento: string; primeiroAgendamento: string; primeiroAgendador: string; avaliacaoComparecida: string;
+    agendadorAvaliacao: string; agendadorFechamento: string; pagamentoConfirmado: boolean; comissaoTotal: number;
+    comissaoCaptacao: number; comissaoResgate: number; status: string;
+  }>;
+  avaliacoes: Array<{
+    agendamentoId: number; pacienteId?: number | null; paciente: string; data: string; hora: string; status: string;
+    agendadoPor: string; agendadoEm: string; procedimentos: string;
+  }>;
+};
+
 export type DashboardIndicadorApi = {
   chave: string;
   titulo: string;
@@ -1288,6 +1305,16 @@ export function urlExamePaciente(pacienteId: number, nomeArquivo: string, downlo
 
 export async function painelFinanceiroApi() {
   return fetchJson<FinanceiroPainelApi>(`${API_BASE_URL}/api/financeiro/painel`);
+}
+
+export async function relatorioComissoesApi(inicio: string, fim: string) {
+  const params = new URLSearchParams({ inicio, fim });
+  return fetchJson<RelatorioComissoesApi>(`${API_BASE_URL}/api/relatorios/comissoes?${params.toString()}`);
+}
+
+export function urlExportarRelatorioComissoes(inicio: string, fim: string) {
+  const params = new URLSearchParams({ inicio, fim });
+  return `${API_BASE_URL}/api/relatorios/comissoes/export.xlsx?${params.toString()}`;
 }
 
 export async function painelDashboardApi() {

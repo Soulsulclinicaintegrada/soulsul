@@ -1007,6 +1007,46 @@ class DashboardPainelResposta(BaseModel):
     atividades: list[DashboardAtividadeItemResposta]
 
 
+class ComissaoVendaItemResposta(BaseModel):
+    contratoId: int
+    pacienteId: int | None = None
+    paciente: str
+    dataFechamento: str
+    valorContrato: float
+    formaPagamento: str
+    primeiroAgendamento: str = ""
+    primeiroAgendador: str = ""
+    avaliacaoComparecida: str = ""
+    agendadorAvaliacao: str = ""
+    agendadorFechamento: str = ""
+    pagamentoConfirmado: bool = False
+    comissaoTotal: float = 0
+    comissaoCaptacao: float = 0
+    comissaoResgate: float = 0
+    status: str = ""
+
+
+class ComissaoAvaliacaoItemResposta(BaseModel):
+    agendamentoId: int
+    pacienteId: int | None = None
+    paciente: str
+    data: str
+    hora: str = ""
+    status: str
+    agendadoPor: str = ""
+    agendadoEm: str = ""
+    procedimentos: str = ""
+
+
+class ComissaoRelatorioResposta(BaseModel):
+    inicio: str
+    fim: str
+    vendas: list[ComissaoVendaItemResposta] = Field(default_factory=list)
+    avaliacoes: list[ComissaoAvaliacaoItemResposta] = Field(default_factory=list)
+    totalVendido: float = 0
+    totalComissao: float = 0
+
+
 class FichaPacienteResposta(BaseModel):
     paciente: PacienteDetalhe
     contratos: list[ContratoResumo]
@@ -8718,6 +8758,167 @@ def painel_financeiro():
         )
     finally:
         conn.close()
+
+
+def _comissao_forma(forma: str) -> float:
+    texto = normalizar_texto(forma).replace("_", " ")
+    if "pix" in texto or "dinheiro" in texto:
+        return 0.01
+    if "cartao" in texto or "credito" in texto or "debito" in texto:
+        return 0.006
+    if "boleto" in texto:
+        return 0.004
+    return 0.0
+
+
+def _calcular_comissao_contrato(row: sqlite3.Row) -> float:
+    valor_total = float(row["valor_total"] or 0)
+    try:
+        plano = json.loads(str(row["plano_pagamento_json"] or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        plano = []
+    partes = [(float(item.get("valor", 0) or 0), str(item.get("forma", "") or "")) for item in plano if isinstance(item, dict)]
+    soma = sum(valor for valor, _ in partes)
+    if partes and soma > 0:
+        fator = valor_total / soma
+        return round(sum(valor * fator * _comissao_forma(forma) for valor, forma in partes), 2)
+    return round(valor_total * _comissao_forma(str(row["forma_pagamento"] or "")), 2)
+
+
+def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: date) -> ComissaoRelatorioResposta:
+    contratos = conn.execute(
+        """
+        SELECT c.*, p.nome AS paciente_nome
+        FROM contratos c LEFT JOIN pacientes p ON p.id=c.paciente_id
+        WHERE lower(COALESCE(c.status, '')) IN ('aprovado', 'aprovada', 'convertido')
+        """
+    ).fetchall()
+    agenda = conn.execute(
+        """
+        SELECT a.*, COALESCE(GROUP_CONCAT(ap.procedimento_nome_snapshot, ', '), a.procedimento, '') AS procedimentos_lista
+        FROM agendamentos a
+        LEFT JOIN agendamento_procedimentos ap ON ap.agendamento_id=a.id
+        GROUP BY a.id ORDER BY a.data, a.hora_inicio, a.id
+        """
+    ).fetchall()
+    por_paciente: dict[int, list[sqlite3.Row]] = {}
+    for agendamento in agenda:
+        paciente_id = crm_int(agendamento["paciente_id"])
+        if paciente_id > 0:
+            por_paciente.setdefault(paciente_id, []).append(agendamento)
+
+    def compareceu(item: sqlite3.Row) -> bool:
+        return normalizar_texto(item["status"]) in {"atendido", "em atendimento"}
+
+    def avaliacao(item: sqlite3.Row) -> bool:
+        return normalizar_texto(item["profissional"]) == "avaliacao"
+
+    def agendador(item: sqlite3.Row | None) -> str:
+        if item is None:
+            return "Não localizado"
+        return str(item["criado_por"] or item["status_usuario"] or "Não registrado").strip()
+
+    vendas: list[ComissaoVendaItemResposta] = []
+    for contrato in contratos:
+        if "permuta" in normalizar_texto(contrato["forma_pagamento"]):
+            continue
+        fechamento = parse_data_contrato(str(contrato["data_aprovacao"] or "")) or parse_data_contrato(str(contrato["data_criacao"] or ""))
+        if not fechamento or fechamento < inicio or fechamento > fim:
+            continue
+        paciente_id = crm_int(contrato["paciente_id"])
+        registros = por_paciente.get(paciente_id, [])
+        primeiro = registros[0] if registros else None
+        avaliacoes_paciente = [item for item in registros if avaliacao(item) and compareceu(item)]
+        avaliacao_comparecida = avaliacoes_paciente[0] if avaliacoes_paciente else None
+        no_fechamento = [item for item in registros if parse_data_contrato(str(item["data"] or "")) == fechamento and normalizar_texto(item["status"]) not in {"cancelado", "desmarcado"}]
+        preferidos = [item for item in no_fechamento if avaliacao(item) and compareceu(item)] or [item for item in no_fechamento if compareceu(item)] or no_fechamento
+        fechamento_agenda = preferidos[0] if preferidos else None
+        captacao = agendador(avaliacao_comparecida)
+        resgate = agendador(fechamento_agenda)
+        pago = bool(str(contrato["data_pagamento_entrada"] or "").strip()) or bool(conn.execute(
+            "SELECT 1 FROM recebiveis WHERE contrato_id=? AND lower(COALESCE(status,''))='pago' LIMIT 1", (contrato["id"],)
+        ).fetchone())
+        total = _calcular_comissao_contrato(contrato) if pago else 0.0
+        dados_ausentes = primeiro is None or avaliacao_comparecida is None or fechamento_agenda is None
+        mesma_pessoa = normalizar_texto(captacao) == normalizar_texto(resgate) and captacao not in {"Não localizado", "Não registrado"}
+        vendas.append(ComissaoVendaItemResposta(
+            contratoId=crm_int(contrato["id"]), pacienteId=paciente_id or None,
+            paciente=str(contrato["paciente_nome"] or f"Paciente #{paciente_id}"), dataFechamento=formatar_data_br(fechamento),
+            valorContrato=round(float(contrato["valor_total"] or 0), 2), formaPagamento=str(contrato["forma_pagamento"] or ""),
+            primeiroAgendamento=formatar_data_br(parse_data_contrato(str(primeiro["data"] or ""))) if primeiro else "",
+            primeiroAgendador=agendador(primeiro),
+            avaliacaoComparecida=formatar_data_br(parse_data_contrato(str(avaliacao_comparecida["data"] or ""))) if avaliacao_comparecida else "",
+            agendadorAvaliacao=captacao, agendadorFechamento=resgate, pagamentoConfirmado=pago,
+            comissaoTotal=total, comissaoCaptacao=total if mesma_pessoa else round(total * .30, 2),
+            comissaoResgate=0 if mesma_pessoa else round(total * .70, 2),
+            status="Revisar dados ausentes" if dados_ausentes else ("Aguardando confirmação do pagamento" if not pago else "Completo"),
+        ))
+
+    avaliacoes_periodo = []
+    for item in agenda:
+        data_item = parse_data_contrato(str(item["data"] or ""))
+        if not data_item or data_item < inicio or data_item > fim or not avaliacao(item) or not compareceu(item):
+            continue
+        avaliacoes_periodo.append(ComissaoAvaliacaoItemResposta(
+            agendamentoId=crm_int(item["id"]), pacienteId=crm_int(item["paciente_id"]) or None,
+            paciente=str(item["paciente_nome"] or item["nome_paciente_snapshot"] or ""), data=formatar_data_br(data_item),
+            hora=str(item["hora_inicio"] or ""), status=str(item["status"] or ""), agendadoPor=agendador(item),
+            agendadoEm=str(item["data_agendamento"] or item["data_criacao"] or item["criado_em"] or ""),
+            procedimentos=str(item["procedimentos_lista"] or ""),
+        ))
+    return ComissaoRelatorioResposta(
+        inicio=inicio.isoformat(), fim=fim.isoformat(), vendas=vendas, avaliacoes=avaliacoes_periodo,
+        totalVendido=round(sum(item.valorContrato for item in vendas), 2), totalComissao=round(sum(item.comissaoTotal for item in vendas), 2),
+    )
+
+
+@app.get("/api/relatorios/comissoes", response_model=ComissaoRelatorioResposta)
+def relatorio_comissoes(inicio: date = Query(...), fim: date = Query(...)):
+    if fim < inicio:
+        raise HTTPException(status_code=400, detail="Período inválido.")
+    conn = conectar()
+    try:
+        return carregar_relatorio_comissoes(conn, inicio, fim)
+    finally:
+        conn.close()
+
+
+@app.get("/api/relatorios/comissoes/export.xlsx")
+def exportar_relatorio_comissoes(inicio: date = Query(...), fim: date = Query(...)):
+    if Workbook is None:
+        raise HTTPException(status_code=503, detail="Exportação Excel indisponível.")
+    conn = conectar()
+    try:
+        relatorio = carregar_relatorio_comissoes(conn, inicio, fim)
+    finally:
+        conn.close()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Vendas e comissões"
+    cabecalho = ["Contrato", "Paciente", "Fechamento", "Valor", "Pagamento", "Primeiro agendamento", "Quem agendou primeiro", "Avaliação comparecida", "Quem agendou a avaliação", "Quem agendou no fechamento", "Pagamento confirmado", "Comissão total", "Captação 30%", "Resgate 70%", "Status"]
+    ws.append(cabecalho)
+    for item in relatorio.vendas:
+        ws.append([str(item.contratoId), item.paciente, item.dataFechamento, item.valorContrato, item.formaPagamento, item.primeiroAgendamento, item.primeiroAgendador, item.avaliacaoComparecida, item.agendadorAvaliacao, item.agendadorFechamento, "Sim" if item.pagamentoConfirmado else "Não", item.comissaoTotal, item.comissaoCaptacao, item.comissaoResgate, item.status])
+    av = wb.create_sheet("Avaliações comparecidas")
+    av.append(["Agendamento", "Paciente", "Data", "Hora", "Status", "Quem agendou esta avaliação", "Agendado em", "Procedimentos"])
+    for item in relatorio.avaliacoes:
+        av.append([str(item.agendamentoId), item.paciente, item.data, item.hora, item.status, item.agendadoPor, item.agendadoEm, item.procedimentos])
+    for planilha in (ws, av):
+        for cell in planilha[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="183B56")
+        planilha.freeze_panes = "A2"
+        planilha.auto_filter.ref = planilha.dimensions
+        for coluna in planilha.columns:
+            letra = coluna[0].column_letter
+            planilha.column_dimensions[letra].width = min(38, max(12, max(len(str(c.value or "")) for c in coluna) + 2))
+    for linha in range(2, ws.max_row + 1):
+        for coluna in (4, 12, 13, 14):
+            ws.cell(linha, coluna).number_format = 'R$ #,##0.00'
+    buffer = BytesIO()
+    wb.save(buffer)
+    nome = f"relatorio-comissoes-{inicio.isoformat()}-a-{fim.isoformat()}.xlsx"
+    return Response(buffer.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 @app.get("/api/dashboard", response_model=DashboardPainelResposta)
