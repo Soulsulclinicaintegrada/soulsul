@@ -3314,6 +3314,10 @@ FORMAS_PAGAMENTO_ORCAMENTO = {
 }
 
 
+def contrato_eh_permuta(contrato: sqlite3.Row | dict) -> bool:
+    return "permuta" in normalizar_texto(str(contrato["forma_pagamento"] or ""))
+
+
 def validar_plano_pagamento_orcamento(
     parcelas: list[ParcelaPagamentoPayload],
     valor_total: float,
@@ -4485,6 +4489,8 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         FROM contratos
         """
     ).fetchall()
+    # Permutas preservam o valor clinico no contrato, mas nao representam venda.
+    contratos_rows = [row for row in contratos_rows if not contrato_eh_permuta(row)]
     pacientes_nome_rows = conn.execute("SELECT id, nome, prontuario FROM pacientes").fetchall()
     pacientes_nome_map = {
         crm_int(row["id"]): {
