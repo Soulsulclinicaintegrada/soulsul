@@ -951,6 +951,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     () => nivelPermissao(String(usuarioSessao?.modulos?.Financeiro || "Sem acesso")),
     [usuarioSessao?.modulos]
   );
+  const usuarioPodeVerValoresFinanceiros = usuarioPodeAprovarOrcamento && nivelFinanceiroModulo > 0;
   const nivelOrcamentosAba = useMemo(
     () => nivelPermissao(String(pacientesAbas.Orcamentos || "Sem acesso")),
     [pacientesAbas]
@@ -1044,6 +1045,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
   const orcamentoBloqueado = !usuarioPodeEditarOrcamento;
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
+  const existemValoresEmAberto = useMemo(
+    () => parseMoeda(ficha?.financeiro.emAberto || "") > 0 || parseMoeda(ficha?.financeiro.atrasado || "") > 0,
+    [ficha?.financeiro.atrasado, ficha?.financeiro.emAberto]
+  );
   const recebiveisVisiveisPaciente = useMemo(
     () => (ficha?.recebiveis || []).filter((item) =>
       mostrarTodosRecebiveisPaciente
@@ -1130,10 +1135,13 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const abasFichaDisponiveis = useMemo(
     () =>
       ABAS_FICHA.filter((aba) => {
+        if (!usuarioPodeVerValoresFinanceiros && (aba.principal === "Financeiro" || aba.principal === "Comercial")) {
+          return false;
+        }
         const chave = MAPA_PERMISSAO_ABAS_PACIENTE[aba.label] || aba.label;
         return nivelPermissao(String(pacientesAbas[chave] || "Sem acesso")) > 0;
       }),
-    [pacientesAbas]
+    [pacientesAbas, usuarioPodeVerValoresFinanceiros]
   );
   const abasFichaTopo = useMemo(
     () =>
@@ -1146,6 +1154,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     [abasFichaDisponiveis]
   );
   const acessoAbaAtual = useMemo(() => {
+    if (!usuarioPodeVerValoresFinanceiros && (abaPrincipal === "Financeiro" || abaPrincipal === "Comercial")) return 0;
     const abaAtual = ABAS_FICHA.find((aba) => {
       if (aba.principal !== abaPrincipal) return false;
       if (aba.clinica && aba.clinica !== abaClinica) return false;
@@ -1155,7 +1164,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     if (!abaAtual) return 0;
     const chave = MAPA_PERMISSAO_ABAS_PACIENTE[abaAtual.label] || abaAtual.label;
     return nivelPermissao(String(pacientesAbas[chave] || "Sem acesso"));
-  }, [abaPrincipal, abaClinica, abaDocumentos, pacientesAbas]);
+  }, [abaPrincipal, abaClinica, abaDocumentos, pacientesAbas, usuarioPodeVerValoresFinanceiros]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -2818,10 +2827,12 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
             <Pencil size={18} />
             Editar
           </button>
-          <button type="button" className="icon-action" onClick={() => setAbaPrincipal("Financeiro")}>
-            <Wallet size={18} />
-            Financeiro
-          </button>
+          {usuarioPodeVerValoresFinanceiros ? (
+            <button type="button" className="icon-action" onClick={() => setAbaPrincipal("Financeiro")}>
+              <Wallet size={18} />
+              Financeiro
+            </button>
+          ) : null}
           {usuarioPodeSuspenderTratamento ? (
             <button
               type="button"
@@ -2883,9 +2894,15 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
           <article className={`panel summary-card finance-alert ${resumoFinanceiroIndicador(ficha?.financeiro.indicador)}`}>
             <div className="summary-card-title">Alerta financeiro</div>
             <div className="summary-card-body">
-              <div><span>Indicador</span><strong>{ficha?.financeiro.indicador || "Sem vínculo"}</strong></div>
-              <div><span>Total em aberto</span><strong>{ficha?.financeiro.emAberto || "R$ 0,00"}</strong></div>
-              <div><span>Atrasado</span><strong>{ficha?.financeiro.atrasado || "R$ 0,00"}</strong></div>
+              {usuarioPodeVerValoresFinanceiros ? (
+                <>
+                  <div><span>Indicador</span><strong>{ficha?.financeiro.indicador || "Sem vínculo"}</strong></div>
+                  <div><span>Total em aberto</span><strong>{ficha?.financeiro.emAberto || "R$ 0,00"}</strong></div>
+                  <div><span>Atrasado</span><strong>{ficha?.financeiro.atrasado || "R$ 0,00"}</strong></div>
+                </>
+              ) : (
+                <div><span>Situação financeira</span><strong>{existemValoresEmAberto ? "Existem valores em aberto" : "Não existem valores em aberto"}</strong></div>
+              )}
             </div>
           </article>
         </aside>
@@ -2894,7 +2911,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
           <article className="panel patient-tabs-panel">
             <div className="tab-group">
               <div className="tab-shell tab-shell-primary">
-                {ABAS_PRINCIPAIS.map((aba) => (
+                {ABAS_PRINCIPAIS.filter(
+                  (aba) => usuarioPodeVerValoresFinanceiros || (aba.key !== "Financeiro" && aba.key !== "Comercial")
+                ).map((aba) => (
                   <button
                     key={aba.key}
                     type="button"
@@ -3041,7 +3060,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
               <div className="tab-group">
                 <span className="tab-group-title">Documentos</span>
                 <div className="tab-shell">
-                  {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[]).map((aba) => (
+                  {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[]).filter(
+                    (aba) => usuarioPodeVerValoresFinanceiros || aba !== "Recibos"
+                  ).map((aba) => (
                     <button
                       key={aba}
                       type="button"
@@ -3105,7 +3126,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   </div>
                 ) : null}
 
-                {abaDocumentos === "Recibos" ? (
+                {usuarioPodeVerValoresFinanceiros && abaDocumentos === "Recibos" ? (
                   <div className="finance-list">
                     {ficha?.recibos.length ? ficha.recibos.map((item) => (
                       <div className="finance-card" key={item.id}>
@@ -3561,7 +3582,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 <div className="tab-group">
                   <span className="tab-group-title">Documentos</span>
                   <div className="tab-shell">
-                    {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[]).map((aba) => (
+                    {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[]).filter(
+                      (aba) => usuarioPodeVerValoresFinanceiros || aba !== "Recibos"
+                    ).map((aba) => (
                       <button
                         key={aba}
                         type="button"
@@ -3679,7 +3702,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                     </div>
                   ) : null}
 
-                  {abaDocumentos === "Recibos" ? (
+                  {usuarioPodeVerValoresFinanceiros && abaDocumentos === "Recibos" ? (
                     <div className="finance-list">
                       {ficha?.recibos.length ? ficha.recibos.map((item) => (
                         <div className="finance-card" key={item.id}>
