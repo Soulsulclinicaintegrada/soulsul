@@ -246,6 +246,10 @@ export type RecebivelAtualizacaoPayload = {
   observacao_cobranca?: string;
 };
 
+export type RecebivelVencimentosLotePayload = {
+  itens: Array<{ id: number; vencimento: string }>;
+};
+
 export type RecebivelLotePayload = {
   paciente_id?: number | null;
   paciente_nome: string;
@@ -1244,6 +1248,13 @@ export async function excluirOrcamentoPacienteApi(pacienteId: number, contratoId
 
 export async function atualizarRecebivelPacienteApi(pacienteId: number, recebivelId: number, payload: RecebivelAtualizacaoPayload) {
   return fetchJson<RecebivelResumoApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/recebiveis/${recebivelId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function atualizarVencimentosRecebiveisPacienteApi(pacienteId: number, payload: RecebivelVencimentosLotePayload) {
+  return fetchJson<{ ok: true; atualizados: number }>(`${API_BASE_URL}/api/pacientes/${pacienteId}/recebiveis-vencimentos`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });

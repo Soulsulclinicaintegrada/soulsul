@@ -26,6 +26,7 @@ import {
   buscarProximoProntuarioApi,
   odontogramaPacienteApi,
   atualizarRecebivelPacienteApi,
+  atualizarVencimentosRecebiveisPacienteApi,
   urlDocumentoPaciente,
   urlReciboPaciente,
   urlExamePaciente,
@@ -1032,6 +1033,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const [arquivosBoletosSelecionados, setArquivosBoletosSelecionados] = useState<File[]>([]);
   const [gerandoRecebimentoBoletos, setGerandoRecebimentoBoletos] = useState(false);
   const [mostrarTodosRecebiveisPaciente, setMostrarTodosRecebiveisPaciente] = useState(false);
+  const [modalVencimentosAberto, setModalVencimentosAberto] = useState(false);
+  const [vencimentosEditor, setVencimentosEditor] = useState<Record<number, string>>({});
+  const [primeiroVencimentoLote, setPrimeiroVencimentoLote] = useState("");
+  const [salvandoVencimentos, setSalvandoVencimentos] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
   const [fotoErro, setFotoErro] = useState(false);
   const ultimoCepNovo = useRef("");
@@ -1055,6 +1060,14 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         || STATUS_RECEBIVEIS_PACIENTE_VISIVEIS.includes((item.status || "A vencer") as typeof STATUS_RECEBIVEIS_PACIENTE_VISIVEIS[number])
     ),
     [ficha?.recebiveis, mostrarTodosRecebiveisPaciente]
+  );
+  const recebiveisVencimentosOrdenados = useMemo(
+    () => [...(ficha?.recebiveis || [])].sort((a, b) => {
+      const dataA = dataBrParaIso(a.vencimento) || "9999-12-31";
+      const dataB = dataBrParaIso(b.vencimento) || "9999-12-31";
+      return dataA.localeCompare(dataB) || a.id - b.id;
+    }),
+    [ficha?.recebiveis]
   );
   const recebivelSelecionadoDetalhe = useMemo(
     () => ficha?.recebiveis.find((item) => item.id === recebivelForm?.id) || null,
@@ -1965,6 +1978,46 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     abrirRecebivelParaBaixa(item);
   }
 
+  function abrirEdicaoVencimentos() {
+    const datas = Object.fromEntries(
+      recebiveisVencimentosOrdenados.map((item) => [item.id, dataBrParaIso(item.vencimento)])
+    );
+    setVencimentosEditor(datas);
+    setPrimeiroVencimentoLote(recebiveisVencimentosOrdenados[0] ? datas[recebiveisVencimentosOrdenados[0].id] || "" : "");
+    setModalVencimentosAberto(true);
+  }
+
+  function distribuirVencimentosMensalmente() {
+    if (!primeiroVencimentoLote) return;
+    setVencimentosEditor(Object.fromEntries(
+      recebiveisVencimentosOrdenados.map((item, indice) => [item.id, adicionarMesesData(primeiroVencimentoLote, indice)])
+    ));
+  }
+
+  async function salvarVencimentosEmLote() {
+    if (!pacienteAtivoId || !recebiveisVencimentosOrdenados.length) return;
+    const itens = recebiveisVencimentosOrdenados.map((item) => ({
+      id: item.id,
+      vencimento: vencimentosEditor[item.id] || ""
+    }));
+    if (itens.some((item) => !item.vencimento)) {
+      setErro("Informe a nova data de todos os recebíveis.");
+      return;
+    }
+    setSalvandoVencimentos(true);
+    setErro(null);
+    try {
+      await atualizarVencimentosRecebiveisPacienteApi(pacienteAtivoId, { itens });
+      await carregarFicha(pacienteAtivoId);
+      setModalVencimentosAberto(false);
+      setFeedback(`${itens.length} vencimento(s) atualizado(s). Valores, formas e status foram preservados.`);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao atualizar os vencimentos.");
+    } finally {
+      setSalvandoVencimentos(false);
+    }
+  }
+
   function renderFinanceiroSection() {
     return (
       <div className="finance-shell">
@@ -1990,6 +2043,15 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         {ficha?.recebiveis.length ? (
           <div className="finance-board">
             <div className="finance-form-actions">
+              <button
+                type="button"
+                className="primary-action compact"
+                onClick={abrirEdicaoVencimentos}
+                disabled={salvandoRecebivel || !recebiveisVencimentosOrdenados.length || acessoAbaAtual < 2}
+              >
+                <CalendarDays size={16} />
+                Alterar vencimentos
+              </button>
               <button
                 type="button"
                 className="ghost-action compact"
@@ -4378,6 +4440,54 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       {renderListaPacientes}
       {pacienteAtivoId ? (
         carregandoFicha ? <article className="panel compact-panel">Carregando ficha do paciente...</article> : renderFichaPacienteNova
+      ) : null}
+
+      {modalVencimentosAberto ? (
+        <div className="overlay" role="presentation">
+          <article className="modal-shell modal-shell-finance finance-dates-modal">
+            <header className="modal-header">
+              <div>
+                <span className="panel-kicker">Financeiro do paciente</span>
+                <h2>Alterar vencimentos</h2>
+                <span className="finance-modal-subtitle">Somente as datas serão modificadas.</span>
+              </div>
+              <button type="button" className="icon-only" onClick={() => setModalVencimentosAberto(false)} disabled={salvandoVencimentos}>×</button>
+            </header>
+            <div className="modal-body">
+              <div className="finance-date-distribution">
+                <label>
+                  <span>Primeiro vencimento</span>
+                  <input type="date" value={primeiroVencimentoLote} onChange={(event) => setPrimeiroVencimentoLote(event.target.value)} />
+                </label>
+                <button type="button" className="ghost-action" onClick={distribuirVencimentosMensalmente} disabled={!primeiroVencimentoLote}>
+                  Distribuir mensalmente
+                </button>
+              </div>
+              <p className="payment-inline-note">A distribuição mensal começa na data acima e avança um mês por recebível. Você também pode ajustar qualquer linha manualmente.</p>
+              <div className="finance-bulk-date-list">
+                {recebiveisVencimentosOrdenados.map((item) => (
+                  <label className="finance-bulk-date-row" key={item.id}>
+                    <span>
+                      <strong>{item.parcela ? `Parcela ${item.parcela}` : "Recebível avulso"}</strong>
+                      <small>{item.status || "A vencer"} · {item.formaPagamento || "Forma não informada"} · {item.valor}</small>
+                    </span>
+                    <input
+                      type="date"
+                      value={vencimentosEditor[item.id] || ""}
+                      onChange={(event) => setVencimentosEditor((atual) => ({ ...atual, [item.id]: event.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="ghost-action" onClick={() => setModalVencimentosAberto(false)} disabled={salvandoVencimentos}>Cancelar</button>
+              <button type="button" className="primary-action" onClick={() => void salvarVencimentosEmLote()} disabled={salvandoVencimentos}>
+                {salvandoVencimentos ? "Salvando..." : `Salvar ${recebiveisVencimentosOrdenados.length} vencimento(s)`}
+              </button>
+            </footer>
+          </article>
+        </div>
       ) : null}
 
       {modalRecebivelAberto && recebivelForm ? (

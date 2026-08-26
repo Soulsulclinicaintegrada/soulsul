@@ -8572,3 +8572,53 @@ textarea::placeholder {
     max-width: 100%;
   }
 }
+.finance-dates-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.finance-date-distribution {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.finance-date-distribution label {
+  display: grid;
+  gap: 7px;
+  min-width: 220px;
+}
+
+.finance-bulk-date-list {
+  display: grid;
+  gap: 8px;
+  max-height: 48vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.finance-bulk-date-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.finance-bulk-date-row > span {
+  display: grid;
+  gap: 4px;
+}
+
+.finance-bulk-date-row small {
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .finance-bulk-date-row {
+    grid-template-columns: 1fr;
+  }
+}

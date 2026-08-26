@@ -682,6 +682,15 @@ class RecebivelAtualizacaoPayload(BaseModel):
     observacao_cobranca: str = ""
 
 
+class RecebivelVencimentoLoteItemPayload(BaseModel):
+    id: int
+    vencimento: str
+
+
+class RecebivelVencimentosLotePayload(BaseModel):
+    itens: list[RecebivelVencimentoLoteItemPayload] = Field(default_factory=list)
+
+
 class RecebivelRenegociacaoParcelaPayload(BaseModel):
     vencimento: str = ""
     valor: float = 0
@@ -8658,6 +8667,58 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
         )
     finally:
         conn.close()
+
+
+@app.put("/api/pacientes/{paciente_id}/recebiveis-vencimentos")
+def atualizar_vencimentos_recebiveis_paciente(
+    paciente_id: int,
+    payload: RecebivelVencimentosLotePayload,
+    request: Request,
+):
+    if not payload.itens:
+        raise HTTPException(status_code=400, detail="Informe ao menos um recebível para alterar.")
+    ids = [int(item.id) for item in payload.itens]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="Existem recebíveis repetidos na alteração.")
+
+    vencimentos: dict[int, str] = {}
+    for item in payload.itens:
+        data_vencimento = parse_data_contrato(item.vencimento)
+        if data_vencimento is None:
+            raise HTTPException(status_code=400, detail=f"Data inválida para o recebível {item.id}.")
+        vencimentos[int(item.id)] = data_vencimento.isoformat()
+
+    conn = conectar()
+    try:
+        carregar_paciente_por_id(conn, paciente_id)
+        placeholders = ",".join("?" for _ in ids)
+        encontrados = conn.execute(
+            f"SELECT id FROM recebiveis WHERE paciente_id=? AND id IN ({placeholders})",
+            (paciente_id, *ids),
+        ).fetchall()
+        ids_encontrados = {int(row["id"]) for row in encontrados}
+        ausentes = [item_id for item_id in ids if item_id not in ids_encontrados]
+        if ausentes:
+            raise HTTPException(status_code=404, detail="Um ou mais recebíveis não pertencem a este paciente.")
+
+        for recebivel_id, vencimento in vencimentos.items():
+            conn.execute(
+                "UPDATE recebiveis SET vencimento=? WHERE id=? AND paciente_id=?",
+                (vencimento, recebivel_id, paciente_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="FINANCEIRO",
+        tipo="Vencimentos alterados em lote",
+        info=f"Paciente {paciente_id} · {len(ids)} recebíveis",
+        metodo_http="PUT",
+        rota=f"/api/pacientes/{paciente_id}/recebiveis-vencimentos",
+    )
+    return {"ok": True, "atualizados": len(ids)}
 
 
 @app.put("/api/financeiro/recebiveis/lote/{lote_id}")
