@@ -2983,7 +2983,7 @@ def filtrar_pacientes(rows: list[sqlite3.Row], termo: str) -> list[sqlite3.Row]:
 
 def carregar_procedimentos_contrato(conn: sqlite3.Connection, contrato_id: int) -> list[str]:
     rows = conn.execute(
-        "SELECT procedimento FROM procedimentos_contrato WHERE contrato_id=? ORDER BY id",
+        "SELECT procedimento FROM procedimentos_contrato WHERE contrato_id=? AND COALESCE(valor, 0) > 0 ORDER BY id",
         (contrato_id,),
     ).fetchall()
     procedimentos: list[str] = []
@@ -3064,7 +3064,7 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         raise HTTPException(status_code=404, detail="Orcamento nao encontrado.")
 
     procedimentos_rows = conn.execute(
-        "SELECT * FROM procedimentos_contrato WHERE contrato_id=? ORDER BY id",
+        "SELECT * FROM procedimentos_contrato WHERE contrato_id=? AND COALESCE(valor, 0) > 0 ORDER BY id",
         (contrato_id,),
     ).fetchall()
     dentes_rows = conn.execute(
@@ -3377,7 +3377,10 @@ def salvar_orcamento_paciente(
 ) -> int:
     itens_validos = []
     for item in payload.itens:
-        regioes_validas = [regiao for regiao in item.regioes if str(regiao.regiao or "").strip()]
+        regioes_validas = [
+            regiao for regiao in item.regioes
+            if regiao.ativo and str(regiao.regiao or "").strip() and float(regiao.valor or 0) > 0
+        ]
         if regioes_validas and str(item.procedimento or "").strip():
             itens_validos.append((item, regioes_validas))
 
@@ -3514,7 +3517,10 @@ def salvar_orcamento_paciente_com_pagamento(
 ) -> int:
     itens_validos = []
     for item in payload.itens:
-        regioes_validas = [regiao for regiao in item.regioes if str(regiao.regiao or "").strip()]
+        regioes_validas = [
+            regiao for regiao in item.regioes
+            if regiao.ativo and str(regiao.regiao or "").strip() and float(regiao.valor or 0) > 0
+        ]
         if regioes_validas and str(item.procedimento or "").strip():
             itens_validos.append((item, regioes_validas))
 
@@ -6188,14 +6194,16 @@ def rotulo_regiao_contrato_docx(regiao: str) -> str:
 
 def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato_id: int) -> list[dict]:
     procedimentos = conn.execute(
-        "SELECT id, procedimento, valor, profissional_snapshot, denticao_snapshot FROM procedimentos_contrato WHERE contrato_id=? ORDER BY id",
+        "SELECT id, procedimento, valor, profissional_snapshot, denticao_snapshot FROM procedimentos_contrato WHERE contrato_id=? AND COALESCE(valor, 0) > 0 ORDER BY id",
         (contrato_id,),
     ).fetchall()
     dentes = conn.execute(
         """
         SELECT procedimento, dente, regiao, status
         FROM procedimentos_dente
-        WHERE contrato_id=? AND upper(trim(COALESCE(status, ''))) <> 'EXCLUIDO'
+        WHERE contrato_id=?
+          AND upper(trim(COALESCE(status, ''))) <> 'EXCLUIDO'
+          AND COALESCE(valor, 0) > 0
         ORDER BY id
         """,
         (contrato_id,),
@@ -6873,30 +6881,22 @@ def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) ->
         forma = str(item.get("forma", "A DEFINIR") or "A DEFINIR").replace("_", " ").upper()
         return forma.replace("CARTAO CREDITO", "CARTÃO DE CRÉDITO").replace("CARTAO DEBITO", "CARTÃO DE DÉBITO")
 
-    def faz_parte_do_mesmo_grupo(anterior: dict, atual: dict) -> bool:
-        if normalizar_texto(anterior.get("descricao", "")) == "entrada":
-            return False
-        if normalizar_texto(atual.get("descricao", "")) == "entrada":
-            return False
-        if forma_legivel(anterior) != forma_legivel(atual):
-            return False
-        if abs(float(anterior.get("valor", 0) or 0) - float(atual.get("valor", 0) or 0)) > 0.009:
-            return False
-        if int(anterior.get("parcelas_cartao", 1) or 1) != int(atual.get("parcelas_cartao", 1) or 1):
-            return False
-        data_anterior = parse_data_contrato(anterior.get("data"))
-        data_atual = parse_data_contrato(atual.get("data"))
-        if data_anterior is None or data_atual is None:
-            return False
-        proximo_mes = adicionar_meses(data_anterior, 1)
-        return data_atual == proximo_mes
-
     grupos: list[list[dict]] = []
+    grupos_por_forma: dict[str, list[dict]] = {}
     for item in itens_ativos:
-        if grupos and faz_parte_do_mesmo_grupo(grupos[-1][-1], item):
-            grupos[-1].append(item)
-        else:
+        entrada = normalizar_texto(item.get("descricao", "")) == "entrada"
+        forma = forma_legivel(item)
+        # Cada lançamento no cartão representa uma passagem específica e deve
+        # conservar sua própria data/parcelamento. As demais formas são
+        # agrupadas pelo tipo, inclusive quando atravessam a virada do ano.
+        if entrada or "CARTÃO" in forma:
             grupos.append([item])
+            continue
+        if forma not in grupos_por_forma:
+            grupos_por_forma[forma] = [item]
+            grupos.append(grupos_por_forma[forma])
+        else:
+            grupos_por_forma[forma].append(item)
 
     descricoes: list[str] = []
     for indice, grupo in enumerate(grupos, start=1):
@@ -6909,8 +6909,9 @@ def montar_texto_pagamento_contrato(contrato: sqlite3.Row, plano: list[dict]) ->
         data_pagamento = formatar_data_br_valor(item.get("data"))
         parcelas_cartao = max(1, int(item.get("parcelas_cartao", 1) or 1))
         if len(grupo) > 1:
+            total_grupo = sum(float(parcela.get("valor", 0) or 0) for parcela in grupo)
             descricoes.append(
-                f"{rotulo}: {len(grupo)} PARCELAS DE {formatar_moeda_br(valor)} VIA {forma}, "
+                f"{rotulo}: {formatar_moeda_br(total_grupo)} EM {len(grupo)} PARCELAS VIA {forma}, "
                 f"COM PRIMEIRO VENCIMENTO EM {data_pagamento}"
             )
         elif "CRÉDITO" in forma and parcelas_cartao > 1:
