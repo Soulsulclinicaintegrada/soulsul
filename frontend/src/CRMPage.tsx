@@ -17,6 +17,7 @@ import {
   type CrmResgateItemApi,
 } from "./pacientesApi";
 import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
+import { WhatsAppConversations } from "./WhatsAppConversations";
 
 type CRMPageProps = {
   busca: string;
@@ -40,7 +41,7 @@ type RelatorioCrmItem = {
   usuario?: string;
 };
 
-type CrmAba = "funil" | "agendados" | "finalizacao" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
+type CrmAba = "funil" | "conversas" | "agendados" | "finalizacao" | "cancelados" | "avaliacoes" | "resgates" | "relatorios";
 type FinalizacaoSubAba = "finalizar" | "finalizados";
 type RelatorioAberto = "sem-agendamento" | "aniversariantes" | "faltaram" | "desmarcaram" | "avaliacoes-sem-reagendamento" | "palavras-chave";
 type CrmEtapa = (typeof ETAPAS_CRM)[number];
@@ -1270,6 +1271,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       <section className="panel crm-tabs-panel">
         <div className="tab-shell tab-shell-primary crm-tabs-shell">
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "funil" ? "active" : ""}`} onClick={() => setAbaAtiva("funil")}>Funil</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "conversas" ? "active" : ""}`} onClick={() => setAbaAtiva("conversas")}>Conversas</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "agendados" ? "active" : ""}`} onClick={() => setAbaAtiva("agendados")}>Agendados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizacao" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizacao")}>Finalização</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "cancelados" ? "active" : ""}`} onClick={() => setAbaAtiva("cancelados")}>Cancelados</button>
@@ -1288,6 +1290,8 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
           </div>
         ) : null}
       </section>
+
+      {abaAtiva === "conversas" ? <WhatsAppConversations /> : null}
 
       <section className={abaAtiva === "agendados" || abaAtiva === "finalizacao" || abaAtiva === "cancelados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
         <article className={abaAtiva === "agendados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>

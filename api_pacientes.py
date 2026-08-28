@@ -66,6 +66,7 @@ from database import (
     inicializar_banco,
     verificar_senha,
 )
+from whatsapp_integration import register_whatsapp_routes
 
 
 API_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1488,6 +1489,7 @@ class ChecklistUsuarioPainelResposta(BaseModel):
 
 
 app = FastAPI(title="SoulSul Pacientes API", version="0.1.0")
+register_whatsapp_routes(app)
 
 app.add_middleware(
     CORSMiddleware,
