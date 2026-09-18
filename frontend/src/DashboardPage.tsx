@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DollarSign, Target, TrendingUp, X } from "lucide-react";
 import {
+  atualizarInclusaoVendaDashboardApi,
   atualizarMetaFinanceiraApi,
   painelDashboardApi,
   type ContaPagarResumoApi,
@@ -415,16 +416,23 @@ function VendasResumoCard({
   itens,
   meses,
   mesSelecionado,
-  onSelecionarMes
+  onSelecionarMes,
+  onAlterarInclusao,
+  salvandoId
 }: {
   itens: DashboardVendaResumoItemApi[];
   meses: string[];
   mesSelecionado: number;
   onSelecionarMes: (mes: number) => void;
+  onAlterarInclusao: (item: DashboardVendaResumoItemApi, incluir: boolean) => void;
+  salvandoId: number | null;
 }) {
   const itensFiltrados = itens.filter((item) => extrairMesDataBr(item.data) === mesSelecionado);
   const nomeMes = meses[mesSelecionado - 1] || "";
-  const totalMesSelecionado = itensFiltrados.reduce((total, item) => total + moedaParaNumero(item.valor || "0"), 0);
+  const totalMesSelecionado = itensFiltrados.reduce(
+    (total, item) => total + (item.incluirTotalVendido !== false ? moedaParaNumero(item.valor || "0") : 0),
+    0
+  );
   return (
     <article className="panel summary-panel">
       <div className="section-title-row">
@@ -448,10 +456,19 @@ function VendasResumoCard({
       </div>
       <div className="module-sublist">
         {itensFiltrados.length ? itensFiltrados.map((item) => (
-          <div className="module-subitem finance-module-subitem" key={`dashboard-venda-resumo-${item.contratoId}`}>
-            <div>
+          <div className={`module-subitem finance-module-subitem${item.incluirTotalVendido === false ? " dashboard-sale-excluded" : ""}`} key={`dashboard-venda-resumo-${item.contratoId}`}>
+            <div className="dashboard-sale-main">
               <strong>{item.nome || "Paciente"}</strong>
               <span>{`${item.formaPagamento || "Sem forma de pagamento"}${item.data ? ` · ${item.data}` : ""}`}</span>
+              <label className="dashboard-sale-total-toggle">
+                <input
+                  type="checkbox"
+                  checked={item.incluirTotalVendido !== false}
+                  disabled={salvandoId === item.contratoId}
+                  onChange={(event) => onAlterarInclusao(item, event.target.checked)}
+                />
+                <span>{salvandoId === item.contratoId ? "Salvando..." : "Somar no total vendido"}</span>
+              </label>
             </div>
             <div className="module-subitem-right">
               <strong>{item.valor || "R$ 0,00"}</strong>
@@ -474,6 +491,7 @@ export function DashboardPage() {
   const [pagamentoDiaAtivo, setPagamentoDiaAtivo] = useState<DashboardCalendarioPagamentoItemApi | null>(null);
   const [indicadorAtivo, setIndicadorAtivo] = useState<DashboardIndicadorApi | null>(null);
   const [mesVendasSelecionado, setMesVendasSelecionado] = useState(new Date().getMonth() + 1);
+  const [salvandoVendaId, setSalvandoVendaId] = useState<number | null>(null);
 
   async function carregar() {
     setCarregando(true);
@@ -545,6 +563,19 @@ export function DashboardPage() {
       setErro(error instanceof Error ? error.message : "Falha ao salvar meta.");
     } finally {
       setSalvandoMeta(false);
+    }
+  }
+
+  async function alterarInclusaoVenda(item: DashboardVendaResumoItemApi, incluir: boolean) {
+    try {
+      setSalvandoVendaId(item.contratoId);
+      setErro("");
+      await atualizarInclusaoVendaDashboardApi(item.contratoId, incluir);
+      await carregar();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao atualizar a soma das vendas.");
+    } finally {
+      setSalvandoVendaId(null);
     }
   }
 
@@ -627,6 +658,8 @@ export function DashboardPage() {
             meses={painel.meses || DASHBOARD_VAZIO.meses}
             mesSelecionado={mesVendasSelecionado}
             onSelecionarMes={setMesVendasSelecionado}
+            onAlterarInclusao={(item, incluir) => void alterarInclusaoVenda(item, incluir)}
+            salvandoId={salvandoVendaId}
           />
           <DevedoresResumoCard itens={painel.devedoresResumo || []} />
           <article className="panel summary-panel">

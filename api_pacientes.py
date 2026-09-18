@@ -972,6 +972,11 @@ class DashboardVendaResumoItemResposta(BaseModel):
     valor: str = ""
     formaPagamento: str = ""
     data: str = ""
+    incluirTotalVendido: bool = True
+
+
+class DashboardVendaInclusaoPayload(BaseModel):
+    incluir: bool = True
 
 
 class DashboardAlertaItemResposta(BaseModel):
@@ -4505,7 +4510,8 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     caixa_rows = carregar_caixa_financeiro(conn)
     contratos_rows = conn.execute(
         """
-        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status, forma_pagamento
+        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status, forma_pagamento,
+               COALESCE(incluir_total_vendido, 1) AS incluir_total_vendido
         FROM contratos
         """
     ).fetchall()
@@ -4597,6 +4603,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 valor=formatar_moeda_br(float(row["valor_total"] or 0)),
                 formaPagamento=forma_pagamento,
                 data=formatar_data_br(data_ref),
+                incluirTotalVendido=bool(int(row["incluir_total_vendido"] or 0)),
             )
         )
 
@@ -4628,11 +4635,16 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 valor=formatar_moeda_br(float(row["valor_total"] or 0)),
                 formaPagamento=forma_pagamento,
                 data=formatar_data_br(data_ref),
+                incluirTotalVendido=bool(int(row["incluir_total_vendido"] or 0)),
             )
         )
 
     vendas_mes_qtd = len(vendas_mes_rows)
-    vendas_mes_valor = sum(float(row["valor_total"] or 0) for row in vendas_mes_rows)
+    vendas_mes_valor = sum(
+        float(row["valor_total"] or 0)
+        for row in vendas_mes_rows
+        if bool(int(row["incluir_total_vendido"] or 0))
+    )
 
     recebiveis_hoje_rows = [
         row
@@ -4820,6 +4832,8 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 continue
             data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
             if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_indice:
+                continue
+            if not bool(int(row["incluir_total_vendido"] or 0)):
                 continue
             total_mes += float(row["valor_total"] or 0)
         serie_vendas.append(total_mes)
@@ -9840,6 +9854,25 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
         conn.commit()
         row = carregar_paciente_por_id(conn, paciente_id)
         return mapear_paciente_detalhe(row)
+    finally:
+        conn.close()
+
+
+@app.put("/api/dashboard/vendas/{contrato_id}/inclusao-total")
+def atualizar_inclusao_venda_total(contrato_id: int, payload: DashboardVendaInclusaoPayload, request: Request):
+    conn = conectar()
+    try:
+        contrato = conn.execute("SELECT id, status FROM contratos WHERE id=? LIMIT 1", (contrato_id,)).fetchone()
+        if contrato is None:
+            raise HTTPException(status_code=404, detail="Contrato nao encontrado.")
+        if normalizar_texto(contrato["status"]) not in {"aprovado", "aprovada", "convertido"}:
+            raise HTTPException(status_code=400, detail="Somente vendas aprovadas podem ser ajustadas no dashboard.")
+        conn.execute(
+            "UPDATE contratos SET incluir_total_vendido=? WHERE id=?",
+            (1 if payload.incluir else 0, contrato_id),
+        )
+        conn.commit()
+        return {"ok": True, "contratoId": contrato_id, "incluirTotalVendido": bool(payload.incluir)}
     finally:
         conn.close()
 

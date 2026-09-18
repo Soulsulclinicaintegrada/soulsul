@@ -8690,3 +8690,34 @@ textarea::placeholder {
   margin-top: 16px;
   line-height: 1.5;
 }
+.dashboard-sale-total-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(78, 102, 72, 0.24);
+  border-radius: 9px;
+  background: rgba(78, 102, 72, 0.08);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dashboard-sale-main {
+  min-width: 0;
+}
+
+.dashboard-sale-total-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.dashboard-sale-excluded {
+  opacity: 0.58;
+  background: rgba(119, 105, 89, 0.06);
+}

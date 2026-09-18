@@ -559,6 +559,7 @@ export type DashboardVendaResumoItemApi = {
   valor?: string;
   formaPagamento?: string;
   data?: string;
+  incluirTotalVendido?: boolean;
 };
 
 export type DashboardFunilApi = {
@@ -1347,6 +1348,13 @@ export function urlExportarRelatorioComissoes(inicio: string, fim: string) {
 
 export async function painelDashboardApi() {
   return fetchJson<DashboardPainelApi>(`${API_BASE_URL}/api/dashboard`);
+}
+
+export async function atualizarInclusaoVendaDashboardApi(contratoId: number, incluir: boolean) {
+  return fetchJson<{ ok: true; contratoId: number; incluirTotalVendido: boolean }>(
+    `${API_BASE_URL}/api/dashboard/vendas/${contratoId}/inclusao-total`,
+    { method: "PUT", body: JSON.stringify({ incluir }) }
+  );
 }
 
 export async function listarMetasFinanceirasApi(ano: number) {

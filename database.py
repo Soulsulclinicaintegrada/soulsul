@@ -1201,6 +1201,7 @@ def inicializar_banco():
     garantir_coluna(conn, "contratos", "crm_observacao_contato TEXT")
     garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
     garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
+    garantir_coluna(conn, "contratos", "incluir_total_vendido INTEGER DEFAULT 1")
     garantir_coluna(conn, "pacientes", "numero TEXT")
     garantir_coluna(conn, "pacientes", "bairro TEXT")
     garantir_coluna(conn, "pacientes", "cidade TEXT")
