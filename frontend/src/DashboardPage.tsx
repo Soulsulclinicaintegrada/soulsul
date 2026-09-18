@@ -49,9 +49,9 @@ const TICKET_MEDIO = 4000;
 
 const FUNIL_CORES = [
   { chave: "leads", rotulo: "Leads", cor: "#5b64b5" },
-  { chave: "agendou", rotulo: "Agendou", cor: "#42c0c7" },
-  { chave: "compareceu", rotulo: "Compareceu", cor: "#f2898c" },
-  { chave: "fechou", rotulo: "Fechou", cor: "#efc449" }
+  { chave: "agendou", rotulo: "Agendou avaliação", cor: "#42c0c7" },
+  { chave: "compareceu", rotulo: "Compareceu à avaliação", cor: "#f2898c" },
+  { chave: "fechou", rotulo: "Fechou após avaliar", cor: "#efc449" }
 ] as const;
 
 const FUNIL_COR_NEUTRA = "#b9b4ab";
@@ -201,6 +201,32 @@ function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0
           ) : null}
         </div>
       </div>
+    </article>
+  );
+}
+
+function ResgatesCard({ valores }: { valores: { total: number; ate30Dias: number; mais30Dias: number } }) {
+  const maior = Math.max(valores.ate30Dias, valores.mais30Dias, 1);
+  const itens = [
+    { rotulo: "Retornaram em até 30 dias", valor: valores.ate30Dias, classe: "new" },
+    { rotulo: "Retornaram após 30 dias", valor: valores.mais30Dias, classe: "old" }
+  ];
+  return (
+    <article className="panel dashboard-rescue-panel">
+      <div className="section-title-row">
+        <div><span className="panel-kicker">Relacionamento</span><h2>Resgates do mês</h2></div>
+        <div className="dashboard-rescue-total"><strong>{valores.total}</strong><span>paciente(s)</span></div>
+      </div>
+      <p className="dashboard-rescue-description">Pacientes que compareceram a uma avaliação, não fecharam no dia e retornaram para fechar neste mês.</p>
+      <div className="dashboard-rescue-chart">
+        {itens.map((item) => (
+          <div className="dashboard-rescue-row" key={item.rotulo}>
+            <div><span>{item.rotulo}</span><strong>{item.valor}</strong></div>
+            <div className="dashboard-rescue-track"><span className={`dashboard-rescue-bar ${item.classe}`} style={{ width: `${(item.valor / maior) * 100}%` }} /></div>
+          </div>
+        ))}
+      </div>
+      <small>Intervalo entre a última avaliação comparecida e o primeiro fechamento do paciente.</small>
     </article>
   );
 }
@@ -487,6 +513,14 @@ export function DashboardPage() {
     }),
     [painel.funilReal]
   );
+  const resgates = useMemo(
+    () => ({
+      total: Number(painel.funilReal?.resgates || 0),
+      ate30Dias: Number(painel.funilReal?.resgatesAte30Dias || 0),
+      mais30Dias: Number(painel.funilReal?.resgatesMais30Dias || 0)
+    }),
+    [painel.funilReal]
+  );
   const calendarioPagamentos = useMemo(() => {
     const mapa = new Map<string, DashboardCalendarioPagamentoItemApi>();
     (painel.calendarioPagamentos || []).forEach((item) => {
@@ -542,11 +576,13 @@ export function DashboardPage() {
         />
         <FunilCard
           titulo="Evolução atual"
-          subtitulo="Baseado em agenda e contratos reais do mês"
+          subtitulo="Avaliações e contratos reais do mês"
           valores={funilEvolucao}
           metasReferencia={funilMeta}
         />
       </section>
+
+      <ResgatesCard valores={resgates} />
 
       <section className="content-grid">
         <article className="panel dashboard-calendar-panel">

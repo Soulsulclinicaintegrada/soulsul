@@ -991,6 +991,9 @@ class DashboardFunilResposta(BaseModel):
     agendou: int = 0
     compareceu: int = 0
     fechou: int = 0
+    resgates: int = 0
+    resgatesAte30Dias: int = 0
+    resgatesMais30Dias: int = 0
 
 
 class DashboardMetasResposta(BaseModel):
@@ -4517,15 +4520,22 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         for row in pacientes_nome_rows
         if crm_int(row["id"]) > 0
     }
-    agendamentos_mes_rows = conn.execute(
+    agendamentos_rows = conn.execute(
         """
-        SELECT paciente_id, status, data
+        SELECT paciente_id, status, COALESCE(data_agendamento, data) AS data,
+               tipo_atendimento_nome_snapshot, procedimento_nome_snapshot,
+               procedimento, observacoes, observacao
         FROM agendamentos
-        WHERE substr(COALESCE(data, ''), 1, 7)=?
         """
-        ,
-        (f"{ano_atual}-{str(mes_atual).zfill(2)}",)
     ).fetchall()
+    agendamentos_mes_rows = [
+        row for row in agendamentos_rows
+        if (
+            (data_agendamento := parse_data_contrato(row["data"])) is not None
+            and data_agendamento.year == ano_atual
+            and data_agendamento.month == mes_atual
+        )
+    ]
 
     total_em_aberto = sum(
         float(row["valor"] or 0)
@@ -4729,26 +4739,72 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         for row in agendamentos_mes_rows
         if crm_int(row["paciente_id"]) > 0
     }
+    avaliacoes_mes_rows = [row for row in agendamentos_mes_rows if agendamento_eh_avaliacao(row)]
     ids_agendou = {
         crm_int(row["paciente_id"])
-        for row in agendamentos_mes_rows
-        if crm_int(row["paciente_id"]) > 0 and normalizar_texto(row["status"]) not in {"cancelado", "faltou"}
+        for row in avaliacoes_mes_rows
+        if crm_int(row["paciente_id"]) > 0
+        and normalizar_texto(row["status"]) not in {"cancelado", "desmarcado", "faltou"}
     }
     ids_compareceu = {
         crm_int(row["paciente_id"])
-        for row in agendamentos_mes_rows
+        for row in avaliacoes_mes_rows
         if crm_int(row["paciente_id"]) > 0 and normalizar_texto(row["status"]) in {"atendido", "em atendimento"}
     }
+
+    avaliacoes_comparecidas_por_paciente: dict[int, list[date]] = {}
+    for row in agendamentos_rows:
+        paciente_id = crm_int(row["paciente_id"])
+        data_avaliacao = parse_data_contrato(row["data"])
+        if (
+            paciente_id <= 0
+            or data_avaliacao is None
+            or not agendamento_eh_avaliacao(row)
+            or normalizar_texto(row["status"]) not in {"atendido", "em atendimento"}
+        ):
+            continue
+        avaliacoes_comparecidas_por_paciente.setdefault(paciente_id, []).append(data_avaliacao)
+
     ids_fechou = set()
+    primeiro_fechamento_por_paciente: dict[int, date] = {}
     for row in contratos_rows:
-        if normalizar_texto(row["status"]).upper() != "APROVADO":
+        if normalizar_texto(row["status"]) not in {"aprovado", "aprovada", "convertido"}:
             continue
         data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
-        if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_atual:
-            continue
         paciente_id = crm_int(row["paciente_id"])
-        if paciente_id > 0:
+        if not data_ref or paciente_id <= 0:
+            continue
+        atual = primeiro_fechamento_por_paciente.get(paciente_id)
+        if atual is None or data_ref < atual:
+            primeiro_fechamento_por_paciente[paciente_id] = data_ref
+
+    for paciente_id in ids_compareceu:
+        fechamento = primeiro_fechamento_por_paciente.get(paciente_id)
+        datas_mes = [
+            data_avaliacao
+            for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
+            if data_avaliacao.year == ano_atual and data_avaliacao.month == mes_atual
+        ]
+        if fechamento and any(fechamento >= data_avaliacao for data_avaliacao in datas_mes):
             ids_fechou.add(paciente_id)
+
+    ids_resgate_ate_30_dias = set()
+    ids_resgate_mais_30_dias = set()
+    for paciente_id, fechamento in primeiro_fechamento_por_paciente.items():
+        if fechamento.year != ano_atual or fechamento.month != mes_atual:
+            continue
+        avaliacoes_anteriores = [
+            data_avaliacao
+            for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
+            if data_avaliacao < fechamento
+        ]
+        if not avaliacoes_anteriores:
+            continue
+        dias_para_fechar = (fechamento - max(avaliacoes_anteriores)).days
+        if dias_para_fechar <= 30:
+            ids_resgate_ate_30_dias.add(paciente_id)
+        else:
+            ids_resgate_mais_30_dias.add(paciente_id)
 
     meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
     meta_mes = float(meta_atual.meta or 0)
@@ -4849,6 +4905,9 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             agendou=len(ids_agendou),
             compareceu=len(ids_compareceu),
             fechou=len(ids_fechou),
+            resgates=len(ids_resgate_ate_30_dias | ids_resgate_mais_30_dias),
+            resgatesAte30Dias=len(ids_resgate_ate_30_dias),
+            resgatesMais30Dias=len(ids_resgate_mais_30_dias),
         ),
         agendaHoje=[],
         vendasResumo=vendas_resumo,

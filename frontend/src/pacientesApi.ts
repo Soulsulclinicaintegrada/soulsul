@@ -566,6 +566,9 @@ export type DashboardFunilApi = {
   agendou: number;
   compareceu: number;
   fechou: number;
+  resgates?: number;
+  resgatesAte30Dias?: number;
+  resgatesMais30Dias?: number;
 };
 
 export type DashboardAlertaApi = {
