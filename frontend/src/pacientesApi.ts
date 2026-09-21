@@ -570,6 +570,8 @@ export type DashboardFunilApi = {
   resgates?: number;
   resgatesAte30Dias?: number;
   resgatesMais30Dias?: number;
+  resgatesFechamentoJuliana?: number;
+  resgatesNovaAvaliacao?: number;
 };
 
 export type DashboardAlertaApi = {

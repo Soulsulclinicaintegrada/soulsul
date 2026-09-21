@@ -999,6 +999,8 @@ class DashboardFunilResposta(BaseModel):
     resgates: int = 0
     resgatesAte30Dias: int = 0
     resgatesMais30Dias: int = 0
+    resgatesFechamentoJuliana: int = 0
+    resgatesNovaAvaliacao: int = 0
 
 
 class DashboardMetasResposta(BaseModel):
@@ -4528,7 +4530,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     }
     agendamentos_rows = conn.execute(
         """
-        SELECT paciente_id, status, COALESCE(data_agendamento, data) AS data,
+        SELECT paciente_id, status, COALESCE(data_agendamento, data) AS data, profissional,
                tipo_atendimento_nome_snapshot, procedimento_nome_snapshot,
                procedimento, observacoes, observacao
         FROM agendamentos
@@ -4798,26 +4800,86 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         if any(fechamento >= data_avaliacao for fechamento in fechamentos for data_avaliacao in datas_mes):
             ids_fechou.add(paciente_id)
 
-    ids_resgate_ate_30_dias = set()
-    ids_resgate_mais_30_dias = set()
-    for paciente_id, fechamentos in fechamentos_por_paciente.items():
-        intervalos = []
-        for fechamento in fechamentos:
-            if fechamento.year != ano_atual or fechamento.month != mes_atual:
+    def possui_orcamento_pendente_no_retorno(
+        paciente_id: int,
+        data_retorno: date,
+        *,
+        criado_a_partir_de: date | None = None,
+    ) -> bool:
+        for contrato in contratos_rows:
+            if crm_int(contrato["paciente_id"]) != paciente_id:
                 continue
-            avaliacoes_anteriores = [
-                data_avaliacao
-                for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
-                if data_avaliacao < fechamento
-            ]
-            if avaliacoes_anteriores:
-                intervalos.append((fechamento - max(avaliacoes_anteriores)).days)
-        if not intervalos:
+            if normalizar_texto(contrato["status"]) == "excluido":
+                continue
+            data_orcamento = parse_data_contrato(str(contrato["data_criacao"] or ""))
+            if not data_orcamento or data_orcamento > data_retorno:
+                continue
+            if criado_a_partir_de and data_orcamento < criado_a_partir_de:
+                continue
+            status_contrato = normalizar_texto(contrato["status"])
+            data_aprovacao = parse_data_contrato(str(contrato["data_aprovacao"] or ""))
+            if not data_aprovacao and status_contrato in {"aprovado", "aprovada", "convertido"}:
+                data_aprovacao = data_orcamento
+            if data_aprovacao and data_aprovacao < data_retorno:
+                continue
+            return True
+        return False
+
+    ids_resgate_fechamento_juliana = set()
+    marcadores_retorno_comercial = {
+        "fechamento", "fechar", "comercial", "conversa", "conversar",
+        "negociar", "negociacao", "orcamento", "proposta", "voltar ao tratamento",
+    }
+    for row in agendamentos_mes_rows:
+        paciente_id = crm_int(row["paciente_id"])
+        data_retorno = parse_data_contrato(row["data"])
+        texto_retorno = normalizar_texto(" ".join([
+            str(crm_row_val(row, "tipo_atendimento_nome_snapshot", "") or ""),
+            str(crm_row_val(row, "procedimento_nome_snapshot", "") or ""),
+            str(crm_row_val(row, "procedimento", "") or ""),
+            str(crm_row_val(row, "observacoes", "") or crm_row_val(row, "observacao", "") or ""),
+        ]))
+        if (
+            paciente_id <= 0
+            or data_retorno is None
+            or normalizar_texto(crm_row_val(row, "profissional", "")) != "juliana"
+            or normalizar_texto(row["status"]) not in {"atendido", "em atendimento"}
+            or not any(marcador in texto_retorno for marcador in marcadores_retorno_comercial)
+            or not any(data_avaliacao <= data_retorno for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, []))
+            or not possui_orcamento_pendente_no_retorno(paciente_id, data_retorno)
+        ):
             continue
-        if min(intervalos) <= 30:
-            ids_resgate_ate_30_dias.add(paciente_id)
-        else:
-            ids_resgate_mais_30_dias.add(paciente_id)
+        ids_resgate_fechamento_juliana.add(paciente_id)
+
+    ids_resgate_nova_avaliacao = set()
+    for row in avaliacoes_mes_rows:
+        paciente_id = crm_int(row["paciente_id"])
+        data_nova_avaliacao = parse_data_contrato(row["data"])
+        if (
+            paciente_id <= 0
+            or data_nova_avaliacao is None
+            or normalizar_texto(row["status"]) not in {"atendido", "em atendimento"}
+            or normalizar_texto(crm_row_val(row, "profissional", "")) != "avaliacao"
+        ):
+            continue
+        avaliacoes_anteriores = [
+            data_avaliacao
+            for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
+            if data_avaliacao < data_nova_avaliacao
+        ]
+        if not avaliacoes_anteriores:
+            continue
+        avaliacao_anterior = max(avaliacoes_anteriores)
+        if (data_nova_avaliacao - avaliacao_anterior).days <= 90:
+            continue
+        if possui_orcamento_pendente_no_retorno(
+            paciente_id,
+            data_nova_avaliacao,
+            criado_a_partir_de=avaliacao_anterior,
+        ):
+            ids_resgate_nova_avaliacao.add(paciente_id)
+
+    ids_resgate_nova_avaliacao -= ids_resgate_fechamento_juliana
 
     meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
     meta_mes = float(meta_atual.meta or 0)
@@ -4920,9 +4982,9 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             agendou=len(ids_agendou),
             compareceu=len(ids_compareceu),
             fechou=len(ids_fechou),
-            resgates=len(ids_resgate_ate_30_dias | ids_resgate_mais_30_dias),
-            resgatesAte30Dias=len(ids_resgate_ate_30_dias),
-            resgatesMais30Dias=len(ids_resgate_mais_30_dias),
+            resgates=len(ids_resgate_fechamento_juliana | ids_resgate_nova_avaliacao),
+            resgatesFechamentoJuliana=len(ids_resgate_fechamento_juliana),
+            resgatesNovaAvaliacao=len(ids_resgate_nova_avaliacao),
         ),
         agendaHoje=[],
         vendasResumo=vendas_resumo,
@@ -7731,6 +7793,7 @@ def garantir_paciente_minimo_crm(
 
 def agendamento_eh_avaliacao(row: sqlite3.Row) -> bool:
     blocos = [
+        str(crm_row_val(row, "profissional", "") or ""),
         str(crm_row_val(row, "tipo_atendimento_nome_snapshot", "") or ""),
         str(crm_row_val(row, "procedimento_nome_snapshot", "") or ""),
         str(crm_row_val(row, "procedimento", "") or ""),

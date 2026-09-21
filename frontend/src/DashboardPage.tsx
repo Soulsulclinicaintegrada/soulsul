@@ -204,11 +204,11 @@ function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0
   );
 }
 
-function ResgatesCard({ valores }: { valores: { total: number; ate30Dias: number; mais30Dias: number } }) {
-  const maior = Math.max(valores.ate30Dias, valores.mais30Dias, 1);
+function ResgatesCard({ valores }: { valores: { total: number; fechamentoJuliana: number; novaAvaliacao: number } }) {
+  const maior = Math.max(valores.fechamentoJuliana, valores.novaAvaliacao, 1);
   const itens = [
-    { rotulo: "Retornaram em até 30 dias", valor: valores.ate30Dias, classe: "new" },
-    { rotulo: "Retornaram após 30 dias", valor: valores.mais30Dias, classe: "old" }
+    { rotulo: "Retorno para fechamento com Juliana", valor: valores.fechamentoJuliana, classe: "new" },
+    { rotulo: "Nova avaliação após 3 meses", valor: valores.novaAvaliacao, classe: "old" }
   ];
   return (
     <article className="panel dashboard-rescue-panel">
@@ -216,7 +216,7 @@ function ResgatesCard({ valores }: { valores: { total: number; ate30Dias: number
         <div><span className="panel-kicker">Relacionamento</span><h2>Resgates do mês</h2></div>
         <div className="dashboard-rescue-total"><strong>{valores.total}</strong><span>paciente(s)</span></div>
       </div>
-      <p className="dashboard-rescue-description">Pacientes que compareceram a uma avaliação, não fecharam no dia e retornaram para fechar neste mês.</p>
+      <p className="dashboard-rescue-description">Pacientes com orçamento anterior que foram recuperados e retornaram neste mês.</p>
       <div className="dashboard-rescue-chart">
         {itens.map((item) => (
           <div className="dashboard-rescue-row" key={item.rotulo}>
@@ -225,7 +225,7 @@ function ResgatesCard({ valores }: { valores: { total: number; ate30Dias: number
           </div>
         ))}
       </div>
-      <small>Intervalo entre a última avaliação comparecida e o primeiro fechamento do paciente.</small>
+      <small>Conta retorno comercial comparecido com Juliana ou nova avaliação no setor Avaliação após mais de 90 dias.</small>
     </article>
   );
 }
@@ -532,8 +532,8 @@ export function DashboardPage() {
   const resgates = useMemo(
     () => ({
       total: Number(painel.funilReal?.resgates || 0),
-      ate30Dias: Number(painel.funilReal?.resgatesAte30Dias || 0),
-      mais30Dias: Number(painel.funilReal?.resgatesMais30Dias || 0)
+      fechamentoJuliana: Number(painel.funilReal?.resgatesFechamentoJuliana || 0),
+      novaAvaliacao: Number(painel.funilReal?.resgatesNovaAvaliacao || 0)
     }),
     [painel.funilReal]
   );
