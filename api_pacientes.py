@@ -4778,7 +4778,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         avaliacoes_comparecidas_por_paciente.setdefault(paciente_id, []).append(data_avaliacao)
 
     ids_fechou = set()
-    primeiro_fechamento_por_paciente: dict[int, date] = {}
+    fechamentos_por_paciente: dict[int, list[date]] = {}
     for row in contratos_rows:
         if normalizar_texto(row["status"]) not in {"aprovado", "aprovada", "convertido"}:
             continue
@@ -4786,34 +4786,35 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         paciente_id = crm_int(row["paciente_id"])
         if not data_ref or paciente_id <= 0:
             continue
-        atual = primeiro_fechamento_por_paciente.get(paciente_id)
-        if atual is None or data_ref < atual:
-            primeiro_fechamento_por_paciente[paciente_id] = data_ref
+        fechamentos_por_paciente.setdefault(paciente_id, []).append(data_ref)
 
     for paciente_id in ids_compareceu:
-        fechamento = primeiro_fechamento_por_paciente.get(paciente_id)
+        fechamentos = fechamentos_por_paciente.get(paciente_id, [])
         datas_mes = [
             data_avaliacao
             for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
             if data_avaliacao.year == ano_atual and data_avaliacao.month == mes_atual
         ]
-        if fechamento and any(fechamento >= data_avaliacao for data_avaliacao in datas_mes):
+        if any(fechamento >= data_avaliacao for fechamento in fechamentos for data_avaliacao in datas_mes):
             ids_fechou.add(paciente_id)
 
     ids_resgate_ate_30_dias = set()
     ids_resgate_mais_30_dias = set()
-    for paciente_id, fechamento in primeiro_fechamento_por_paciente.items():
-        if fechamento.year != ano_atual or fechamento.month != mes_atual:
+    for paciente_id, fechamentos in fechamentos_por_paciente.items():
+        intervalos = []
+        for fechamento in fechamentos:
+            if fechamento.year != ano_atual or fechamento.month != mes_atual:
+                continue
+            avaliacoes_anteriores = [
+                data_avaliacao
+                for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
+                if data_avaliacao < fechamento
+            ]
+            if avaliacoes_anteriores:
+                intervalos.append((fechamento - max(avaliacoes_anteriores)).days)
+        if not intervalos:
             continue
-        avaliacoes_anteriores = [
-            data_avaliacao
-            for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
-            if data_avaliacao < fechamento
-        ]
-        if not avaliacoes_anteriores:
-            continue
-        dias_para_fechar = (fechamento - max(avaliacoes_anteriores)).days
-        if dias_para_fechar <= 30:
+        if min(intervalos) <= 30:
             ids_resgate_ate_30_dias.add(paciente_id)
         else:
             ids_resgate_mais_30_dias.add(paciente_id)
@@ -4915,7 +4916,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             percentualMetaAno=percentual_meta_ano,
         ),
         funilReal=DashboardFunilResposta(
-            leads=len(ids_leads),
+            leads=len(ids_agendou),
             agendou=len(ids_agendou),
             compareceu=len(ids_compareceu),
             fechou=len(ids_fechou),

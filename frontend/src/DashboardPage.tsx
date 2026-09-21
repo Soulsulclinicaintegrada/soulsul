@@ -49,8 +49,7 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
 const TICKET_MEDIO = 4000;
 
 const FUNIL_CORES = [
-  { chave: "leads", rotulo: "Leads", cor: "#5b64b5" },
-  { chave: "agendou", rotulo: "Agendou avaliação", cor: "#42c0c7" },
+  { chave: "agendou", rotulo: "Avaliações agendadas", cor: "#42c0c7" },
   { chave: "compareceu", rotulo: "Compareceu à avaliação", cor: "#f2898c" },
   { chave: "fechou", rotulo: "Fechou após avaliar", cor: "#efc449" }
 ] as const;
@@ -86,7 +85,6 @@ function misturarCores(base: string, destino: string, intensidade: number) {
 function montarFunilMeta(metaNumero: number) {
   const fechou = Math.max(1, Math.ceil((metaNumero || 0) / TICKET_MEDIO));
   return {
-    leads: fechou * 4,
     agendou: fechou * 3,
     compareceu: fechou * 2,
     fechou
@@ -143,7 +141,7 @@ type FunilProps = {
 };
 
 function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0, mostrarPercentual = true }: FunilProps) {
-  const base = valores.leads || 0;
+  const base = valores.agendou || 0;
   return (
     <article className="panel dashboard-funnel-panel">
       <div className="section-title-row">
@@ -601,7 +599,7 @@ export function DashboardPage() {
       <section className="dashboard-funnels-grid">
         <FunilCard
           titulo="Meta ideal"
-          subtitulo="Modelo 100 / 75 / 50 / 25"
+          subtitulo="Modelo 75 / 50 / 25"
           valores={funilMeta}
           metaNumero={metaEditavelNumero || metaMesNumero}
         />
@@ -683,11 +681,7 @@ export function DashboardPage() {
                 <strong>{numeroParaMoedaBr(TICKET_MEDIO)}</strong>
               </div>
               <div className="summary-row">
-                <span>Leads necessários</span>
-                <strong>{funilMeta.leads}</strong>
-              </div>
-              <div className="summary-row">
-                <span>Agendamentos necessários</span>
+                <span>Avaliações agendadas necessárias</span>
                 <strong>{funilMeta.agendou}</strong>
               </div>
               <div className="summary-row">
