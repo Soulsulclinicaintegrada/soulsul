@@ -606,7 +606,7 @@ function mapPacienteParaForm(paciente?: PacienteDetalheApi | null): PacienteForm
     profissao: paciente.profissao || "",
     origem: paciente.origem || "",
     observacoes: paciente.observacoes || "",
-    menorIdade: Boolean(paciente.menorIdade),
+    menorIdade: Boolean(paciente.menorIdade) || dataNascimentoIndicaMenor(paciente.dataNascimento || ""),
     responsavel: paciente.responsavel || "",
     cpfResponsavel: formatarCpfInput(paciente.cpfResponsavel || "")
   };
@@ -748,6 +748,34 @@ function formatarDataNascimentoInput(valor: string) {
   if (digitos.length <= 2) return digitos;
   if (digitos.length <= 4) return `${digitos.slice(0, 2)}/${digitos.slice(2)}`;
   return `${digitos.slice(0, 2)}/${digitos.slice(2, 4)}/${digitos.slice(4)}`;
+}
+
+function dataNascimentoIndicaMenor(valor: string) {
+  const formatada = formatarDataNascimentoInput(valor);
+  const match = formatada.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+  const nascimento = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  if (
+    nascimento.getFullYear() !== Number(match[3])
+    || nascimento.getMonth() !== Number(match[2]) - 1
+    || nascimento.getDate() !== Number(match[1])
+  ) return false;
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aniversarioAindaNaoChegou = hoje.getMonth() < nascimento.getMonth()
+    || (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate());
+  if (aniversarioAindaNaoChegou) idade -= 1;
+  return idade >= 0 && idade < 18;
+}
+
+function atualizarNascimentoPacienteForm(form: PacienteForm, valor: string): PacienteForm {
+  const dataNascimento = formatarDataNascimentoInput(valor);
+  const dataCompleta = /^\d{2}\/\d{2}\/\d{4}$/.test(dataNascimento);
+  return {
+    ...form,
+    dataNascimento,
+    menorIdade: dataCompleta ? dataNascimentoIndicaMenor(dataNascimento) : form.menorIdade
+  };
 }
 
 function formatarCpfInput(valor: string) {
@@ -3007,7 +3035,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           ))}
                         </select>
                       </label>
-                      <label><span>Nascimento</span><input value={editForm.dataNascimento} onChange={(e) => setEditForm({ ...editForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })} /></label>
+                      <label><span>Nascimento</span><input value={editForm.dataNascimento} onChange={(e) => setEditForm(atualizarNascimentoPacienteForm(editForm, e.target.value))} /></label>
                       <label><span>Menor de idade</span><input type="checkbox" checked={editForm.menorIdade} onChange={(e) => setEditForm(e.target.checked ? { ...editForm, menorIdade: true } : limparCamposResponsavel({ ...editForm, menorIdade: false }))} /></label>
                     </div>
                   </div>
@@ -3407,7 +3435,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           <span>Data de Nascimento</span>
                           <input
                             value={editForm.dataNascimento}
-                            onChange={(e) => setEditForm({ ...editForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })}
+                            onChange={(e) => setEditForm(atualizarNascimentoPacienteForm(editForm, e.target.value))}
                             placeholder="DD/MM/AAAA"
                           />
                         </label>
@@ -4658,7 +4686,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                         ))}
                       </select>
                     </label>
-                    <label><span>Nascimento</span><input value={novoForm.dataNascimento} onChange={(e) => setNovoForm({ ...novoForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })} /></label>
+                    <label><span>Nascimento</span><input value={novoForm.dataNascimento} onChange={(e) => setNovoForm(atualizarNascimentoPacienteForm(novoForm, e.target.value))} /></label>
                     <label><span>Menor de idade</span><input type="checkbox" checked={novoForm.menorIdade} onChange={(e) => setNovoForm(e.target.checked ? { ...novoForm, menorIdade: true } : limparCamposResponsavel({ ...novoForm, menorIdade: false }))} /></label>
                   </div>
                 </div>
