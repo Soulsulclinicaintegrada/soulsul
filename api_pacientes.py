@@ -942,6 +942,14 @@ class DashboardResumoHojeResposta(BaseModel):
     saldoProjetado: str
 
 
+class DashboardEntradasCaixaResposta(BaseModel):
+    totalMes: str = "R$ 0,00"
+    entradasContratos: str = "R$ 0,00"
+    boletosRecebidos: str = "R$ 0,00"
+    outrosRecebimentos: str = "R$ 0,00"
+    quantidadeMovimentos: int = 0
+
+
 class DashboardAgendaHojeItemResposta(BaseModel):
     horario: str = ""
     titulo: str = ""
@@ -1020,6 +1028,7 @@ class DashboardPainelResposta(BaseModel):
     meses: list[str]
     serieVendas: list[float]
     resumoHoje: DashboardResumoHojeResposta
+    entradasCaixa: DashboardEntradasCaixaResposta = Field(default_factory=DashboardEntradasCaixaResposta)
     metas: DashboardMetasResposta
     funilReal: DashboardFunilResposta = Field(default_factory=DashboardFunilResposta)
     agendaHoje: list[DashboardAgendaHojeItemResposta]
@@ -4467,7 +4476,9 @@ def carregar_recebiveis_financeiro(conn: sqlite3.Connection) -> list[sqlite3.Row
 def carregar_caixa_financeiro(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT f.*
+        SELECT f.*,
+               r.parcela_numero AS recebivel_parcela_numero,
+               r.forma_pagamento AS recebivel_forma_pagamento
         FROM financeiro f
         LEFT JOIN recebiveis r ON r.id = f.recebivel_id
         WHERE f.recebivel_id IS NULL OR COALESCE(r.status, '') = 'Pago'
@@ -4561,6 +4572,36 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         if parse_data_contrato(row["data"]) == hoje and normalizar_texto(row["tipo"]) == "saida"
     )
     saldo_hoje = entradas_hoje - saidas_hoje
+
+    entradas_caixa_mes_rows = [
+        row for row in caixa_rows
+        if (
+            (data_movimento := parse_data_contrato(row["data"])) is not None
+            and data_movimento.year == ano_atual
+            and data_movimento.month == mes_atual
+            and normalizar_texto(row["tipo"]) == "entrada"
+        )
+    ]
+    total_entradas_caixa_mes = sum(float(row["valor"] or 0) for row in entradas_caixa_mes_rows)
+    entradas_contratos_mes = 0.0
+    boletos_recebidos_mes = 0.0
+    outros_recebimentos_mes = 0.0
+    for row in entradas_caixa_mes_rows:
+        valor_movimento = float(row["valor"] or 0)
+        eh_entrada_contrato = (
+            row["recebivel_parcela_numero"] is not None
+            and crm_int(row["recebivel_parcela_numero"]) == 0
+        ) or "entrada" in normalizar_texto(row["descricao"])
+        forma_pagamento = normalizar_texto(
+            row["forma_pagamento"] or row["recebivel_forma_pagamento"] or ""
+        )
+        eh_boleto = "boleto" in forma_pagamento
+        if eh_entrada_contrato:
+            entradas_contratos_mes += valor_movimento
+        if eh_boleto:
+            boletos_recebidos_mes += valor_movimento
+        if not eh_entrada_contrato and not eh_boleto:
+            outros_recebimentos_mes += valor_movimento
 
     vendas_mes_rows = []
     for row in contratos_rows:
@@ -4965,6 +5006,13 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             entradasConfirmadas=formatar_moeda_br(entradas_hoje),
             saidasPrevistas=formatar_moeda_br(saidas_hoje),
             saldoProjetado=formatar_moeda_br(saldo_hoje),
+        ),
+        entradasCaixa=DashboardEntradasCaixaResposta(
+            totalMes=formatar_moeda_br(total_entradas_caixa_mes),
+            entradasContratos=formatar_moeda_br(entradas_contratos_mes),
+            boletosRecebidos=formatar_moeda_br(boletos_recebidos_mes),
+            outrosRecebimentos=formatar_moeda_br(outros_recebimentos_mes),
+            quantidadeMovimentos=len(entradas_caixa_mes_rows),
         ),
         metas=DashboardMetasResposta(
             vendidoMes=formatar_moeda_br(vendido_mes),

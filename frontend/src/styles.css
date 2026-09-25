@@ -906,6 +906,77 @@ textarea::placeholder {
   color: var(--muted);
 }
 
+.dashboard-cash-panel {
+  margin-bottom: 22px;
+  padding: 24px;
+}
+
+.dashboard-cash-panel .section-title-row {
+  align-items: flex-start;
+}
+
+.dashboard-cash-panel h2 {
+  margin-bottom: 6px;
+}
+
+.dashboard-cash-panel p,
+.dashboard-cash-note {
+  color: var(--muted);
+}
+
+.dashboard-cash-panel p {
+  margin: 0;
+}
+
+.dashboard-cash-total {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.dashboard-cash-total span,
+.dashboard-cash-total small {
+  color: var(--muted);
+}
+
+.dashboard-cash-total strong {
+  color: #256a53;
+  font-size: 2rem;
+  letter-spacing: -0.04em;
+}
+
+.dashboard-cash-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.dashboard-cash-item {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--card-soft);
+  border-left: 5px solid #a7a39b;
+}
+
+.dashboard-cash-item.contract { border-left-color: #c39a52; }
+.dashboard-cash-item.boleto { border-left-color: #4a9b8a; }
+
+.dashboard-cash-item span {
+  color: var(--muted);
+}
+
+.dashboard-cash-item strong {
+  font-size: 1.35rem;
+}
+
+.dashboard-cash-note {
+  display: block;
+  margin-top: 14px;
+}
+
 .dashboard-funnels-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6216,6 +6287,19 @@ textarea::placeholder {
 }
 
 @media (max-width: 980px) {
+  .dashboard-cash-breakdown {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-cash-panel .section-title-row {
+    display: grid;
+    gap: 16px;
+  }
+
+  .dashboard-cash-total {
+    justify-items: start;
+  }
+
   .dashboard-funnels-grid {
     grid-template-columns: 1fr;
   }

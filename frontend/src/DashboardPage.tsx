@@ -28,6 +28,13 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
     saidasPrevistas: "R$ 0,00",
     saldoProjetado: "R$ 0,00"
   },
+  entradasCaixa: {
+    totalMes: "R$ 0,00",
+    entradasContratos: "R$ 0,00",
+    boletosRecebidos: "R$ 0,00",
+    outrosRecebimentos: "R$ 0,00",
+    quantidadeMovimentos: 0
+  },
   metas: {
     vendidoMes: "R$ 0,00",
     vendidoAno: "R$ 0,00",
@@ -226,6 +233,40 @@ function ResgatesCard({ valores }: { valores: { total: number; fechamentoJuliana
         ))}
       </div>
       <small>Conta retorno comercial comparecido com Juliana ou nova avaliação no setor Avaliação após mais de 90 dias.</small>
+    </article>
+  );
+}
+
+function EntradasCaixaCard({ valores }: { valores: NonNullable<DashboardPainelApi["entradasCaixa"]> }) {
+  const itens = [
+    { rotulo: "Entradas de contratos", valor: valores.entradasContratos, classe: "contract" },
+    { rotulo: "Boletos recebidos", valor: valores.boletosRecebidos, classe: "boleto" },
+    { rotulo: "Outros recebimentos", valor: valores.outrosRecebimentos, classe: "other" }
+  ];
+
+  return (
+    <article className="panel dashboard-cash-panel">
+      <div className="section-title-row">
+        <div>
+          <span className="panel-kicker">Caixa do mês</span>
+          <h2>Dinheiro que entrou</h2>
+          <p>Somente valores efetivamente recebidos e baixados no caixa.</p>
+        </div>
+        <div className="dashboard-cash-total">
+          <span>Total recebido</span>
+          <strong>{valores.totalMes}</strong>
+          <small>{valores.quantidadeMovimentos} recebimento(s)</small>
+        </div>
+      </div>
+      <div className="dashboard-cash-breakdown">
+        {itens.map((item) => (
+          <div className={`dashboard-cash-item ${item.classe}`} key={item.rotulo}>
+            <span>{item.rotulo}</span>
+            <strong>{item.valor}</strong>
+          </div>
+        ))}
+      </div>
+      <small className="dashboard-cash-note">Uma entrada paga por boleto aparece nas duas categorias, sem duplicar o total recebido.</small>
     </article>
   );
 }
@@ -595,6 +636,8 @@ export function DashboardPage() {
           </article>
         ) : null}
       </section>
+
+      <EntradasCaixaCard valores={painel.entradasCaixa || DASHBOARD_VAZIO.entradasCaixa!} />
 
       <section className="dashboard-funnels-grid">
         <FunilCard

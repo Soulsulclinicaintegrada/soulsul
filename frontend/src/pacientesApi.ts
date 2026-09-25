@@ -562,6 +562,14 @@ export type DashboardVendaResumoItemApi = {
   incluirTotalVendido?: boolean;
 };
 
+export type DashboardEntradasCaixaApi = {
+  totalMes: string;
+  entradasContratos: string;
+  boletosRecebidos: string;
+  outrosRecebimentos: string;
+  quantidadeMovimentos: number;
+};
+
 export type DashboardFunilApi = {
   leads: number;
   agendou: number;
@@ -591,6 +599,7 @@ export type DashboardPainelApi = {
   meses: string[];
   serieVendas: number[];
   resumoHoje: DashboardResumoHojeApi;
+  entradasCaixa?: DashboardEntradasCaixaApi;
   metas: {
     vendidoMes: string;
     vendidoAno: string;
