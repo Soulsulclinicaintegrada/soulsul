@@ -1,4 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { ComissoesPage } from "./ComissoesPage";
+import type { UsuarioSessao } from "./auth";
 import {
   atualizarContaPagarApi,
   atualizarMetaFinanceiraApi,
@@ -36,7 +38,7 @@ import {
   urlExportarCaixaExcel
 } from "./pacientesApi";
 
-type AbaFinanceiro = "caixa" | "recebiveis" | "cobrancas" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais";
+type AbaFinanceiro = "caixa" | "recebiveis" | "cobrancas" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais" | "comissoes";
 
 type RecebivelForm = {
   id: number;
@@ -375,7 +377,12 @@ function notaFiscalParaForm(item: NotaFiscalEmitidaApi): NotaFiscalForm {
   };
 }
 
-export function FinanceiroPage() {
+type FinanceiroPageProps = {
+  usuarioLogado?: UsuarioSessao | null;
+};
+
+export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
+  const perfilAdministrador = String(usuarioLogado?.perfil || "").trim().toLowerCase() === "administrador";
   const [painel, setPainel] = useState<FinanceiroPainelApi | null>(null);
   const [aba, setAba] = useState<AbaFinanceiro>("caixa");
   const [erro, setErro] = useState<string | null>(null);
@@ -1237,6 +1244,11 @@ export function FinanceiroPage() {
 
   return (
     <section className="module-shell finance-module-shell">
+      {!perfilAdministrador ? (
+        <div className="feedback-banner">
+          Acesso de consulta: movimentações financeiras e confirmações de pagamento exigem aval de um Administrador.
+        </div>
+      ) : null}
       <section className="module-kpis">
         <article className="panel module-kpi-card">
           <span className="panel-kicker">Recebíveis</span>
@@ -1267,10 +1279,12 @@ export function FinanceiroPage() {
           <button type="button" className={aba === "recibo" ? "active" : ""} onClick={() => setAba("recibo")}>Recibo</button>
           <button type="button" className={aba === "metas" ? "active" : ""} onClick={() => setAba("metas")}>Metas</button>
           <button type="button" className={aba === "notas_fiscais" ? "active" : ""} onClick={() => setAba("notas_fiscais")}>NF emitidas</button>
+          <button type="button" className={aba === "comissoes" ? "active" : ""} onClick={() => setAba("comissoes")}>Comissões</button>
         </div>
 
         {erro ? <div className="finance-inline-error">{erro}</div> : null}
         {carregando ? <div className="empty-inline">Carregando financeiro...</div> : null}
+        {aba === "comissoes" ? <ComissoesPage /> : null}
 
         {!carregando && aba === "caixa" ? (
           <div className="finance-legacy-grid">

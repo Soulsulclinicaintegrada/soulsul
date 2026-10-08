@@ -538,6 +538,7 @@ export type DashboardVendaResumoItemApi = {
   valor?: string;
   formaPagamento?: string;
   data?: string;
+  incluirTotalVendido?: boolean;
 };
 
 export type DashboardFunilApi = {
@@ -545,6 +546,11 @@ export type DashboardFunilApi = {
   agendou: number;
   compareceu: number;
   fechou: number;
+  resgates?: number;
+  resgatesSemOrcamento?: number;
+  resgatesOrcamentoAntigo?: number;
+  resgatesAte30Dias?: number;
+  resgatesMais30Dias?: number;
 };
 
 export type DashboardAlertaApi = {
@@ -799,6 +805,96 @@ export type CrmPainelApi = {
   avaliacoes: CrmAvaliacaoItemApi[];
   avaliacoesPrimeiraConsultaPerdida?: CrmPrimeiraAvaliacaoPerdidaItemApi[];
   resgates: CrmResgateItemApi[];
+};
+
+export type RelatorioComissoesApi = {
+  inicio: string;
+  fim: string;
+  totalVendido: number;
+  totalComissao: number;
+  vendas: Array<{
+    contratoId: number; pacienteId?: number | null; paciente: string; dataFechamento: string; valorContrato: number;
+    formaPagamento: string; primeiroAgendamento: string; primeiroAgendador: string; avaliacaoComparecida: string;
+    agendadorAvaliacao: string; agendadorFechamento: string; pagamentoConfirmado: boolean; comissaoTotal: number;
+    comissaoCaptacao: number; comissaoResgate: number; status: string;
+  }>;
+  avaliacoes: Array<{
+    agendamentoId: number; pacienteId?: number | null; paciente: string; data: string; hora: string; status: string;
+    agendadoPor: string; agendadoEm: string; procedimentos: string;
+  }>;
+};
+
+export type PlanoTratamentoPassoApi = {
+  id: number;
+  titulo: string;
+  ordem: number;
+  status: "Pendente" | "Agendado" | "Concluido" | "Cancelado";
+  dataPrevista?: string;
+  dataRealizacao?: string;
+  observacao?: string;
+};
+
+export type PlanoTratamentoProcedimentoApi = {
+  id: number;
+  procedimentoId?: number | null;
+  nome: string;
+  contratoId?: number | null;
+  origem: "Contrato" | "Manual";
+  status: "Planejado" | "Em andamento" | "Concluido" | "Suspenso" | "Cancelado";
+  observacao?: string;
+  passos: PlanoTratamentoPassoApi[];
+};
+
+export type CrmConversaMensagemApi = {
+  id: number;
+  conversaId: number;
+  canal?: string;
+  direcao?: string;
+  remetenteTipo?: string;
+  remetenteExternoId?: string;
+  tipoMensagem?: string;
+  conteudo?: string;
+  midiaUrl?: string;
+  statusEnvio?: string;
+  erroEnvio?: string;
+  criadoEm?: string;
+  mensagemExternaId?: string;
+};
+
+export type CrmConversaResumoApi = {
+  id: number;
+  crmId?: number | null;
+  pacienteId?: number | null;
+  pacienteNome?: string;
+  prontuario?: string;
+  canal?: string;
+  contatoNome?: string;
+  contatoTelefone?: string;
+  contatoInstagram?: string;
+  externoUsuarioId?: string;
+  externoConversaId?: string;
+  etapaFunil?: string;
+  responsavel?: string;
+  ultimaMensagem?: string;
+  ultimaMensagemEm?: string;
+  ultimaMensagemSentido?: string;
+  naoLidas?: number;
+  status?: string;
+};
+
+export type CrmConversaDetalheApi = CrmConversaResumoApi & {
+  mensagens: CrmConversaMensagemApi[];
+};
+
+export type CrmConversaEnvioPayloadApi = {
+  conteudo: string;
+};
+
+export type MetaConfiguracaoApi = {
+  webhookVerifyTokenConfigurado: boolean;
+  appSecretConfigurado: boolean;
+  whatsappPhoneNumberIdConfigurado: boolean;
+  whatsappAccessTokenConfigurado: boolean;
 };
 
 export type CrmAtualizacaoPayloadApi = {
@@ -1056,6 +1152,54 @@ export async function atualizarCrmResgateApi(contratoId: number, payload: CrmRes
   });
 }
 
+export async function listarPlanoTratamentoApi(pacienteId: number) {
+  return fetchJson<PlanoTratamentoProcedimentoApi[]>(`${API_BASE_URL}/api/pacientes/${pacienteId}/plano-tratamento`);
+}
+
+export async function adicionarProcedimentoPlanoApi(pacienteId: number, payload: { procedimento_id?: number; procedimento_nome?: string; observacao?: string; incluir_passos_padrao?: boolean }) {
+  return fetchJson<PlanoTratamentoProcedimentoApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/plano-tratamento`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function adicionarPassoPlanoApi(planoId: number, payload: { titulo: string; data_prevista?: string; observacao?: string }) {
+  return fetchJson<PlanoTratamentoPassoApi>(`${API_BASE_URL}/api/plano-tratamento/${planoId}/passos`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function atualizarProcedimentoPlanoApi(planoId: number, status: PlanoTratamentoProcedimentoApi["status"]) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/plano-tratamento/procedimentos/${planoId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+export async function atualizarPassoPlanoApi(passo: PlanoTratamentoPassoApi) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/plano-tratamento/passos/${passo.id}`, { method: "PATCH", body: JSON.stringify({ titulo: passo.titulo, status: passo.status, data_prevista: passo.dataPrevista || "", data_realizacao: passo.dataRealizacao || "", observacao: passo.observacao || "" }) });
+}
+
+export async function excluirPassoPlanoApi(passoId: number) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/plano-tratamento/passos/${passoId}`, { method: "DELETE" });
+}
+
+export async function buscarMetaConfiguracaoApi() {
+  return fetchJson<MetaConfiguracaoApi>(`${API_BASE_URL}/api/meta/config`);
+}
+
+export async function listarCrmConversasApi(params?: { canal?: string; abertas_apenas?: boolean; busca?: string }) {
+  const query = new URLSearchParams();
+  if (params?.canal?.trim()) query.set("canal", params.canal.trim());
+  if (params?.abertas_apenas) query.set("abertas_apenas", "true");
+  if (params?.busca?.trim()) query.set("busca", params.busca.trim());
+  const sufixo = query.toString() ? `?${query.toString()}` : "";
+  return fetchJson<CrmConversaResumoApi[]>(`${API_BASE_URL}/api/crm/conversas${sufixo}`);
+}
+
+export async function buscarCrmConversaApi(conversaId: number) {
+  return fetchJson<CrmConversaDetalheApi>(`${API_BASE_URL}/api/crm/conversas/${conversaId}`);
+}
+
+export async function enviarMensagemCrmConversaApi(conversaId: number, payload: CrmConversaEnvioPayloadApi) {
+  return fetchJson<CrmConversaMensagemApi>(`${API_BASE_URL}/api/crm/conversas/${conversaId}/mensagens`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function buscarChecklistMeuApi() {
   return fetchJson<ChecklistUsuarioPainelApi>(`${API_BASE_URL}/api/checklist/me`);
 }
@@ -1290,8 +1434,25 @@ export async function painelFinanceiroApi() {
   return fetchJson<FinanceiroPainelApi>(`${API_BASE_URL}/api/financeiro/painel`);
 }
 
+export async function relatorioComissoesApi(inicio: string, fim: string) {
+  const params = new URLSearchParams({ inicio, fim });
+  return fetchJson<RelatorioComissoesApi>(`${API_BASE_URL}/api/relatorios/comissoes?${params.toString()}`);
+}
+
+export function urlExportarRelatorioComissoes(inicio: string, fim: string) {
+  const params = new URLSearchParams({ inicio, fim });
+  return `${API_BASE_URL}/api/relatorios/comissoes/export.xlsx?${params.toString()}`;
+}
+
 export async function painelDashboardApi() {
   return fetchJson<DashboardPainelApi>(`${API_BASE_URL}/api/dashboard`);
+}
+
+export async function atualizarInclusaoVendaDashboardApi(contratoId: number, incluir: boolean) {
+  return fetchJson<{ ok: true; contratoId: number; incluirTotalVendido: boolean }>(
+    `${API_BASE_URL}/api/dashboard/vendas/${contratoId}/inclusao-total`,
+    { method: "PUT", body: JSON.stringify({ incluir }) }
+  );
 }
 
 export async function listarMetasFinanceirasApi(ano: number) {

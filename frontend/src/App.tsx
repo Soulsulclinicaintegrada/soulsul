@@ -141,7 +141,9 @@ function mesclarPermissoes(
   const modulos = Object.fromEntries(
     Object.keys(padrao.modulos).map((chave) => [
       chave,
-      temModulosSalvos ? textoPermissao(nivelPermissao(modulosSalvos[chave])) : padrao.modulos[chave]
+      temModulosSalvos && modulosSalvos[chave] !== undefined
+        ? textoPermissao(nivelPermissao(modulosSalvos[chave]))
+        : padrao.modulos[chave]
     ])
   );
   const pacientesAbas = Object.fromEntries(
@@ -562,7 +564,7 @@ function App() {
         />
       );
     }
-    if (menuAtivo === "Financeiro") return <FinanceiroPage />;
+    if (menuAtivo === "Financeiro") return <FinanceiroPage usuarioLogado={usuarioLogado} />;
     if (menuAtivo === "Tabelas") return <ImportacoesPage />;
     if (menuAtivo === "Usuários") return <UsuariosPage />;
     return null;

@@ -21,6 +21,12 @@ import {
   gerarRecebimentoBoletosPacienteApi,
   listarPacientesApi,
   listarProcedimentosApi,
+  listarPlanoTratamentoApi,
+  adicionarProcedimentoPlanoApi,
+  adicionarPassoPlanoApi,
+  atualizarProcedimentoPlanoApi,
+  atualizarPassoPlanoApi,
+  excluirPassoPlanoApi,
   listarOrdensServicoPacienteApi,
   criarOrdemServicoPacienteApi,
   buscarProximoProntuarioApi,
@@ -43,6 +49,8 @@ import {
   type PacienteDetalheApi,
   type PacienteResumoApi,
   type ProcedimentoResumoApi,
+  type PlanoTratamentoProcedimentoApi,
+  type PlanoTratamentoPassoApi,
   type OrdemServicoResumoApi,
   atualizarPacienteApi,
   atualizarSuspensaoTratamentoPacienteApi
@@ -173,13 +181,14 @@ const FILEIRA_INFERIOR_DECIDUA = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75];
 const OPCOES_ARCADA = ["Arcadas Superior e Inferior", "Arcada Superior", "Arcada Inferior"] as const;
 const FACES_PADRAO = ["V", "D", "M", "C", "P", "I"] as const;
 const FORMAS_PAGAMENTO: Array<{ value: FormaPagamentoOpcao; label: string }> = [
+  { value: "PERMUTA", label: "Permuta" },
   { value: "PIX", label: "Pix" },
   { value: "BOLETO", label: "Boleto" },
   { value: "CARTAO_CREDITO", label: "Cartao de Credito" },
   { value: "CARTAO_DEBITO", label: "Cartao de Debito" },
   { value: "DINHEIRO", label: "Dinheiro" }
 ];
-const FORMAS_A_VISTA = new Set<FormaPagamentoOpcao>(["PIX", "CARTAO_DEBITO", "DINHEIRO"]);
+const FORMAS_A_VISTA = new Set<FormaPagamentoOpcao>(["PIX", "CARTAO_DEBITO", "DINHEIRO", "PERMUTA"]);
 const MAX_PARCELAS_CARTAO_CREDITO = 18;
 const STATUS_RESGATE_ORCAMENTO = ["Em tratativa", "Ligar novamente", "Desistente", "Convertido"] as const;
 
@@ -249,7 +258,7 @@ type OrcamentoDraft = {
   valorUnitario: string;
 };
 
-type FormaPagamentoOpcao = "PIX" | "BOLETO" | "CARTAO_CREDITO" | "CARTAO_DEBITO" | "DINHEIRO";
+type FormaPagamentoOpcao = "PIX" | "BOLETO" | "CARTAO_CREDITO" | "CARTAO_DEBITO" | "DINHEIRO" | "PERMUTA";
 
 type ParcelaPagamento = {
   indice: number;
@@ -478,6 +487,21 @@ function normalizarPlanoPagamento(
     };
   });
 
+  const totalAtual = linhas.reduce((total, linha) => total + (Number.isFinite(linha.valor) ? linha.valor : 0), 0);
+  const diferencaCentavos = arredondarCentavos(valorTotal) - arredondarCentavos(totalAtual);
+  if (linhas.length && diferencaCentavos !== 0) {
+    const ultimoIndice = linhas.length - 1;
+    const novoValorUltima = Math.round((linhas[ultimoIndice].valor + diferencaCentavos / 100) * 100) / 100;
+    if (novoValorUltima >= 0) {
+      linhas[ultimoIndice] = { ...linhas[ultimoIndice], valor: novoValorUltima };
+    } else {
+      const valoresRecalculados = distribuirTotalParcelas(valorTotal, linhas.length);
+      linhas.forEach((linha, indice) => {
+        linhas[indice] = { ...linha, valor: valoresRecalculados[indice] || 0 };
+      });
+    }
+  }
+
   return { entrada, parcelas, linhas };
 }
 
@@ -640,7 +664,11 @@ function mapFormParaPayload(form: PacienteForm): PacienteApiPayload {
 }
 
 function formatarArquivo(arquivo: ArquivoPacienteItemApi) {
-  return arquivo.nome || arquivo.caminho.split(/[\\/]/).pop() || "Arquivo";
+  const nome = arquivo.nome || arquivo.caminho.split(/[\\/]/).pop() || "Arquivo";
+  const contrato = nome.match(/^CONTRATO_.+?_(\d+)_(\d{8})_(\d{6})\.docx$/i);
+  if (!contrato) return nome;
+  const [, contratoId, data, hora] = contrato;
+  return `Contrato #${contratoId} · versão de ${data.slice(6, 8)}/${data.slice(4, 6)}/${data.slice(0, 4)} às ${hora.slice(0, 2)}:${hora.slice(2, 4)}`;
 }
 
 function abrirArquivo(url: string) {
@@ -687,6 +715,22 @@ function formatarMoedaInput(valor: string | number | null | undefined) {
   const somenteDigitos = texto.replace(/\D/g, "");
   if (!somenteDigitos) return "";
   return formatarMoeda(Number(somenteDigitos) / 100);
+}
+
+const TAXAS_INFINITEPAY = {
+  "Visa / Mastercard": [3.15, 5.39, 6.12, 6.85, 7.57, 8.28, 8.99, 9.69, 10.38, 11.06, 11.74, 12.40],
+  "Elo / Amex / Hipercard": [4.91, 6.47, 7.20, 7.92, 8.63, 9.33, 10.03, 10.72, 11.41, 12.08, 12.75, 13.41]
+} as const;
+
+const FATORES_PAGBANK = [
+  1.0526, 1.1101, 1.1273, 1.1447, 1.1624, 1.1803, 1.1984, 1.2167, 1.2352,
+  1.2538, 1.2728, 1.2919, 1.3112, 1.3307, 1.3505, 1.3703, 1.3905, 1.4109
+] as const;
+
+type BandeiraInfinitePay = keyof typeof TAXAS_INFINITEPAY;
+
+function arredondarCobrancaMinima(valor: number) {
+  return Math.ceil((Math.max(0, valor) - 1e-9) * 100) / 100;
 }
 
 function clamp(numero: number, min: number, max: number) {
@@ -925,17 +969,19 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const navegacaoProcessadaRef = useRef<number | null>(null);
   const usuarioSessao = usuarioLogado || carregarUsuarioSessao();
   const usuarioPodeAprovarOrcamento = useMemo(() => {
-    const identidade = `${usuarioSessao?.usuario || ""} ${usuarioSessao?.nome || ""}`
+    const perfil = String(usuarioSessao?.perfil || "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
-    return identidade.includes("juliana") || identidade.includes("eliane");
-  }, [usuarioSessao?.nome, usuarioSessao?.usuario]);
+      .toLowerCase()
+      .trim();
+    return perfil === "administrador";
+  }, [usuarioSessao?.perfil]);
   const usuarioPodeSuspenderTratamento = usuarioPodeAprovarOrcamento;
   const nivelFinanceiroModulo = useMemo(
     () => nivelPermissao(String(usuarioSessao?.modulos?.Financeiro || "Sem acesso")),
     [usuarioSessao?.modulos]
   );
+  const usuarioPodeVerValoresFinanceiros = nivelFinanceiroModulo > 0;
   const nivelOrcamentosAba = useMemo(
     () => nivelPermissao(String(pacientesAbas.Orcamentos || "Sem acesso")),
     [pacientesAbas]
@@ -984,6 +1030,11 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false);
   const [valoresParcelasEditando, setValoresParcelasEditando] = useState<Record<number, string>>({});
   const [procedimentosCatalogo, setProcedimentosCatalogo] = useState<ProcedimentoCatalogo[]>([]);
+  const [planoTratamento, setPlanoTratamento] = useState<PlanoTratamentoProcedimentoApi[]>([]);
+  const [novoProcedimentoPlanoId, setNovoProcedimentoPlanoId] = useState("");
+  const [novoProcedimentoPlanoNome, setNovoProcedimentoPlanoNome] = useState("");
+  const [novoPassoPorProcedimento, setNovoPassoPorProcedimento] = useState<Record<number, string>>({});
+  const [salvandoPlano, setSalvandoPlano] = useState(false);
   const [procedimentoSelecionado, setProcedimentoSelecionado] = useState<ProcedimentoCatalogo | null>(null);
   const [procedimentosOrcamento, setProcedimentosOrcamento] = useState<ProcedimentoOrcamento[]>([]);
   const [dentesContratados, setDentesContratados] = useState<number[]>([]);
@@ -1015,6 +1066,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [arquivosBoletosSelecionados, setArquivosBoletosSelecionados] = useState<File[]>([]);
   const [gerandoRecebimentoBoletos, setGerandoRecebimentoBoletos] = useState(false);
+  const [valorLiquidoCalculadora, setValorLiquidoCalculadora] = useState("");
+  const [bandeiraInfinitePay, setBandeiraInfinitePay] = useState<BandeiraInfinitePay>("Visa / Mastercard");
   const [mostrarTodosRecebiveisPaciente, setMostrarTodosRecebiveisPaciente] = useState(false);
   const [fotoVersao, setFotoVersao] = useState(0);
   const [fotoErro, setFotoErro] = useState(false);
@@ -1029,6 +1082,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const nascimentoInfo = extrairNascimentoInfo(editForm.dataNascimento);
   const orcamentoBloqueado = !usuarioPodeEditarOrcamento;
   const financeiroResumo = useMemo(() => resumoFinanceiroCards(ficha), [ficha]);
+  const existemValoresEmAberto = useMemo(
+    () => parseMoeda(ficha?.financeiro.emAberto || "") > 0 || parseMoeda(ficha?.financeiro.atrasado || "") > 0,
+    [ficha?.financeiro.atrasado, ficha?.financeiro.emAberto]
+  );
   const recebiveisVisiveisPaciente = useMemo(
     () => (ficha?.recebiveis || []).filter((item) =>
       mostrarTodosRecebiveisPaciente
@@ -1115,10 +1172,13 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const abasFichaDisponiveis = useMemo(
     () =>
       ABAS_FICHA.filter((aba) => {
+        if (!usuarioPodeVerValoresFinanceiros && (aba.principal === "Financeiro" || aba.principal === "Comercial")) {
+          return false;
+        }
         const chave = MAPA_PERMISSAO_ABAS_PACIENTE[aba.label] || aba.label;
         return nivelPermissao(String(pacientesAbas[chave] || "Sem acesso")) > 0;
       }),
-    [pacientesAbas]
+    [pacientesAbas, usuarioPodeVerValoresFinanceiros]
   );
   const abasFichaTopo = useMemo(
     () =>
@@ -1131,6 +1191,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     [abasFichaDisponiveis]
   );
   const acessoAbaAtual = useMemo(() => {
+    if (!usuarioPodeVerValoresFinanceiros && (abaPrincipal === "Financeiro" || abaPrincipal === "Comercial")) return 0;
     const abaAtual = ABAS_FICHA.find((aba) => {
       if (aba.principal !== abaPrincipal) return false;
       if (aba.clinica && aba.clinica !== abaClinica) return false;
@@ -1140,7 +1201,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     if (!abaAtual) return 0;
     const chave = MAPA_PERMISSAO_ABAS_PACIENTE[abaAtual.label] || abaAtual.label;
     return nivelPermissao(String(pacientesAbas[chave] || "Sem acesso"));
-  }, [abaPrincipal, abaClinica, abaDocumentos, pacientesAbas]);
+  }, [abaPrincipal, abaClinica, abaDocumentos, pacientesAbas, usuarioPodeVerValoresFinanceiros]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1218,10 +1279,12 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         odontogramaPacienteApi(pacienteId).catch(() => ({ dentes_contratados: [], elementos: [] }))
       ]);
       const ordens = await listarOrdensServicoPacienteApi(pacienteId).catch(() => []);
+      const plano = await listarPlanoTratamentoApi(pacienteId).catch(() => []);
       setFicha(resposta);
       setDentesContratados(odontograma.dentes_contratados || []);
       setOdontogramaElementos(odontograma.elementos || []);
       setOrdensServico(ordens);
+      setPlanoTratamento(plano);
       setElementoClinicoAtivo([]);
       setEditForm(mapPacienteParaForm(resposta.paciente));
       if (navegacao?.abrirOrcamento && resposta.contratos[0]) {
@@ -1232,6 +1295,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setDentesContratados([]);
       setOdontogramaElementos([]);
       setOrdensServico([]);
+      setPlanoTratamento([]);
     } finally {
       setCarregandoFicha(false);
     }
@@ -1665,6 +1729,16 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     setArquivosBoletosSelecionados((atual) => atual.filter((_, itemIndice) => itemIndice !== indice));
   }
 
+  function moverArquivoBoleto(indice: number, direcao: -1 | 1) {
+    setArquivosBoletosSelecionados((atual) => {
+      const destino = indice + direcao;
+      if (destino < 0 || destino >= atual.length) return atual;
+      const proximos = [...atual];
+      [proximos[indice], proximos[destino]] = [proximos[destino], proximos[indice]];
+      return proximos;
+    });
+  }
+
   async function gerarRecebimentoBoletos() {
     if (!pacienteAtivoId) return;
     if (!arquivosBoletosSelecionados.length) {
@@ -1690,6 +1764,97 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     } finally {
       setGerandoRecebimentoBoletos(false);
     }
+  }
+
+  function renderCalculadoraFinanceiraOrcamento(valorInicial = 0) {
+    const valorDigitado = parseMoeda(valorLiquidoCalculadora);
+    const valorLiquido = valorDigitado > 0 ? valorDigitado : valorInicial;
+    const valorBoleto = arredondarCobrancaMinima(valorLiquido * 1.08);
+    const taxasInfinite = TAXAS_INFINITEPAY[bandeiraInfinitePay];
+    const parcelas = Array.from({ length: FATORES_PAGBANK.length }, (_, indice) => {
+      const quantidade = indice + 1;
+      const taxaInfinite = taxasInfinite[indice];
+      const totalInfinite = taxaInfinite == null
+        ? null
+        : arredondarCobrancaMinima(valorLiquido / (1 - taxaInfinite / 100));
+      const totalPagBank = arredondarCobrancaMinima(valorLiquido * FATORES_PAGBANK[indice]);
+      return { quantidade, taxaInfinite, totalInfinite, totalPagBank };
+    });
+
+    return (
+      <section className="budget-finance-calculator">
+        <div className="budget-finance-calculator-head">
+          <div>
+            <span className="panel-kicker">Calculadora financeira</span>
+            <h4>Quanto cobrar para receber o valor desejado</h4>
+            <p>Informe o valor líquido que a clínica precisa receber. Os totais abaixo já compensam as taxas.</p>
+          </div>
+          <label className="budget-finance-value-field">
+            <span>Quero receber</span>
+            <input inputMode="numeric" placeholder={valorInicial > 0 ? formatarMoeda(valorInicial) : "R$ 0,00"} value={valorLiquidoCalculadora} onChange={(event) => setValorLiquidoCalculadora(formatarMoedaInput(event.target.value))} />
+            {valorInicial > 0 && valorDigitado <= 0 ? <small>Usando o total atual do orçamento.</small> : null}
+          </label>
+        </div>
+
+        {valorLiquido > 0 ? (
+          <div className="budget-finance-results">
+            <article className="budget-finance-boleto">
+              <div>
+                <span className="panel-kicker">Boleto</span>
+                <strong>{formatarMoeda(valorBoleto)}</strong>
+                <small>Valor mínimo com 8% de taxa de segurança</small>
+              </div>
+              <div className="budget-finance-entry-grid">
+                {[30, 15, 10].map((percentual) => {
+                  const entrada = arredondarCobrancaMinima(valorBoleto * percentual / 100);
+                  return (
+                    <div key={percentual}>
+                      <span>Entrada {percentual}%</span>
+                      <strong>{formatarMoeda(entrada)}</strong>
+                      <small>Saldo {formatarMoeda(valorBoleto - entrada)}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="budget-finance-card-table">
+              <div className="budget-finance-card-table-head">
+                <div><span className="panel-kicker">Cartão de crédito</span><strong>InfinitePay × PagBank</strong></div>
+                <label>
+                  <span>Bandeira na InfinitePay</span>
+                  <select value={bandeiraInfinitePay} onChange={(event) => setBandeiraInfinitePay(event.target.value as BandeiraInfinitePay)}>
+                    {Object.keys(TAXAS_INFINITEPAY).map((bandeira) => <option key={bandeira}>{bandeira}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="budget-finance-table-scroll">
+                <table>
+                  <thead><tr><th>Parcelas</th><th>InfinitePay</th><th>PagBank</th><th>Menor cobrança</th></tr></thead>
+                  <tbody>
+                    {parcelas.map((item) => {
+                      const menor = item.totalInfinite == null ? "PagBank" : item.totalInfinite <= item.totalPagBank ? "InfinitePay" : "PagBank";
+                      return (
+                        <tr key={item.quantidade}>
+                          <td><strong>{item.quantidade}x</strong></td>
+                          <td>
+                            {item.totalInfinite == null ? "—" : formatarMoeda(item.totalInfinite)}
+                            {item.totalInfinite == null || item.taxaInfinite == null ? null : <small>{item.quantidade}x de {formatarMoeda(item.totalInfinite / item.quantidade)} • {item.taxaInfinite.toFixed(2).replace(".", ",")}%</small>}
+                          </td>
+                          <td>{formatarMoeda(item.totalPagBank)}<small>{item.quantidade}x de {formatarMoeda(item.totalPagBank / item.quantidade)}</small></td>
+                          <td><span className="budget-finance-best">{menor}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="budget-finance-note">O valor por parcela é o total dividido pela quantidade de parcelas. Valores mínimos são arredondados para cima em centavos.</p>
+            </article>
+          </div>
+        ) : <span className="budget-finance-empty">Digite o valor desejado para comparar boleto, InfinitePay e PagBank.</span>}
+      </section>
+    );
   }
 
   async function aplicarCep(form: PacienteForm, setter: (valor: PacienteForm) => void) {
@@ -1939,6 +2104,116 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
 
   async function baixarRecebivel(item: RecebivelResumoApi) {
     abrirRecebivelParaBaixa(item);
+  }
+
+  async function recarregarPlanoTratamento() {
+    if (!pacienteAtivoId) return;
+    setPlanoTratamento(await listarPlanoTratamentoApi(pacienteAtivoId));
+  }
+
+  async function adicionarProcedimentoAoPlano() {
+    if (!pacienteAtivoId || (!novoProcedimentoPlanoId && !novoProcedimentoPlanoNome.trim())) return;
+    setSalvandoPlano(true);
+    try {
+      await adicionarProcedimentoPlanoApi(pacienteAtivoId, {
+        procedimento_id: Number(novoProcedimentoPlanoId || 0),
+        procedimento_nome: novoProcedimentoPlanoNome.trim(),
+        incluir_passos_padrao: true
+      });
+      setNovoProcedimentoPlanoId("");
+      setNovoProcedimentoPlanoNome("");
+      await recarregarPlanoTratamento();
+      setFeedback("Procedimento adicionado ao plano de tratamento.");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao adicionar procedimento.");
+    } finally {
+      setSalvandoPlano(false);
+    }
+  }
+
+  async function adicionarPassoAoPlano(planoId: number) {
+    const titulo = (novoPassoPorProcedimento[planoId] || "").trim();
+    if (!titulo) return;
+    setSalvandoPlano(true);
+    try {
+      await adicionarPassoPlanoApi(planoId, { titulo });
+      setNovoPassoPorProcedimento((atual) => ({ ...atual, [planoId]: "" }));
+      await recarregarPlanoTratamento();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao adicionar passo.");
+    } finally {
+      setSalvandoPlano(false);
+    }
+  }
+
+  async function alterarStatusProcedimentoPlano(planoId: number, status: PlanoTratamentoProcedimentoApi["status"]) {
+    await atualizarProcedimentoPlanoApi(planoId, status);
+    await recarregarPlanoTratamento();
+  }
+
+  async function alterarPassoPlano(passo: PlanoTratamentoPassoApi, alteracoes: Partial<PlanoTratamentoPassoApi>) {
+    await atualizarPassoPlanoApi({ ...passo, ...alteracoes });
+    await recarregarPlanoTratamento();
+  }
+
+  async function removerPassoPlano(passoId: number) {
+    await excluirPassoPlanoApi(passoId);
+    await recarregarPlanoTratamento();
+  }
+
+  function renderPlanoTratamento() {
+    const totalPassos = planoTratamento.reduce((total, item) => total + item.passos.length, 0);
+    const passosConcluidos = planoTratamento.reduce((total, item) => total + item.passos.filter((passo) => passo.status === "Concluido").length, 0);
+    return (
+      <div className="treatment-plan-shell">
+        <div className="treatment-plan-header">
+          <div>
+            <span className="panel-kicker">Plano de tratamento</span>
+            <h3>Procedimentos e etapas clínicas</h3>
+            <p>Os procedimentos de contratos aprovados aparecem automaticamente. Acrescente os passos de cada protocolo e acompanhe a execução.</p>
+          </div>
+          <div className="treatment-plan-summary"><strong>{passosConcluidos}/{totalPassos}</strong><span>passos concluídos</span></div>
+        </div>
+        {acessoAbaAtual >= 2 ? (
+          <div className="treatment-plan-add">
+            <select value={novoProcedimentoPlanoId} onChange={(event) => { setNovoProcedimentoPlanoId(event.target.value); if (event.target.value) setNovoProcedimentoPlanoNome(""); }}>
+              <option value="">Selecione um procedimento do catálogo</option>
+              {procedimentosCatalogo.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}
+            </select>
+            <input value={novoProcedimentoPlanoNome} onChange={(event) => { setNovoProcedimentoPlanoNome(event.target.value); if (event.target.value) setNovoProcedimentoPlanoId(""); }} placeholder="Ou informe outro procedimento" />
+            <button type="button" className="primary-action" onClick={() => void adicionarProcedimentoAoPlano()} disabled={salvandoPlano || (!novoProcedimentoPlanoId && !novoProcedimentoPlanoNome.trim())}><Plus size={17} /> Adicionar procedimento</button>
+          </div>
+        ) : null}
+        <div className="treatment-procedure-list">
+          {planoTratamento.map((procedimento) => (
+            <article className="treatment-procedure-card" key={procedimento.id}>
+              <div className="treatment-procedure-head">
+                <div><span className="treatment-origin">{procedimento.origem}{procedimento.contratoId ? ` #${procedimento.contratoId}` : ""}</span><h4>{procedimento.nome}</h4></div>
+                <select value={procedimento.status} disabled={acessoAbaAtual < 2} onChange={(event) => void alterarStatusProcedimentoPlano(procedimento.id, event.target.value as PlanoTratamentoProcedimentoApi["status"])}>
+                  {(["Planejado", "Em andamento", "Concluido", "Suspenso", "Cancelado"] as const).map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </div>
+              <div className="treatment-step-list">
+                {procedimento.passos.map((passo, indice) => (
+                  <div className={`treatment-step ${passo.status === "Concluido" ? "done" : ""}`} key={passo.id}>
+                    <span className="treatment-step-index">{indice + 1}</span>
+                    <div className="treatment-step-main"><strong>{passo.titulo}</strong>{passo.dataRealizacao ? <span>Realizado em {passo.dataRealizacao.split("-").reverse().join("/")}</span> : passo.dataPrevista ? <span>Previsto para {passo.dataPrevista.split("-").reverse().join("/")}</span> : null}</div>
+                    <input type="date" aria-label="Data prevista" value={passo.dataPrevista || ""} disabled={acessoAbaAtual < 2} onChange={(event) => void alterarPassoPlano(passo, { dataPrevista: event.target.value })} />
+                    <select value={passo.status} disabled={acessoAbaAtual < 2} onChange={(event) => void alterarPassoPlano(passo, { status: event.target.value as PlanoTratamentoPassoApi["status"] })}>
+                      {(["Pendente", "Agendado", "Concluido", "Cancelado"] as const).map((status) => <option key={status}>{status}</option>)}
+                    </select>
+                    {acessoAbaAtual >= 2 ? <button type="button" className="icon-action compact" title="Excluir passo" onClick={() => void removerPassoPlano(passo.id)}><X size={15} /></button> : null}
+                  </div>
+                ))}
+                {!procedimento.passos.length ? <span className="empty-inline">Nenhum passo cadastrado neste procedimento.</span> : null}
+              </div>
+              {acessoAbaAtual >= 2 ? <div className="treatment-step-add"><input value={novoPassoPorProcedimento[procedimento.id] || ""} onChange={(event) => setNovoPassoPorProcedimento((atual) => ({ ...atual, [procedimento.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") void adicionarPassoAoPlano(procedimento.id); }} placeholder="Novo passo: cirurgia, remoção de pontos, reabertura..." /><button type="button" className="ghost-action" disabled={salvandoPlano} onClick={() => void adicionarPassoAoPlano(procedimento.id)}><Plus size={16} /> Adicionar passo</button></div> : null}
+            </article>
+          ))}
+          {!planoTratamento.length ? <div className="treatment-plan-empty"><strong>Nenhum procedimento no plano.</strong><span>Aprove um orçamento ou adicione um procedimento manualmente para começar.</span></div> : null}
+        </div>
+      </div>
+    );
   }
 
   function renderFinanceiroSection() {
@@ -2600,7 +2875,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       const resposta = orcamentoEditandoId
         ? await atualizarOrcamentoPacienteApi(pacienteAtivoId, orcamentoEditandoId, payload)
         : await criarOrcamentoPacienteApi(pacienteAtivoId, payload);
-      setFeedback("Orçamento salvo com sucesso.");
+      setFeedback(orcamentoEditandoId
+        ? "Nova versão salva. A versão anterior continua disponível em Documentos."
+        : "Orçamento salvo com sucesso.");
       setModalOrcamentoAberto(false);
       setModoComercial("contrato");
       setOrcamentoAtivoId(resposta.contrato_id);
@@ -2803,10 +3080,12 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
             <Pencil size={18} />
             Editar
           </button>
-          <button type="button" className="icon-action" onClick={() => setAbaPrincipal("Financeiro")}>
-            <Wallet size={18} />
-            Financeiro
-          </button>
+          {usuarioPodeVerValoresFinanceiros ? (
+            <button type="button" className="icon-action" onClick={() => setAbaPrincipal("Financeiro")}>
+              <Wallet size={18} />
+              Financeiro
+            </button>
+          ) : null}
           {usuarioPodeSuspenderTratamento ? (
             <button
               type="button"
@@ -2868,9 +3147,18 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
           <article className={`panel summary-card finance-alert ${resumoFinanceiroIndicador(ficha?.financeiro.indicador)}`}>
             <div className="summary-card-title">Alerta financeiro</div>
             <div className="summary-card-body">
-              <div><span>Indicador</span><strong>{ficha?.financeiro.indicador || "Sem vínculo"}</strong></div>
-              <div><span>Total em aberto</span><strong>{ficha?.financeiro.emAberto || "R$ 0,00"}</strong></div>
-              <div><span>Atrasado</span><strong>{ficha?.financeiro.atrasado || "R$ 0,00"}</strong></div>
+              {usuarioPodeVerValoresFinanceiros ? (
+                <>
+                  <div><span>Indicador</span><strong>{ficha?.financeiro.indicador || "Sem vínculo"}</strong></div>
+                  <div><span>Total em aberto</span><strong>{ficha?.financeiro.emAberto || "R$ 0,00"}</strong></div>
+                  <div><span>Atrasado</span><strong>{ficha?.financeiro.atrasado || "R$ 0,00"}</strong></div>
+                </>
+              ) : (
+                <div>
+                  <span>Situação financeira</span>
+                  <strong>{existemValoresEmAberto ? "Existem valores em aberto" : "Não existem valores em aberto"}</strong>
+                </div>
+              )}
             </div>
           </article>
         </aside>
@@ -2879,7 +3167,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
           <article className="panel patient-tabs-panel">
             <div className="tab-group">
               <div className="tab-shell tab-shell-primary">
-                {ABAS_PRINCIPAIS.map((aba) => (
+                {ABAS_PRINCIPAIS.filter(
+                  (aba) => usuarioPodeVerValoresFinanceiros || (aba.key !== "Financeiro" && aba.key !== "Comercial")
+                ).map((aba) => (
                   <button
                     key={aba.key}
                     type="button"
@@ -3011,10 +3301,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 </div>
 
                 {abaClinica === "Plano e ficha clínica" ? (
-                  <article className="compact-panel">
-                    <strong>Plano e ficha clínica</strong>
-                    <span className="empty-inline">Área preservada para integração com a ficha clínica real do ERP.</span>
-                  </article>
+                  renderPlanoTratamento()
                 ) : null}
 
                 {abaClinica === "Odontograma" ? renderOdontogramaClinico() : null}
@@ -3026,7 +3313,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
               <div className="tab-group">
                 <span className="tab-group-title">Documentos</span>
                 <div className="tab-shell">
-                  {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[]).map((aba) => (
+                  {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[])
+                    .filter((aba) => usuarioPodeVerValoresFinanceiros || aba !== "Recibos")
+                    .map((aba) => (
                     <button
                       key={aba}
                       type="button"
@@ -3090,7 +3379,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   </div>
                 ) : null}
 
-                {abaDocumentos === "Recibos" ? (
+                {usuarioPodeVerValoresFinanceiros && abaDocumentos === "Recibos" ? (
                   <div className="finance-list">
                     {ficha?.recibos.length ? ficha.recibos.map((item) => (
                       <div className="finance-card" key={item.id}>
@@ -3133,6 +3422,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                     Novo orçamento
                   </button>
                 </div>
+
+                {renderCalculadoraFinanceiraOrcamento()}
 
                 <div className="budget-grid">
                   {ficha?.contratos.length ? ficha.contratos.map((contrato) => (
@@ -3531,10 +3822,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   </div>
 
                   {abaClinica === "Plano e ficha clínica" ? (
-                    <article className="compact-panel">
-                      <strong>Plano e ficha clínica</strong>
-                      <span className="empty-inline">Área preservada para integração com a ficha clínica real do ERP.</span>
-                    </article>
+                    renderPlanoTratamento()
                   ) : null}
 
                   {abaClinica === "Odontograma" ? renderOdontogramaClinico() : null}
@@ -3546,7 +3834,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 <div className="tab-group">
                   <span className="tab-group-title">Documentos</span>
                   <div className="tab-shell">
-                    {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[]).map((aba) => (
+                    {(["Documentos", "Exames", "Recibos"] as AbaDocumentos[])
+                      .filter((aba) => usuarioPodeVerValoresFinanceiros || aba !== "Recibos")
+                      .map((aba) => (
                       <button
                         key={aba}
                         type="button"
@@ -3587,13 +3877,21 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           <div className="boleto-upload-list">
                             {arquivosBoletosSelecionados.map((arquivo, indice) => (
                               <div key={`${arquivo.name}-${arquivo.lastModified}-${indice}`} className="boleto-upload-item">
-                                <div>
-                                  <strong>{arquivo.name}</strong>
+                                <div className="boleto-upload-info">
+                                  <strong>{indice + 1}. {arquivo.name}</strong>
                                   <span>{`${Math.max(1, Math.round(arquivo.size / 1024))} KB`}</span>
                                 </div>
-                                <button type="button" className="ghost-action danger compact" onClick={() => removerArquivoBoleto(indice)} disabled={gerandoRecebimentoBoletos}>
-                                  Remover
-                                </button>
+                                <div className="boleto-upload-actions">
+                                  <button type="button" className="icon-action compact" title="Mover para cima" aria-label={`Mover ${arquivo.name} para cima`} onClick={() => moverArquivoBoleto(indice, -1)} disabled={gerandoRecebimentoBoletos || indice === 0}>
+                                    <ArrowUp size={16} />
+                                  </button>
+                                  <button type="button" className="icon-action compact" title="Mover para baixo" aria-label={`Mover ${arquivo.name} para baixo`} onClick={() => moverArquivoBoleto(indice, 1)} disabled={gerandoRecebimentoBoletos || indice === arquivosBoletosSelecionados.length - 1}>
+                                    <ArrowDown size={16} />
+                                  </button>
+                                  <button type="button" className="ghost-action danger compact" onClick={() => removerArquivoBoleto(indice)} disabled={gerandoRecebimentoBoletos}>
+                                    Remover
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -3664,7 +3962,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                     </div>
                   ) : null}
 
-                  {abaDocumentos === "Recibos" ? (
+                  {usuarioPodeVerValoresFinanceiros && abaDocumentos === "Recibos" ? (
                     <div className="finance-list">
                       {ficha?.recibos.length ? ficha.recibos.map((item) => (
                         <div className="finance-card" key={item.id}>
@@ -3732,6 +4030,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                     </div>
                   </div>
 
+                  {renderCalculadoraFinanceiraOrcamento()}
+
                   {modoComercial === "contrato" && orcamentoAtivoId ? (
                     <div className="commercial-contract-shell">
                       <div className="commercial-contract-toolbar">
@@ -3754,13 +4054,13 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                             Voltar
                           </button>
                           <button type="button" className="ghost-action" onClick={() => setModalPagamentoAberto(true)}>
-                            Pagamento
+                            Alterar vencimentos
                           </button>
                           <button type="button" className="ghost-action" onClick={() => void abrirOrcamentoExistente(orcamentoAtivoId)}>
-                            Editor completo
+                            Editar contrato
                           </button>
                           <button type="button" className="primary-action" onClick={salvarOrcamentoPaciente} disabled={salvandoOrcamento}>
-                            {salvandoOrcamento ? "Salvando..." : "Salvar contrato"}
+                            {salvandoOrcamento ? "Salvando nova versão..." : "Salvar nova versão"}
                           </button>
                         </div>
                       </div>
@@ -4024,7 +4324,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                                 if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
                                 else void aprovarOrcamento(contrato.id);
                               }}
-                              title={usuarioPodeAprovarOrcamentoComPermissao ? undefined : "Aprovação exige Juliana ou Eliane com edição em Financeiro/Orçamentos"}
+                              title={usuarioPodeAprovarOrcamentoComPermissao ? undefined : "Aprovação e desaprovação exigem perfil Administrador com edição em Financeiro/Orçamentos"}
                             >
                               {alterandoStatusOrcamentoId === contrato.id
                                 ? "Salvando..."
@@ -4646,6 +4946,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
             <div className="modal-body budget-modal-body">
               <div className="budget-builder-grid">
                 <section className="budget-builder-form">
+                  {renderCalculadoraFinanceiraOrcamento(totalOrcamentoFinal)}
                   <div className="form-section-grid">
                     <div className="form-block">
                       <h3>Identificação</h3>
@@ -5168,6 +5469,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   </tbody>
                 </table>
               </div>
+              {planoPagamentoEditor.linhas.some((linha) => linha.forma === "PERMUTA") ? (
+                <div className="payment-inline-note">O valor continuará no contrato, mas não será contabilizado como venda. Descreva nas observações do orçamento o que está incluído na permuta.</div>
+              ) : null}
             </div>
             <footer className="modal-footer">
               <div className="sticky-actions">

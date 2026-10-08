@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DollarSign, Target, TrendingUp, X } from "lucide-react";
 import {
   atualizarMetaFinanceiraApi,
+  atualizarInclusaoVendaDashboardApi,
   painelDashboardApi,
   type ContaPagarResumoApi,
   type DashboardCalendarioPagamentoItemApi,
@@ -49,9 +50,9 @@ const TICKET_MEDIO = 4000;
 
 const FUNIL_CORES = [
   { chave: "leads", rotulo: "Leads", cor: "#5b64b5" },
-  { chave: "agendou", rotulo: "Agendou", cor: "#42c0c7" },
-  { chave: "compareceu", rotulo: "Compareceu", cor: "#f2898c" },
-  { chave: "fechou", rotulo: "Fechou", cor: "#efc449" }
+  { chave: "agendou", rotulo: "Agendou avaliação", cor: "#42c0c7" },
+  { chave: "compareceu", rotulo: "Compareceu à avaliação", cor: "#f2898c" },
+  { chave: "fechou", rotulo: "Fechou após avaliar", cor: "#efc449" }
 ] as const;
 
 const FUNIL_COR_NEUTRA = "#b9b4ab";
@@ -201,6 +202,43 @@ function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0
           ) : null}
         </div>
       </div>
+    </article>
+  );
+}
+
+function ResgatesCard({ valores }: { valores: { total: number; ate30Dias: number; mais30Dias: number } }) {
+  const maior = Math.max(valores.ate30Dias, valores.mais30Dias, 1);
+  const itens = [
+    { rotulo: "Retornaram em até 30 dias", valor: valores.ate30Dias, classe: "new" },
+    { rotulo: "Retornaram após 30 dias", valor: valores.mais30Dias, classe: "old" }
+  ];
+  return (
+    <article className="panel dashboard-rescue-panel">
+      <div className="section-title-row">
+        <div>
+          <span className="panel-kicker">Relacionamento</span>
+          <h2>Resgates do mês</h2>
+        </div>
+        <div className="dashboard-rescue-total">
+          <strong>{valores.total}</strong>
+          <span>paciente(s)</span>
+        </div>
+      </div>
+      <p className="dashboard-rescue-description">Pacientes que compareceram a uma avaliação, não fecharam no dia e retornaram para fechar neste mês.</p>
+      <div className="dashboard-rescue-chart">
+        {itens.map((item) => (
+          <div className="dashboard-rescue-row" key={item.rotulo}>
+            <div>
+              <span>{item.rotulo}</span>
+              <strong>{item.valor}</strong>
+            </div>
+            <div className="dashboard-rescue-track">
+              <span className={`dashboard-rescue-bar ${item.classe}`} style={{ width: `${(item.valor / maior) * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <small>O intervalo é calculado entre a última avaliação comparecida e o primeiro fechamento do paciente.</small>
     </article>
   );
 }
@@ -359,27 +397,45 @@ function VendasMensaisCard({ meses, serie }: { meses: string[]; serie: number[] 
     mes,
     valor: Number(serie[indice] || 0),
   }));
+  const maiorValor = Math.max(...itens.map((item) => item.valor), 1);
+  const totalAno = itens.reduce((total, item) => total + item.valor, 0);
+  const mesAtual = new Date().getMonth();
+  const anoAtual = new Date().getFullYear();
   return (
-    <article className="panel summary-panel">
+    <article className="panel dashboard-annual-sales-panel">
       <div className="section-title-row">
         <div>
           <span className="panel-kicker">Financeiro</span>
-          <h2>Vendas por mês</h2>
+          <h2>Vendas do ano</h2>
         </div>
-        <span className="panel-meta">{`${itens.length} mês(es)`}</span>
+        <div className="dashboard-annual-sales-total">
+          <span>{anoAtual}</span>
+          <strong>{numeroParaMoedaBr(totalAno)}</strong>
+        </div>
       </div>
-      <div className="module-sublist">
-        {itens.map((item) => (
-          <div className="module-subitem finance-module-subitem" key={`dashboard-venda-mes-${item.mes}`}>
-            <div>
-              <strong>{item.mes}</strong>
-              <span>Contratos aprovados no mês</span>
-            </div>
-            <div className="module-subitem-right">
-              <strong>{numeroParaMoedaBr(item.valor)}</strong>
-            </div>
-          </div>
-        ))}
+      <div className="dashboard-annual-chart-scroll">
+        <div className="dashboard-annual-chart" role="img" aria-label={`Gráfico de vendas mensais de ${anoAtual}`}>
+          {itens.map((item, indice) => {
+            const altura = item.valor > 0 ? Math.max((item.valor / maiorValor) * 100, 3) : 0;
+            return (
+              <div
+                className={`dashboard-annual-bar-group${indice === mesAtual ? " current" : ""}`}
+                key={`dashboard-venda-mes-${item.mes}`}
+                title={`${item.mes}: ${numeroParaMoedaBr(item.valor)}`}
+              >
+                <strong>{item.valor > 0 ? numeroParaMoedaBr(item.valor) : "R$ 0"}</strong>
+                <div className="dashboard-annual-bar-track">
+                  <span className="dashboard-annual-bar" style={{ height: `${altura}%` }} />
+                </div>
+                <span>{item.mes}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="dashboard-annual-chart-caption">
+        <span>Somente contratos aprovados incluídos no total vendido.</span>
+        <strong>{`${itens.filter((item) => item.valor > 0).length} mês(es) com vendas`}</strong>
       </div>
     </article>
   );
@@ -389,16 +445,23 @@ function VendasResumoCard({
   itens,
   meses,
   mesSelecionado,
-  onSelecionarMes
+  onSelecionarMes,
+  onAlterarInclusao,
+  salvandoId
 }: {
   itens: DashboardVendaResumoItemApi[];
   meses: string[];
   mesSelecionado: number;
   onSelecionarMes: (mes: number) => void;
+  onAlterarInclusao: (item: DashboardVendaResumoItemApi, incluir: boolean) => void;
+  salvandoId: number | null;
 }) {
   const itensFiltrados = itens.filter((item) => extrairMesDataBr(item.data) === mesSelecionado);
   const nomeMes = meses[mesSelecionado - 1] || "";
-  const totalMesSelecionado = itensFiltrados.reduce((total, item) => total + moedaParaNumero(item.valor || "0"), 0);
+  const totalMesSelecionado = itensFiltrados.reduce(
+    (total, item) => total + (item.incluirTotalVendido !== false ? moedaParaNumero(item.valor || "0") : 0),
+    0
+  );
   return (
     <article className="panel summary-panel">
       <div className="section-title-row">
@@ -422,10 +485,19 @@ function VendasResumoCard({
       </div>
       <div className="module-sublist">
         {itensFiltrados.length ? itensFiltrados.map((item) => (
-          <div className="module-subitem finance-module-subitem" key={`dashboard-venda-resumo-${item.contratoId}`}>
-            <div>
+          <div className={`module-subitem finance-module-subitem${item.incluirTotalVendido === false ? " dashboard-sale-excluded" : ""}`} key={`dashboard-venda-resumo-${item.contratoId}`}>
+            <div className="dashboard-sale-main">
               <strong>{item.nome || "Paciente"}</strong>
               <span>{`${item.formaPagamento || "Sem forma de pagamento"}${item.data ? ` · ${item.data}` : ""}`}</span>
+              <label className="dashboard-sale-total-toggle">
+                <input
+                  type="checkbox"
+                  checked={item.incluirTotalVendido !== false}
+                  disabled={salvandoId === item.contratoId}
+                  onChange={(event) => onAlterarInclusao(item, event.target.checked)}
+                />
+                <span>{salvandoId === item.contratoId ? "Salvando..." : "Somar no total vendido"}</span>
+              </label>
             </div>
             <div className="module-subitem-right">
               <strong>{item.valor || "R$ 0,00"}</strong>
@@ -448,10 +520,13 @@ export function DashboardPage() {
   const [pagamentoDiaAtivo, setPagamentoDiaAtivo] = useState<DashboardCalendarioPagamentoItemApi | null>(null);
   const [indicadorAtivo, setIndicadorAtivo] = useState<DashboardIndicadorApi | null>(null);
   const [mesVendasSelecionado, setMesVendasSelecionado] = useState(new Date().getMonth() + 1);
+  const [salvandoVendaId, setSalvandoVendaId] = useState<number | null>(null);
 
-  async function carregar() {
-    setCarregando(true);
-    setErro("");
+  async function carregar(silencioso = false) {
+    if (!silencioso) {
+      setCarregando(true);
+      setErro("");
+    }
     try {
       const resposta = await painelDashboardApi();
       setPainel({
@@ -464,15 +539,26 @@ export function DashboardPage() {
       setMetaEditavel(resposta.metas?.metaMes || DASHBOARD_VAZIO.metas.metaMes);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar dashboard.");
-      setPainel(DASHBOARD_VAZIO);
-      setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
+      if (!silencioso) {
+        setPainel(DASHBOARD_VAZIO);
+        setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
+      }
     } finally {
-      setCarregando(false);
+      if (!silencioso) setCarregando(false);
     }
   }
 
   useEffect(() => {
     void carregar();
+    const intervalo = window.setInterval(() => void carregar(true), 60_000);
+    const atualizarAoVoltar = () => {
+      if (document.visibilityState === "visible") void carregar(true);
+    };
+    document.addEventListener("visibilitychange", atualizarAoVoltar);
+    return () => {
+      window.clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", atualizarAoVoltar);
+    };
   }, []);
 
   const metaMesNumero = useMemo(() => moedaParaNumero(painel.metas.metaMes), [painel.metas.metaMes]);
@@ -484,6 +570,14 @@ export function DashboardPage() {
       agendou: painel.funilReal?.agendou || 0,
       compareceu: painel.funilReal?.compareceu || 0,
       fechou: painel.funilReal?.fechou || 0
+    }),
+    [painel.funilReal]
+  );
+  const resgates = useMemo(
+    () => ({
+      total: Number(painel.funilReal?.resgates || 0),
+      ate30Dias: Number(painel.funilReal?.resgatesAte30Dias || 0),
+      mais30Dias: Number(painel.funilReal?.resgatesMais30Dias || 0)
     }),
     [painel.funilReal]
   );
@@ -511,6 +605,19 @@ export function DashboardPage() {
       setErro(error instanceof Error ? error.message : "Falha ao salvar meta.");
     } finally {
       setSalvandoMeta(false);
+    }
+  }
+
+  async function alterarInclusaoVenda(item: DashboardVendaResumoItemApi, incluir: boolean) {
+    try {
+      setSalvandoVendaId(item.contratoId);
+      setErro("");
+      await atualizarInclusaoVendaDashboardApi(item.contratoId, incluir);
+      await carregar();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao atualizar a soma das vendas.");
+    } finally {
+      setSalvandoVendaId(null);
     }
   }
 
@@ -542,11 +649,18 @@ export function DashboardPage() {
         />
         <FunilCard
           titulo="Evolução atual"
-          subtitulo="Baseado em agenda e contratos reais do mês"
+          subtitulo="Avaliações e contratos reais do mês"
           valores={funilEvolucao}
           metasReferencia={funilMeta}
         />
       </section>
+
+      <ResgatesCard valores={resgates} />
+
+      <VendasMensaisCard
+        meses={painel.meses || DASHBOARD_VAZIO.meses}
+        serie={painel.serieVendas || DASHBOARD_VAZIO.serieVendas}
+      />
 
       <section className="content-grid">
         <article className="panel dashboard-calendar-panel">
@@ -591,6 +705,8 @@ export function DashboardPage() {
             meses={painel.meses || DASHBOARD_VAZIO.meses}
             mesSelecionado={mesVendasSelecionado}
             onSelecionarMes={setMesVendasSelecionado}
+            onAlterarInclusao={(item, incluir) => void alterarInclusaoVenda(item, incluir)}
+            salvandoId={salvandoVendaId}
           />
           <DevedoresResumoCard itens={painel.devedoresResumo || []} />
           <article className="panel summary-panel">
