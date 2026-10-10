@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/edu-api/:path*", "destination": "https://soulsul-production.up.railway.app/api/educacao/:path*" },
+    { "source": "/educacao", "destination": "/index.html" },
+    { "source": "/educacao/:path*", "destination": "/index.html" }
+  ]
+}
