@@ -16,14 +16,13 @@ import {
   ReceiptText,
   Search,
   ShieldCheck,
-  Stethoscope,
   Trash2,
   UserRound,
   UsersRound,
   WalletCards,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type FormEvent } from "react";
 import logoUrl from "./assets/logo-soulsul-eleven.png";
 import {
   atualizarAlunoApi,
@@ -60,6 +59,18 @@ import {
   type TreinamentoApi,
   type TurmaTreinamentoApi,
 } from "./pacientesApi";
+
+function DentalHandpieceIcon({ size = 20, strokeWidth = 1.8 }: { size?: number; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m5 19 7.8-7.8" />
+      <path d="m8 21-5-5 2.1-2.1 5 5z" />
+      <path d="m11.4 12.6 3-3 2.2 2.2-3 3" />
+      <path d="m14.4 9.6 2.5-4.2 3.7-1.2-.9 3.8-3.1 3.8" />
+      <path d="m18.6 4.9 1.8 1.8" />
+    </svg>
+  );
+}
 
 type Aba = "Alunos" | "Treinamentos" | "Matrículas" | "Turmas";
 const alunoVazio = {
@@ -176,11 +187,11 @@ export function EducacaoPortal() {
     if (item === "Usuários") return admin;
     if(admin||item==="Dashboard")return true;const p=usuarioEducacao?.permissoes||{};const subs=SUBFUNCOES_ACESSO_EDUCACAO[item]||[];return p[item]!==false&&subs.some(sub=>(p[`${item}.${sub}`]??"edit")!=="none");
   });
-  const iconesModulo: Record<string, typeof LayoutDashboard> = {
+  const iconesModulo: Record<string, ComponentType<{ size?: number; strokeWidth?: number }>> = {
     Dashboard: LayoutDashboard,
     Alunos: GraduationCap,
     Treinamentos: BookOpen,
-    Pacientes: Stethoscope,
+    Pacientes: DentalHandpieceIcon,
     Orçamentos: ReceiptText,
     CRM: HeartHandshake,
     Guias: ClipboardList,
@@ -587,51 +598,50 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
   if (erro && !formAberto) return <div className="education-error">{erro}</div>;
   if (modulo === "Dashboard" && !Array.isArray(dados)) {
     const d = dados as Record<string, unknown>;
+    const moeda = (valor: unknown) => Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const receitas = Number(d.receitas || 0);
+    const despesas = Number(d.despesas || 0);
+    const operacao = [
+      { rotulo: "Alunos", valor: d.alunos, detalhe: "cadastrados", Icone: GraduationCap },
+      { rotulo: "Pacientes-modelo", valor: d.pacientesModelo, detalhe: "em acompanhamento", Icone: DentalHandpieceIcon },
+      { rotulo: "Turmas ativas", valor: d.turmasAtivas, detalhe: "em andamento", Icone: BookOpen },
+      { rotulo: "Agenda hoje", valor: d.agendaHoje, detalhe: "atendimentos", Icone: CalendarDays },
+    ];
+    const dataHoje = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).format(new Date());
     return (
-      <section className="education-page">
-        <div className="education-hero">
+      <section className="education-page education-dashboard">
+        <div className="education-dashboard-intro">
           <div>
             <span className="page-eyebrow">VISÃO GERAL</span>
             <h1>Dashboard educacional</h1>
-            <p>
-              Indicadores exclusivos dos cursos e atendimentos de
-              pacientes-modelo.
-            </p>
           </div>
+          <div className="education-dashboard-date"><CalendarDays size={18} /><div><span>Hoje</span><strong>{dataHoje}</strong></div></div>
         </div>
-        <div className="education-dashboard-grid">
-          {[
-            ["Alunos", d.alunos],
-            ["Pacientes-modelo", d.pacientesModelo],
-            ["Turmas ativas", d.turmasAtivas],
-            ["Agenda hoje", d.agendaHoje],
-            [
-              "Receitas",
-              Number(d.receitas || 0).toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              }),
-            ],
-            [
-              "A receber",
-              Number(d.aReceber || 0).toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              }),
-            ],
-            [
-              "Despesas",
-              Number(d.despesas || 0).toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              }),
-            ],
-          ].map(([l, v]) => (
-            <article className="education-metric-card" key={String(l)}>
-              <small>{String(l)}</small>
-              <strong>{String(v ?? 0)}</strong>
+        <div className="education-dashboard-kpis">
+          {operacao.map(({ rotulo, valor, detalhe, Icone }) => (
+            <article className="education-dashboard-kpi" key={rotulo}>
+              <span className="education-dashboard-kpi-icon"><Icone size={20} strokeWidth={1.8} /></span>
+              <div><small>{rotulo}</small><strong>{String(valor ?? 0)}</strong><span>{detalhe}</span></div>
             </article>
           ))}
+        </div>
+        <div className="education-dashboard-panels">
+          <article className="education-card education-dashboard-finance">
+            <header><div><span className="page-eyebrow">FINANCEIRO</span><h2>Resumo financeiro</h2></div><WalletCards size={21} /></header>
+            <div className="education-finance-summary-row positive"><span>Receitas</span><strong>{moeda(receitas)}</strong></div>
+            <div className="education-finance-summary-row pending"><span>A receber</span><strong>{moeda(d.aReceber)}</strong></div>
+            <div className="education-finance-summary-row negative"><span>Despesas</span><strong>{moeda(despesas)}</strong></div>
+            <footer><span>Resultado</span><strong>{moeda(receitas - despesas)}</strong></footer>
+          </article>
+          <article className="education-card education-dashboard-overview">
+            <header><div><span className="page-eyebrow">OPERAÇÃO</span><h2>Panorama de hoje</h2></div><LayoutDashboard size={21} /></header>
+            <div className="education-overview-highlight"><span className="education-dashboard-kpi-icon"><CalendarDays size={22} /></span><div><strong>{String(d.agendaHoje ?? 0)}</strong><span>atendimentos agendados para hoje</span></div></div>
+            <div className="education-overview-list">
+              <div><span>Base de alunos</span><strong>{String(d.alunos ?? 0)}</strong></div>
+              <div><span>Pacientes-modelo</span><strong>{String(d.pacientesModelo ?? 0)}</strong></div>
+              <div><span>Turmas em andamento</span><strong>{String(d.turmasAtivas ?? 0)}</strong></div>
+            </div>
+          </article>
         </div>
       </section>
     );

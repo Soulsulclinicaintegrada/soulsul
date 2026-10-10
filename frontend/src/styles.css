@@ -9439,3 +9439,160 @@ textarea::placeholder {
   .education-row-actions button { flex: 1; }
   .education-form-row, .education-payment-summary { grid-template-columns: 1fr; }
 }
+
+/* Educação — refinamento visual mais leve e operacional. */
+.education-portal-shell {
+  --edu-gold: #b9914f;
+  --edu-gold-bright: #d8b66d;
+  --edu-ivory: #f6f4ef;
+  --edu-paper: #fff;
+  --edu-line: #e4ded4;
+  background: #f6f4ef;
+}
+.education-sidebar {
+  gap: 18px;
+  background: linear-gradient(180deg, #181510 0%, #0d0c0a 100%);
+}
+.education-main-nav button { min-height: 44px; border-radius: 10px; }
+.education-main-nav button:hover { transform: none; background: rgba(255,255,255,.055); }
+.education-main-nav button.active {
+  color: #18130c;
+  background: #d7b267;
+  border-color: transparent;
+  box-shadow: none;
+}
+.education-portal-top {
+  min-height: 68px;
+  background: rgba(255,255,255,.9);
+  border-bottom-color: #e6e0d7;
+}
+.education-content { width: min(1480px, 100%); padding: clamp(22px, 2.5vw, 36px); }
+.education-page { gap: 18px; }
+.education-hero {
+  min-height: 116px;
+  padding: 24px 28px;
+  border-radius: 18px;
+  background: #1a1713;
+  border-color: #30291f;
+  box-shadow: none;
+}
+.education-hero::after { display: none; }
+.education-hero h1 { font-size: clamp(1.65rem, 2.4vw, 2.15rem); }
+.education-card,
+.education-metric-card {
+  background: #fff;
+  border: 1px solid var(--edu-line);
+  box-shadow: 0 5px 18px rgba(46,38,26,.035);
+}
+.education-card { border-radius: 16px; }
+.education-metric-card { min-height: 116px; border-radius: 15px; }
+.education-metric-card:hover { transform: none; box-shadow: 0 7px 22px rgba(46,38,26,.06); }
+.education-metric-card::before { width: 2px; background: var(--edu-gold); }
+.education-tabs { background: #ebe7df; border-radius: 11px; }
+.education-tabs button { border-radius: 8px; }
+.education-row { border-color: #eee9e1; background: #fbfaf7; }
+
+.education-dashboard { gap: 20px; }
+.education-dashboard-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 2px 8px;
+}
+.education-dashboard-intro .page-eyebrow,
+.education-dashboard-finance .page-eyebrow,
+.education-dashboard-overview .page-eyebrow { color: #9a7840; }
+.education-dashboard-intro h1 {
+  margin: 5px 0 4px;
+  color: #201c17;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.9rem, 3vw, 2.55rem);
+  letter-spacing: -.035em;
+}
+.education-dashboard-intro p { margin: 0; color: #756d64; }
+.education-dashboard-date {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 220px;
+  padding: 11px 14px;
+  border: 1px solid var(--edu-line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.72);
+  color: #80683d;
+}
+.education-dashboard-date div { display: grid; gap: 1px; }
+.education-dashboard-date span { color: #8a8177; font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.education-dashboard-date strong { color: #322d27; font-size: .82rem; text-transform: capitalize; }
+.education-dashboard-kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 13px; }
+.education-dashboard-kpi {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--edu-line);
+  border-radius: 15px;
+  background: #fff;
+}
+.education-dashboard-kpi-icon {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #765a29;
+  background: #f1e7d5;
+}
+.education-dashboard-kpi > div { min-width: 0; display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 8px; }
+.education-dashboard-kpi small { color: #756d64; font-size: .68rem; font-weight: 800; letter-spacing: .075em; text-transform: uppercase; }
+.education-dashboard-kpi strong { grid-row: 1 / span 2; grid-column: 2; color: #211c17; font-size: 1.9rem; line-height: 1; }
+.education-dashboard-kpi > div span { color: #999087; font-size: .72rem; }
+.education-dashboard-panels { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(320px,.85fr); gap: 14px; }
+.education-dashboard-finance,
+.education-dashboard-overview { display: grid; align-content: start; gap: 0; padding: 21px; }
+.education-dashboard-finance header,
+.education-dashboard-overview header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 12px; color: #a0824c; }
+.education-dashboard-finance h2,
+.education-dashboard-overview h2 { margin: 3px 0 0; color: #27221d; font-size: 1.05rem; }
+.education-finance-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 0;
+  border-top: 1px solid #eee9e1;
+  color: #756d64;
+}
+.education-finance-summary-row strong { color: #322c26; font-size: .92rem; }
+.education-finance-summary-row span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 9px; border-radius: 50%; background: #9b9389; }
+.education-finance-summary-row.positive span::before { background: #55916c; }
+.education-finance-summary-row.pending span::before { background: #ca9a43; }
+.education-finance-summary-row.negative span::before { background: #b76b62; }
+.education-dashboard-finance footer { display: flex; justify-content: space-between; gap: 18px; margin-top: 4px; padding: 15px 16px; border-radius: 11px; background: #f3efe7; }
+.education-dashboard-finance footer span { color: #756d64; font-size: .78rem; font-weight: 750; text-transform: uppercase; }
+.education-dashboard-finance footer strong { color: #29231d; }
+.education-overview-highlight { display: flex; align-items: center; gap: 14px; margin-bottom: 9px; padding: 16px; border-radius: 12px; background: #f4efe6; }
+.education-overview-highlight > div { display: grid; gap: 2px; }
+.education-overview-highlight strong { color: #211c17; font-size: 1.65rem; line-height: 1; }
+.education-overview-highlight span { color: #776f66; font-size: .8rem; }
+.education-overview-list { display: grid; }
+.education-overview-list div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 2px; border-bottom: 1px solid #eee9e1; color: #756d64; font-size: .82rem; }
+.education-overview-list div:last-child { border-bottom: 0; }
+.education-overview-list strong { color: #2d2822; }
+
+@media (max-width: 1120px) {
+  .education-dashboard-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 760px) {
+  .education-dashboard-intro { align-items: flex-start; flex-direction: column; }
+  .education-dashboard-date { width: 100%; min-width: 0; }
+  .education-dashboard-panels { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .education-dashboard-kpis { grid-template-columns: 1fr; }
+  .education-dashboard-kpi { padding: 15px; }
+}
+
