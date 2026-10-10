@@ -9229,23 +9229,21 @@ textarea::placeholder {
   cursor: pointer;
 }
 .education-sidebar-toggle:hover { background: rgba(224,191,120,.13); }
-.education-brand { display: flex; align-items: center; gap: 13px; min-height: 76px; padding-right: 32px; }
+.education-brand { display: flex; align-items: center; min-height: 108px; padding-right: 32px; }
 .education-brand-mark {
-  width: 56px;
-  min-width: 56px;
-  height: 56px;
+  width: 100%;
+  min-width: 0;
+  height: 94px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 15px;
-  background: #f8f3e9;
-  border: 1px solid rgba(224,191,120,.75);
-  box-shadow: 0 10px 28px rgba(0,0,0,.24);
+  padding: 7px 9px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fffef9, #eee3d1);
+  border: 1px solid rgba(223,186,111,.7);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 12px 32px rgba(0,0,0,.28);
 }
-.education-brand-mark img { width: 49px; height: auto; display: block; }
-.education-brand-copy { min-width: 0; display: grid; gap: 3px; white-space: nowrap; }
-.education-brand-copy b { font-family: Georgia, "Times New Roman", serif; font-size: 1.04rem; letter-spacing: .02em; }
-.education-brand-copy span { color: var(--edu-gold-bright); font-size: .64rem; font-weight: 800; letter-spacing: .16em; }
+.education-brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .education-sidebar-label { padding: 0 10px; color: rgba(248,243,233,.42); font-size: .61rem; font-weight: 800; letter-spacing: .16em; white-space: nowrap; }
 .education-main-nav { display: grid; gap: 5px; padding: 0; overflow: visible auto; scrollbar-width: none; }
 .education-main-nav::-webkit-scrollbar { display: none; }
@@ -9288,8 +9286,8 @@ textarea::placeholder {
 .education-sidebar-collapsed .education-sidebar { padding-inline: 10px; }
 .education-sidebar-collapsed .education-sidebar-toggle { position: static; align-self: center; order: -2; }
 .education-sidebar-collapsed .education-brand { justify-content: center; min-height: 58px; padding: 0; }
-.education-sidebar-collapsed .education-brand-mark { width: 52px; min-width: 52px; height: 52px; }
-.education-sidebar-collapsed .education-brand-copy,
+.education-sidebar-collapsed .education-brand-mark { width: 52px; min-width: 52px; height: 52px; padding: 0; border-radius: 14px; position: relative; }
+.education-sidebar-collapsed .education-brand-mark img { position: absolute; width: 170px; height: auto; max-width: none; top: -3px; left: -78px; }
 .education-sidebar-collapsed .education-sidebar-label,
 .education-sidebar-collapsed .education-main-nav button span,
 .education-sidebar-collapsed .education-user-card > div,
@@ -9387,11 +9385,8 @@ textarea::placeholder {
 }
 .education-login-shell::before { content: "ELEVEN"; position: absolute; right: -2vw; bottom: -7vh; color: rgba(224,191,120,.035); font-family: Georgia,serif; font-size: clamp(6rem,17vw,17rem); font-weight: 800; letter-spacing: -.07em; }
 .education-login-card { position: relative; width: min(470px,100%); gap: 17px; padding: clamp(28px,5vw,46px); border: 1px solid rgba(224,191,120,.35); border-radius: 28px; background: rgba(255,253,249,.97); box-shadow: 0 38px 100px rgba(0,0,0,.42); }
-.education-login-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 5px; padding-bottom: 20px; border-bottom: 1px solid #e8dece; }
-.education-login-brand img { width: 66px; height: 66px; object-fit: contain; padding: 7px; border: 1px solid #d5b36f; border-radius: 17px; background: #f8f3e9; }
-.education-login-brand > div { display: grid; gap: 3px; }
-.education-login-brand b { font-family: Georgia,serif; font-size: 1.2rem; }
-.education-login-brand span { color: #9c7738; font-size: .68rem; font-weight: 850; letter-spacing: .15em; }
+.education-login-brand { display: grid; place-items: center; margin-bottom: 5px; padding: 6px 12px 22px; border-bottom: 1px solid #e8dece; }
+.education-login-brand img { width: min(100%, 300px); height: auto; max-height: 168px; object-fit: contain; display: block; }
 .education-login-card h1 { font-family: Georgia,serif; font-size: clamp(2rem,5vw,2.65rem); letter-spacing: -.035em; }
 .education-login-card .primary-button { min-height: 48px; background: linear-gradient(135deg,#1c1813,#070707); border: 1px solid #ad8746; font-weight: 800; letter-spacing: .02em; }
 .education-sidebar-backdrop { display: none; }
