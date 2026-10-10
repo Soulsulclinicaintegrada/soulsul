@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import logoUrl from "./assets/logo-soul-sul.png";
+import logoUrl from "./assets/logo-soulsul-eleven.png";
 import {
   atualizarAlunoApi,
   atualizarTreinamentoApi,
@@ -209,8 +209,9 @@ export function EducacaoPortal() {
             {menuExpandido ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
           </button>
           <div className="education-brand">
-            <div className="education-brand-mark"><img src={logoUrl} alt="SoulSul" /></div>
-            <div className="education-brand-copy"><b>Instituto Eleven</b><span>SOULSUL EDUCAÇÃO</span></div>
+            <div className="education-brand-mark">
+              <img src={logoUrl} alt="SoulSul Eleven" />
+            </div>
           </div>
           <div className="education-sidebar-label">GESTÃO ACADÊMICA</div>
           <nav className="education-main-nav" aria-label="Navegação da educação">
@@ -244,7 +245,7 @@ export function EducacaoPortal() {
         <main className="education-workspace">
           <header className="education-portal-top">
             <button className="education-mobile-menu" type="button" aria-label="Abrir menu" onClick={() => setMenuMovelAberto(true)}><Menu size={21} /></button>
-            <div className="education-page-title"><span>Instituto Eleven</span><strong>{modulo}</strong></div>
+            <div className="education-page-title"><span>SoulSul Eleven</span><strong>{modulo}</strong></div>
             <div className="education-top-status"><span className="education-status-dot" />Portal seguro</div>
           </header>
           <div className="education-content">
@@ -293,7 +294,9 @@ export function EducacaoPortal() {
           }
         }}
       >
-        <div className="education-login-brand"><img src={logoUrl} alt="SoulSul" /><div><b>Instituto Eleven</b><span>SOULSUL EDUCAÇÃO</span></div></div>
+        <div className="education-login-brand">
+          <img src={logoUrl} alt="SoulSul Instituto Eleven" />
+        </div>
         <span className="page-eyebrow">PORTAL EXCLUSIVO</span>
         <h1>Bem-vindo de volta</h1>
         <p>
