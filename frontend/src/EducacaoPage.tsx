@@ -210,7 +210,11 @@ export function EducacaoPortal() {
           </button>
           <div className="education-brand">
             <div className="education-brand-mark">
-              <img src={logoUrl} alt="SoulSul Instituto Eleven" />
+              <img src={logoUrl} alt="SoulSul Eleven" />
+            </div>
+            <div className="education-brand-copy">
+              <b>SoulSul Eleven</b>
+              <span>Treinamentos em Odontologia</span>
             </div>
           </div>
           <div className="education-sidebar-label">GESTÃO ACADÊMICA</div>
@@ -245,7 +249,7 @@ export function EducacaoPortal() {
         <main className="education-workspace">
           <header className="education-portal-top">
             <button className="education-mobile-menu" type="button" aria-label="Abrir menu" onClick={() => setMenuMovelAberto(true)}><Menu size={21} /></button>
-            <div className="education-page-title"><span>Instituto Eleven</span><strong>{modulo}</strong></div>
+            <div className="education-page-title"><span>SoulSul Eleven</span><strong>{modulo}</strong></div>
             <div className="education-top-status"><span className="education-status-dot" />Portal seguro</div>
           </header>
           <div className="education-content">
