@@ -9286,9 +9286,9 @@ textarea::placeholder {
 .education-logout:hover { color: #fff; background: rgba(255,255,255,.06); }
 .education-sidebar-collapsed .education-sidebar { padding-inline: 10px; }
 .education-sidebar-collapsed .education-sidebar-toggle { position: static; align-self: center; order: -2; }
-.education-sidebar-collapsed .education-brand { justify-content: center; min-height: 58px; padding: 0; }
-.education-sidebar-collapsed .education-brand-mark { width: 52px; min-width: 52px; height: 52px; padding: 0; border-radius: 14px; position: relative; }
-.education-sidebar-collapsed .education-brand-mark img { position: absolute; width: 170px; height: auto; max-width: none; max-height: none; top: -3px; left: -78px; }
+.education-sidebar-collapsed .education-brand { justify-content: center; min-height: 62px; padding: 0; }
+.education-sidebar-collapsed .education-brand-mark { width: 56px; min-width: 56px; height: 56px; padding: 4px; border-radius: 14px; position: static; }
+.education-sidebar-collapsed .education-brand-mark img { position: static; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
 .education-sidebar-collapsed .education-sidebar-label,
 .education-sidebar-collapsed .education-main-nav button span,
 .education-sidebar-collapsed .education-user-card > div,
