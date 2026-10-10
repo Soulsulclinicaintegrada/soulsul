@@ -24,11 +24,20 @@ function apiBaseConfigurada() {
   if (!emAmbienteLocal && configuracaoLocal) {
     return apiBasePadrao();
   }
+  // Keep local requests on the same hostname as the UI. Browsers consider
+  // `localhost` and `127.0.0.1` distinct origins, which made large requests
+  // (notably the financial panel) fail intermittently in local development.
+  if (emAmbienteLocal && configuracaoLocal && hostConfigurado !== hostAtual) {
+    return configurada.replace(hostConfigurado || "", hostAtual);
+  }
   return configurada;
 }
 
 const API_BASE_URL = apiBaseConfigurada();
 const API_BASE_FALLBACK_URL = apiBasePadrao();
+const EDUCACAO_API_BASE_URL = typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ? `${window.location.origin}/edu-api`
+  : `${API_BASE_URL}/api/educacao`;
 
 export type PacienteApiPayload = {
   nome: string;
@@ -68,6 +77,14 @@ export type PacienteResumoApi = {
   fotoUrl?: string;
   tratamentoSuspenso?: boolean;
 };
+
+export type AlunoApi = { id: number; codigo:string; nome: string; sexo:string; cpf: string; rg:string; data_nascimento:string; telefone: string; email: string; cep:string; endereco:string; complemento:string; numero:string; bairro:string; cidade:string; estado:string; estado_civil:string; cro:string; profissao:string; origem:string; menor_idade:boolean; responsavel:string; cpf_responsavel:string; indicado_por_aluno:string; indicado_clinica:boolean; observacoes: string; ativo: boolean };
+export type AlunoPayloadApi = Omit<AlunoApi, "id" | "codigo">;
+export type TreinamentoApi = { id: number; nome: string; categoria: string; descricao: string; cargaHoraria: number; valor: number; ativo: boolean; quantidadeTurmas:number; maxAlunosPorTurma:number; dataInicio:string; horarioInicio:string; periodicidade:string; diasHorarios:Record<string,{inicio:string;fim:string}> };
+export type TreinamentoPayloadApi = { nome: string; categoria: string; descricao: string; carga_horaria: number; valor: number; ativo: boolean; quantidade_turmas:number; max_alunos_por_turma:number; data_inicio:string; horario_inicio:string; periodicidade:string; dias_horarios:Record<string,{inicio:string;fim:string}> };
+export type TurmaTreinamentoApi = { id: number; treinamentoId: number; treinamentoNome: string; treinamentoValor:number; nome: string; instrutor: string; dataInicio: string; dataFim: string; horario: string; local: string; vagas: number; matriculados: number; status: string };
+export type TurmaTreinamentoPayloadApi = { treinamento_id: number; nome: string; instrutor: string; data_inicio: string; data_fim: string; horario: string; local: string; vagas: number; status: string };
+export type MatriculaTreinamentoApi = { id: number; alunoId: number; alunoNome: string; turmaId: number; turmaNome: string; treinamentoNome: string; dataMatricula: string; status: string; observacoes: string; valorCurso:number; entrada:number; parcelas:number; formaPagamento:string; contratoDisponivel:boolean };
 
 export type PacienteDetalheApi = {
   id: number;
@@ -985,11 +1002,22 @@ function normalizarErro(detail: unknown, fallback: string) {
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const usuario = nomeUsuarioCabecalho();
+  const metodo = String(init?.method || "GET").toUpperCase();
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (usuario && !headers.has("x-usuario")) {
+  // The user header is used to authorize/audit mutations. Omitting it from
+  // read-only requests keeps GETs simple (no CORS preflight) and avoids a
+  // burst of competing preflights when React mounts a data-heavy page.
+  if (usuario && !["GET", "HEAD", "OPTIONS"].includes(metodo) && !headers.has("x-usuario")) {
     headers.set("x-usuario", usuario);
+  }
+  if ((url.includes("/api/educacao/") || url.includes("/edu-api/")) && !url.endsWith("/auth/login")) {
+    const tokenEducacao = localStorage.getItem("soulsul_educacao_token");
+    if (tokenEducacao) {
+      headers.set("Authorization", `Bearer ${tokenEducacao}`);
+      headers.set("x-educacao-token", tokenEducacao);
+    }
   }
 
   const requestInit: RequestInit = {
@@ -1015,6 +1043,12 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && (url.includes("/api/educacao/") || url.includes("/edu-api/")) && !url.endsWith("/auth/login")) {
+      localStorage.removeItem("soulsul_educacao_token");
+      if (typeof window !== "undefined" && window.location.pathname.startsWith("/educacao")) {
+        window.location.reload();
+      }
+    }
     let body: unknown = null;
     try {
       body = await response.json();
@@ -1033,6 +1067,42 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 export function apiPacientesDisponivel() {
   return Boolean(API_BASE_URL);
 }
+
+export const loginEducacaoApi = (usuario: string, senha: string) => fetchJson<{token:string;usuario:{id:number;nome:string;usuario:string;perfil:string;permissoes:Record<string,boolean>;precisaTrocarSenha:boolean}}>(`${EDUCACAO_API_BASE_URL}/auth/login`, { method: "POST", body: JSON.stringify({usuario, senha}) });
+export const buscarRecursoEducacaoApi = <T,>(recurso: string) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/${recurso}`);
+export const criarRecursoEducacaoApi = <T,>(recurso: string, payload: Record<string, unknown>) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/${recurso}`, { method: "POST", body: JSON.stringify(payload) });
+export const atualizarRecursoEducacaoApi = <T,>(recurso: string, id: number, payload: Record<string, unknown>) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/${recurso}/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const alterarStatusOrcamentoEducacaoApi = (id:number,status:string) => fetchJson<{ok:boolean;documento?:string}>(`${EDUCACAO_API_BASE_URL}/orcamentos/${id}/status`, { method:"PUT", body:JSON.stringify({status}) });
+export const resetarSenhaUsuarioEducacaoApi = (id:number) => fetchJson<{ok:boolean;senhaPadrao:string}>(`${EDUCACAO_API_BASE_URL}/usuarios/${id}/resetar-senha`, { method:"POST" });
+export const trocarSenhaEducacaoApi = (nova_senha:string) => fetchJson<{ok:boolean}>(`${EDUCACAO_API_BASE_URL}/auth/trocar-senha`, { method:"POST", body:JSON.stringify({nova_senha}) });
+export async function baixarContratoEducacaoApi(id:number,nome:string) {
+  const headers=new Headers(); const token=localStorage.getItem("soulsul_educacao_token"); if(token)headers.set("x-educacao-token",token);
+  const response=await fetch(`${EDUCACAO_API_BASE_URL}/orcamentos/${id}/contrato`,{headers});
+  if(!response.ok)throw new Error(`Não foi possível baixar o contrato (${response.status}).`);
+  const url=URL.createObjectURL(await response.blob()); const link=document.createElement("a");link.href=url;link.download=nome;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+export const listarAlunosApi = (q = "") => fetchJson<AlunoApi[]>(`${EDUCACAO_API_BASE_URL}/alunos?q=${encodeURIComponent(q)}`);
+export const criarAlunoApi = (payload: AlunoPayloadApi) => fetchJson<AlunoApi>(`${EDUCACAO_API_BASE_URL}/alunos`, { method: "POST", body: JSON.stringify(payload) });
+export const atualizarAlunoApi = (id: number, payload: AlunoPayloadApi) => fetchJson<AlunoApi>(`${EDUCACAO_API_BASE_URL}/alunos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const excluirAlunoApi = (id: number, payload: { senha_gerencial: string; justificativa: string }) => fetchJson<{ ok: true }>(`${EDUCACAO_API_BASE_URL}/alunos/${id}/desativar`, { method: "POST", body: JSON.stringify(payload) });
+export const listarAlunosExcluidosApi = () => fetchJson<Record<string, any>[]>(`${EDUCACAO_API_BASE_URL}/alunos-excluidos`);
+export const desativarPacienteModeloEducacaoApi = (id: number, payload: { senha_gerencial: string; justificativa: string }) => fetchJson<{ ok: true }>(`${EDUCACAO_API_BASE_URL}/pacientes-modelo/${id}/desativar`, { method: "POST", body: JSON.stringify(payload) });
+export const listarPacientesModeloExcluidosApi = () => fetchJson<Record<string, any>[]>(`${EDUCACAO_API_BASE_URL}/pacientes-modelo-excluidos`);
+export const listarTreinamentosApi = () => fetchJson<TreinamentoApi[]>(`${EDUCACAO_API_BASE_URL}/treinamentos`);
+export const criarTreinamentoApi = (payload: TreinamentoPayloadApi) => fetchJson<TreinamentoApi>(`${EDUCACAO_API_BASE_URL}/treinamentos`, { method: "POST", body: JSON.stringify(payload) });
+export const atualizarTreinamentoApi = (id: number, payload: TreinamentoPayloadApi) => fetchJson<TreinamentoApi>(`${EDUCACAO_API_BASE_URL}/treinamentos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const excluirTreinamentoApi = (id: number) => fetchJson<{ ok: true }>(`${EDUCACAO_API_BASE_URL}/treinamentos/${id}`, { method: "DELETE" });
+export const listarTurmasTreinamentoApi = () => fetchJson<TurmaTreinamentoApi[]>(`${EDUCACAO_API_BASE_URL}/turmas`);
+export const criarTurmaTreinamentoApi = (payload: TurmaTreinamentoPayloadApi) => fetchJson<TurmaTreinamentoApi>(`${EDUCACAO_API_BASE_URL}/turmas`, { method: "POST", body: JSON.stringify(payload) });
+export const atualizarTurmaTreinamentoApi = (id: number, payload: TurmaTreinamentoPayloadApi) => fetchJson<TurmaTreinamentoApi>(`${EDUCACAO_API_BASE_URL}/turmas/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const alterarStatusTurmaEducacaoApi = (id: number, status: string) => fetchJson<{ ok: true }>(`${EDUCACAO_API_BASE_URL}/turmas/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) });
+export const excluirTurmaTreinamentoApi = (id: number) => fetchJson<{ ok: true }>(`${EDUCACAO_API_BASE_URL}/turmas/${id}`, { method: "DELETE" });
+export const listarMatriculasTreinamentoApi = () => fetchJson<MatriculaTreinamentoApi[]>(`${EDUCACAO_API_BASE_URL}/matriculas`);
+export const criarMatriculaTreinamentoApi = (payload:Record<string,unknown>) => fetchJson<MatriculaTreinamentoApi>(`${EDUCACAO_API_BASE_URL}/matriculas`, { method: "POST", body: JSON.stringify(payload) });
+export const excluirMatriculaTreinamentoApi = (id: number) => fetchJson<{ ok: true }>(`${EDUCACAO_API_BASE_URL}/matriculas/${id}`, { method: "DELETE" });
+export const cancelarMatriculaTreinamentoApi = (id:number,payload:Record<string,unknown>) => fetchJson<{ok:true}>(`${EDUCACAO_API_BASE_URL}/matriculas/${id}/cancelar`,{method:"POST",body:JSON.stringify(payload)});
+export async function baixarContratoMatriculaEducacaoApi(id:number,nome:string){const headers=new Headers();const token=localStorage.getItem("soulsul_educacao_token");if(token)headers.set("x-educacao-token",token);const response=await fetch(`${EDUCACAO_API_BASE_URL}/matriculas/${id}/contrato`,{headers});if(!response.ok)throw new Error(`Não foi possível gerar o contrato (${response.status}).`);const url=URL.createObjectURL(await response.blob());const a=document.createElement("a");a.href=url;a.download=nome;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 
 export async function listarPacientesApi(busca: string, limit = 50) {
   const params = new URLSearchParams();
