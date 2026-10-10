@@ -212,10 +212,6 @@ export function EducacaoPortal() {
             <div className="education-brand-mark">
               <img src={logoUrl} alt="SoulSul Eleven" />
             </div>
-            <div className="education-brand-copy">
-              <b>SoulSul Eleven</b>
-              <span>Treinamentos em Odontologia</span>
-            </div>
           </div>
           <div className="education-sidebar-label">GESTÃO ACADÊMICA</div>
           <nav className="education-main-nav" aria-label="Navegação da educação">

@@ -9229,25 +9229,21 @@ textarea::placeholder {
   cursor: pointer;
 }
 .education-sidebar-toggle:hover { background: rgba(224,191,120,.13); }
-.education-brand { display: flex; align-items: center; gap: 12px; min-height: 76px; padding-right: 32px; }
+.education-brand { display: flex; align-items: center; min-height: 132px; padding-right: 32px; }
 .education-brand-mark {
-  width: 56px;
-  min-width: 56px;
-  height: 56px;
+  width: 100%;
+  min-width: 0;
+  height: 118px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  padding: 0;
-  border-radius: 15px;
-  position: relative;
+  padding: 8px 10px;
+  border-radius: 18px;
   background: linear-gradient(145deg, #fffef9, #eee3d1);
   border: 1px solid rgba(223,186,111,.7);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 12px 32px rgba(0,0,0,.28);
 }
-.education-brand-mark img { position: absolute; width: 183px; height: auto; max-width: none; top: -3px; left: -84px; display: block; }
-.education-brand-copy { min-width: 0; display: grid; gap: 4px; white-space: nowrap; }
-.education-brand-copy b { color: #fffdf8; font-family: Georgia, "Times New Roman", serif; font-size: 1rem; font-weight: 700; letter-spacing: .015em; }
-.education-brand-copy span { color: var(--edu-gold-bright); font-size: .54rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.education-brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .education-sidebar-label { padding: 0 10px; color: rgba(248,243,233,.42); font-size: .61rem; font-weight: 800; letter-spacing: .16em; white-space: nowrap; }
 .education-main-nav { display: grid; gap: 5px; padding: 0; overflow: visible auto; scrollbar-width: none; }
 .education-main-nav::-webkit-scrollbar { display: none; }
@@ -9290,9 +9286,8 @@ textarea::placeholder {
 .education-sidebar-collapsed .education-sidebar { padding-inline: 10px; }
 .education-sidebar-collapsed .education-sidebar-toggle { position: static; align-self: center; order: -2; }
 .education-sidebar-collapsed .education-brand { justify-content: center; min-height: 58px; padding: 0; }
-.education-sidebar-collapsed .education-brand-mark { width: 52px; min-width: 52px; height: 52px; border-radius: 14px; }
-.education-sidebar-collapsed .education-brand-mark img { width: 170px; top: -3px; left: -78px; }
-.education-sidebar-collapsed .education-brand-copy,
+.education-sidebar-collapsed .education-brand-mark { width: 52px; min-width: 52px; height: 52px; padding: 0; border-radius: 14px; position: relative; }
+.education-sidebar-collapsed .education-brand-mark img { position: absolute; width: 170px; height: auto; max-width: none; top: -3px; left: -78px; }
 .education-sidebar-collapsed .education-sidebar-label,
 .education-sidebar-collapsed .education-main-nav button span,
 .education-sidebar-collapsed .education-user-card > div,
