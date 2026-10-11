@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { ComissoesPage } from "./ComissoesPage";
+import type { UsuarioSessao } from "./auth";
 import {
   atualizarContaPagarApi,
   atualizarMetaFinanceiraApi,
@@ -376,7 +377,12 @@ function notaFiscalParaForm(item: NotaFiscalEmitidaApi): NotaFiscalForm {
   };
 }
 
-export function FinanceiroPage() {
+type FinanceiroPageProps = {
+  usuarioLogado?: UsuarioSessao | null;
+};
+
+export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
+  const perfilAdministrador = String(usuarioLogado?.perfil || "").trim().toLowerCase() === "administrador";
   const [painel, setPainel] = useState<FinanceiroPainelApi | null>(null);
   const [aba, setAba] = useState<AbaFinanceiro>("caixa");
   const [erro, setErro] = useState<string | null>(null);
@@ -445,9 +451,11 @@ export function FinanceiroPage() {
     void carregarPainel();
   }, [metasAno]);
 
-  const recebiveis = painel?.recebiveis || [];
-  const contasPagar = painel?.contasPagar || [];
-  const caixa = painel?.caixa || [];
+  // Preserve stable array identities while the panel is loading. Fresh `[]` values on
+  // every render retrigger the synchronization effects below and can create a render loop.
+  const recebiveis = useMemo(() => painel?.recebiveis || [], [painel?.recebiveis]);
+  const contasPagar = useMemo(() => painel?.contasPagar || [], [painel?.contasPagar]);
+  const caixa = useMemo(() => painel?.caixa || [], [painel?.caixa]);
   const movimentoEditando = useMemo(
     () => caixa.find((item) => item.id === movimentoEditandoId) || null,
     [caixa, movimentoEditandoId]
@@ -1238,6 +1246,11 @@ export function FinanceiroPage() {
 
   return (
     <section className="module-shell finance-module-shell">
+      {!perfilAdministrador ? (
+        <div className="feedback-banner">
+          Acesso de consulta: movimentações financeiras e confirmações de pagamento exigem aval de um Administrador.
+        </div>
+      ) : null}
       <section className="module-kpis">
         <article className="panel module-kpi-card">
           <span className="panel-kicker">Recebíveis</span>

@@ -2,12 +2,14 @@
   BadgeDollarSign,
   Bell,
   CalendarDays,
-  CircleUserRound,
-  Import,
+  ContactRound,
+  Handshake,
   LayoutDashboard,
-  Settings,
+  ShieldCheck,
   Stethoscope,
+  TableProperties,
   TrendingUp,
+  WalletCards,
   UsersRound
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -114,37 +116,37 @@ export type EventoAgenda = {
   inicio: string;
   fim: string;
   observacoes?: string;
-  financeiro?: "Financeiro Ok" | "RecebÃ­vel pendente";
+  financeiro?: "Financeiro Ok" | "Recebível pendente";
 };
 
 export const menuItems: MenuItem[] = [
   { key: "Dashboard", label: "Dashboard", icon: <LayoutDashboard size={19} /> },
-  { key: "Pacientes", label: "Pacientes", icon: <CircleUserRound size={19} /> },
+  { key: "Pacientes", label: "Pacientes", icon: <ContactRound size={19} /> },
   { key: "Guias", label: "Guias", icon: <ToothIcon size={19} /> },
   { key: "Agenda", label: "Agenda", icon: <CalendarDays size={19} /> },
-  { key: "CRM", label: "CRM", icon: <TrendingUp size={19} /> },
-  { key: "Tabelas", label: "Tabelas", icon: <Import size={19} /> },
-  { key: "Financeiro", label: "Financeiro", icon: <BadgeDollarSign size={19} /> },
-  { key: "Usuários", label: "Usuários", icon: <Settings size={19} /> }
+  { key: "CRM", label: "CRM", icon: <Handshake size={19} /> },
+  { key: "Tabelas", label: "Tabelas", icon: <TableProperties size={19} /> },
+  { key: "Financeiro", label: "Financeiro", icon: <WalletCards size={19} /> },
+  { key: "Usuários", label: "Usuários", icon: <ShieldCheck size={19} /> }
 ];
 
 export const indicadores = [
   {
-    titulo: "Faturamento do mÃªs",
+    titulo: "Faturamento do mês",
     valor: "R$ 142.274,50",
-    detalhe: "MarÃ§o de 2026",
+    detalhe: "Março de 2026",
     icone: <BadgeDollarSign size={20} />
   },
   {
     titulo: "Pacientes atendidos",
     valor: "94",
-    detalhe: "Atendimentos concluÃ­dos",
+    detalhe: "Atendimentos concluídos",
     icone: <UsersRound size={20} />
   },
   {
-    titulo: "Procedimentos do mÃªs",
+    titulo: "Procedimentos do mês",
     valor: "95",
-    detalhe: "ProduÃ§Ã£o clÃ­nica atual",
+    detalhe: "Produção clínica atual",
     icone: <Stethoscope size={20} />
   },
   {
@@ -159,28 +161,28 @@ export const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "S
 export const serieVendas = [38000, 46200, 51200, 48600, 55300, 60700, 58300, 62500, 71200, 69400, 74100, 80500];
 
 export const agendaHoje = [
-  { horario: "08:00", titulo: "Sonia Cristina", subtitulo: "AvaliaÃ§Ã£o Â· Dra Ester" },
-  { horario: "09:45", titulo: "Diego Luiz", subtitulo: "Moldagem Â· Dr Caio" },
-  { horario: "11:00", titulo: "Jovana Pereira", subtitulo: "Retorno Â· Dra Gabriela" }
+  { horario: "08:00", titulo: "Sonia Cristina", subtitulo: "Avaliação · Dra Ester" },
+  { horario: "09:45", titulo: "Diego Luiz", subtitulo: "Moldagem · Dr Caio" },
+  { horario: "11:00", titulo: "Jovana Pereira", subtitulo: "Retorno · Dra Gabriela" }
 ];
 
 export const alertas = [
-  { titulo: "3 inadimplÃªncias crÃ­ticas", detalhe: "RecebÃ­veis vencidos acima de 15 dias" },
-  { titulo: "2 contratos sem recebÃ­vel", detalhe: "ImportaÃ§Ãµes exigem revisÃ£o financeira" },
-  { titulo: "1 paciente sem prontuÃ¡rio", detalhe: "Cadastro rÃ¡pido pendente de complementaÃ§Ã£o" }
+  { titulo: "3 inadimplências críticas", detalhe: "Recebíveis vencidos acima de 15 dias" },
+  { titulo: "2 contratos sem recebível", detalhe: "Importações exigem revisão financeira" },
+  { titulo: "1 paciente sem prontuário", detalhe: "Cadastro rápido pendente de complementação" }
 ];
 
 export const atividades = [
   { paciente: "Mariana Lima", evento: "Contrato aprovado", valor: "R$ 4.800,00", status: "Aprovado" },
   { paciente: "Carlos Souza", evento: "Recebimento confirmado", valor: "R$ 650,00", status: "Pago" },
-  { paciente: "Beatriz Alves", evento: "Nova avaliaÃ§Ã£o", valor: "R$ 0,00", status: "Agendado" },
+  { paciente: "Beatriz Alves", evento: "Nova avaliação", valor: "R$ 0,00", status: "Agendado" },
   { paciente: "Ricardo Melo", evento: "Parcela vencida", valor: "R$ 420,00", status: "Atrasado" }
 ];
 
 export const pacientesMock: Paciente[] = [
   {
     id: 1,
-    nome: "Caroline Garcia GonÃ§alves",
+    nome: "Caroline Garcia Gonçalves",
     apelido: "Carol",
     sexo: "Feminino",
     nascimento: "13/05/1998",
@@ -191,14 +193,14 @@ export const pacientesMock: Paciente[] = [
     estadoCivil: "Solteira",
     prontuario: "2746",
     status: "Ativo",
-    observacoes: "Paciente com foco em reabilitaÃ§Ã£o estÃ©tica e financeira em dia.",
+    observacoes: "Paciente com foco em reabilitação estética e financeira em dia.",
     financeiro: {
       saldo: "R$ 0,00",
       alerta: "ok",
-      proximoRecebimento: "Sem pendÃªncias",
+      proximoRecebimento: "Sem pendências",
       itens: [
-        { descricao: "Parcela 1/4", valor: "R$ 1.250,00", status: "Pago", forma: "CartÃ£o" },
-        { descricao: "Parcela 2/4", valor: "R$ 1.250,00", status: "Pago", forma: "CartÃ£o" },
+        { descricao: "Parcela 1/4", valor: "R$ 1.250,00", status: "Pago", forma: "Cartão" },
+        { descricao: "Parcela 2/4", valor: "R$ 1.250,00", status: "Pago", forma: "Cartão" },
         { descricao: "Parcela 3/4", valor: "R$ 1.250,00", status: "A vencer", forma: "Boleto" }
       ]
     },
@@ -210,7 +212,7 @@ export const pacientesMock: Paciente[] = [
     },
     agendamentos: [
       { data: "22/03/2026", horario: "09:15", procedimento: "Lente de contato dental", status: "Confirmado" },
-      { data: "16/03/2026", horario: "10:30", procedimento: "AvaliaÃ§Ã£o estÃ©tica", status: "Atendido" }
+      { data: "16/03/2026", horario: "10:30", procedimento: "Avaliação estética", status: "Atendido" }
     ],
     contratos: [
       {
@@ -220,18 +222,18 @@ export const pacientesMock: Paciente[] = [
         data: "18/03/2026",
         responsavel: "Juliana Ribeiro",
         procedimentos: [
-          { nome: "Retratamento EndodÃ´ntico", valor: "R$ 2.580,00" },
+          { nome: "Retratamento Endodôntico", valor: "R$ 2.580,00" },
           { nome: "Pino Fibra de Vidro", valor: "R$ 390,00" },
           { nome: "Lente de contato dental", valor: "R$ 4.340,00" }
         ]
       }
     ],
-    documentos: ["Contrato odontolÃ³gico", "Consentimento cirÃºrgico", "AutorizaÃ§Ã£o de boletos"],
+    documentos: ["Contrato odontológico", "Consentimento cirúrgico", "Autorização de boletos"],
     exames: [
       { nome: "Tomografia inicial", tipo: "Tomografia", data: "10/03/2026" },
-      { nome: "RX panorÃ¢mico", tipo: "RX", data: "05/03/2026" }
+      { nome: "RX panorâmico", tipo: "RX", data: "05/03/2026" }
     ],
-    especialidades: ["EstÃ©tica", "PrÃ³tese", "Endodontia"]
+    especialidades: ["Estética", "Prótese", "Endodontia"]
   },
   {
     id: 2,
@@ -246,11 +248,11 @@ export const pacientesMock: Paciente[] = [
     estadoCivil: "Casado",
     prontuario: "379",
     status: "Ativo",
-    observacoes: "Acompanhamento periodontal com recebÃ­veis em aberto.",
+    observacoes: "Acompanhamento periodontal com recebíveis em aberto.",
     financeiro: {
       saldo: "R$ 5.040,00",
       alerta: "atrasado",
-      proximoRecebimento: "10/04/2026 Â· R$ 560,00",
+      proximoRecebimento: "10/04/2026 · R$ 560,00",
       itens: [
         { descricao: "Parcela 1/10", valor: "R$ 560,00", status: "Pago", forma: "Boleto" },
         { descricao: "Parcela 2/10", valor: "R$ 560,00", status: "Atrasado", forma: "Boleto" },
@@ -265,7 +267,7 @@ export const pacientesMock: Paciente[] = [
     },
     agendamentos: [
       { data: "21/03/2026", horario: "14:00", procedimento: "Tratamento periodontal", status: "Agendado" },
-      { data: "12/03/2026", horario: "08:00", procedimento: "Consulta de revisÃ£o", status: "Atendido" }
+      { data: "12/03/2026", horario: "08:00", procedimento: "Consulta de revisão", status: "Atendido" }
     ],
     contratos: [
       {
@@ -286,7 +288,7 @@ export const pacientesMock: Paciente[] = [
   },
   {
     id: 3,
-    nome: "Diego Luiz GonÃ§alves Teixeira Cabral",
+    nome: "Diego Luiz Gonçalves Teixeira Cabral",
     apelido: "Diego",
     sexo: "Masculino",
     nascimento: "18/11/1991",
@@ -297,11 +299,11 @@ export const pacientesMock: Paciente[] = [
     estadoCivil: "Solteiro",
     prontuario: "2767",
     status: "Ativo",
-    observacoes: "Paciente com contrato em execuÃ§Ã£o e boa adesÃ£o clÃ­nica.",
+    observacoes: "Paciente com contrato em execução e boa adesão clínica.",
     financeiro: {
       saldo: "R$ 0,00",
       alerta: "ok",
-      proximoRecebimento: "Sem pendÃªncias",
+      proximoRecebimento: "Sem pendências",
       itens: [{ descricao: "Entrada", valor: "R$ 2.500,00", status: "Pago", forma: "Pix" }]
     },
     proximoAgendamento: {
@@ -321,14 +323,14 @@ export const pacientesMock: Paciente[] = [
         procedimentos: [{ nome: "Moldagem", valor: "R$ 2.500,00" }]
       }
     ],
-    documentos: ["OrÃ§amento aprovado"],
+    documentos: ["Orçamento aprovado"],
     exames: [],
-    especialidades: ["PrÃ³tese"]
+    especialidades: ["Prótese"]
   }
 ];
 
 export const profissionaisAgenda: ProfissionalAgenda[] = [
-  { id: 1, nome: "AvaliaÃ§Ã£o", cor: "#f4b2be", corSuave: "#fbe3e8" },
+  { id: 1, nome: "Avaliação", cor: "#f4b2be", corSuave: "#fbe3e8" },
   { id: 2, nome: "Berenice", cor: "#f6e88f", corSuave: "#fdf7d6" },
   { id: 3, nome: "Dr Ayrton", cor: "#ff8d0a", corSuave: "#ffe6c2" },
   { id: 4, nome: "Dr Caio", cor: "#ff2f2f", corSuave: "#ffd7d7" },
@@ -337,7 +339,7 @@ export const profissionaisAgenda: ProfissionalAgenda[] = [
   { id: 7, nome: "Dra Sophia", cor: "#9f92f0", corSuave: "#e5e1ff" },
   { id: 8, nome: "Fisio Adriel", cor: "#ffb347", corSuave: "#ffe8c8" },
   { id: 9, nome: "Juliana", cor: "#f7a9b8", corSuave: "#fde1e7" },
-  { id: 10, nome: "PsicÃ³loga Caroline", cor: "#7b0000", corSuave: "#eed3d3" },
+  { id: 10, nome: "Psicóloga Caroline", cor: "#7b0000", corSuave: "#eed3d3" },
   { id: 11, nome: "Psicopedagoga Juliana F", cor: "#8c14e7", corSuave: "#eedbff" }
 ];
 
@@ -357,10 +359,10 @@ export const eventosAgendaDia: EventoAgenda[] = [
     prontuario: "2481",
     telefone: "(22) 99811-7702",
     profissionalId: 1,
-    profissional: "AvaliaÃ§Ã£o",
+    profissional: "Avaliação",
     tipoAtendimentoId: 1,
-    tipoAtendimento: "AvaliaÃ§Ã£o",
-    procedimento: "AvaliaÃ§Ã£o estÃ©tica",
+    tipoAtendimento: "Avaliação",
+    procedimento: "Avaliação estética",
     status: "Confirmado",
     data: "20/03/2026",
     inicio: "09:00",
@@ -369,7 +371,7 @@ export const eventosAgendaDia: EventoAgenda[] = [
   },
   {
     id: 2,
-    paciente: "Diego Luiz GonÃ§alves",
+    paciente: "Diego Luiz Gonçalves",
     prontuario: "2767",
     telefone: "(22) 99816-1901",
     profissionalId: 4,
@@ -381,7 +383,7 @@ export const eventosAgendaDia: EventoAgenda[] = [
     data: "20/03/2026",
     inicio: "09:45",
     fim: "10:45",
-    observacoes: "Paciente compareceu no horÃ¡rio.",
+    observacoes: "Paciente compareceu no horário.",
     financeiro: "Financeiro Ok"
   },
   {
@@ -393,7 +395,7 @@ export const eventosAgendaDia: EventoAgenda[] = [
     profissional: "Juliana",
     tipoAtendimentoId: 6,
     tipoAtendimento: "Retorno",
-    procedimento: "Retorno clÃ­nico",
+    procedimento: "Retorno clínico",
     status: "Agendado",
     data: "20/03/2026",
     inicio: "11:00",

@@ -5,13 +5,17 @@ import hashlib
 import hmac
 import secrets
 import json
+import re
 from pathlib import Path
 
 
 DB_PATH = os.getenv("DB_PATH", "clinica.db")
-USUARIO_ADMIN_INICIAL = "admin"
-SENHA_ADMIN_INICIAL = "admin123"
-SENHA_PADRAO_USUARIOS = "soulsul"
+USUARIO_ADMIN_INICIAL = os.getenv("ADMIN_INICIAL_USUARIO", "admin")
+SENHA_ADMIN_INICIAL = os.getenv("ADMIN_INICIAL_SENHA", "admin123")
+SENHA_PADRAO_USUARIOS = os.getenv("SENHA_PADRAO_USUARIOS", "SOULSUL")
+CRIAR_USUARIOS_PADRAO = os.getenv("CRIAR_USUARIOS_PADRAO", "1").strip().lower() in {"1", "true", "sim", "yes"}
+EDUCACAO_ADMIN_USUARIO = os.getenv("EDUCACAO_ADMIN_USUARIO", "").strip()
+EDUCACAO_ADMIN_SENHA = os.getenv("EDUCACAO_ADMIN_SENHA", "").strip()
 
 USUARIOS_PADRAO = [
     {"nome": "Juliana", "usuario": "juliana", "perfil": "Administrador", "cargo": "Administrador", "agenda_escopo": "TODA_CLINICA"},
@@ -251,7 +255,7 @@ def garantir_usuario_admin_inicial(conn):
         """
         INSERT INTO usuarios
         (nome, usuario, senha_hash, perfil, cargo, agenda_escopo, senha_temporaria, precisa_trocar_senha, ativo, acesso_dashboard, acesso_pacientes, acesso_contratos, acesso_financeiro, acesso_usuarios, data_criacao)
-        VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, 1, ?, ?, ?, ?, ?, ?)
         """,
         (
             "Administrador",
@@ -271,6 +275,8 @@ def garantir_usuario_admin_inicial(conn):
 
 
 def garantir_usuarios_padrao(conn):
+    if not CRIAR_USUARIOS_PADRAO:
+        return
     total_usuarios = conn.execute("SELECT COUNT(1) AS total FROM usuarios").fetchone()
     criar_padrao = int((total_usuarios or {})["total"] or 0) <= 1
     for usuario in USUARIOS_PADRAO:
@@ -403,6 +409,310 @@ def garantir_procedimentos_padrao(conn):
 
 def inicializar_banco():
     conn = conectar()
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS treinamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            categoria TEXT,
+            descricao TEXT,
+            carga_horaria REAL DEFAULT 0,
+            valor REAL DEFAULT 0,
+            ativo INTEGER DEFAULT 1,
+            quantidade_turmas INTEGER DEFAULT 1,
+            max_alunos_por_turma INTEGER DEFAULT 0,
+            data_inicio TEXT,
+            horario_inicio TEXT,
+            periodicidade TEXT,
+            dias_horarios_json TEXT DEFAULT '{}',
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS turmas_treinamento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            treinamento_id INTEGER NOT NULL,
+            nome TEXT NOT NULL,
+            instrutor TEXT,
+            data_inicio TEXT,
+            data_fim TEXT,
+            horario TEXT,
+            local TEXT,
+            vagas INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'Turma confirmada',
+            criado_em TEXT,
+            atualizado_em TEXT,
+            FOREIGN KEY (treinamento_id) REFERENCES treinamentos(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alunos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT,
+            nome TEXT NOT NULL,
+            sexo TEXT,
+            cpf TEXT,
+            rg TEXT,
+            data_nascimento TEXT,
+            telefone TEXT,
+            email TEXT,
+            cep TEXT,
+            endereco TEXT,
+            complemento TEXT,
+            numero TEXT,
+            bairro TEXT,
+            cidade TEXT,
+            estado TEXT,
+            estado_civil TEXT,
+            cro TEXT,
+            profissao TEXT,
+            origem TEXT,
+            menor_idade INTEGER DEFAULT 0,
+            responsavel TEXT,
+            cpf_responsavel TEXT,
+            indicado_por_aluno TEXT,
+            indicado_clinica INTEGER DEFAULT 0,
+            observacoes TEXT,
+            ativo INTEGER DEFAULT 1,
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS matriculas_treinamento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            aluno_id INTEGER NOT NULL,
+            turma_id INTEGER NOT NULL,
+            data_matricula TEXT,
+            status TEXT DEFAULT 'Matriculado',
+            valor_curso REAL DEFAULT 0,
+            desconto_percentual REAL DEFAULT 0,
+            desconto_valor REAL DEFAULT 0,
+            entrada REAL DEFAULT 0,
+            parcelas INTEGER DEFAULT 1,
+            forma_pagamento TEXT,
+            plano_pagamento_json TEXT DEFAULT '[]',
+            contrato_path TEXT,
+            observacoes TEXT,
+            criado_em TEXT,
+            atualizado_em TEXT,
+            FOREIGN KEY (aluno_id) REFERENCES alunos(id),
+            FOREIGN KEY (turma_id) REFERENCES turmas_treinamento(id),
+            UNIQUE(aluno_id, turma_id)
+        )
+        """
+    )
+    conn.execute("""CREATE TABLE IF NOT EXISTS usuarios_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, usuario TEXT NOT NULL UNIQUE,
+        senha_hash TEXT NOT NULL, ativo INTEGER DEFAULT 1, precisa_trocar_senha INTEGER DEFAULT 1,
+        ultimo_login TEXT, criado_em TEXT, atualizado_em TEXT
+    )""")
+    garantir_coluna(conn, "usuarios_educacao", "perfil TEXT DEFAULT 'USUARIO'")
+    garantir_coluna(conn, "usuarios_educacao", "permissoes_json TEXT DEFAULT '{}'")
+    garantir_coluna(conn, "usuarios_educacao", "agenda_ativa INTEGER DEFAULT 0")
+    garantir_coluna(conn, "usuarios_educacao", "nome_agenda TEXT")
+    conn.execute("UPDATE usuarios_educacao SET perfil='ADMINISTRADOR' WHERE lower(usuario)=lower(?)", (EDUCACAO_ADMIN_USUARIO,))
+    if int(conn.execute("SELECT COUNT(*) FROM usuarios_educacao WHERE upper(perfil)='ADMINISTRADOR'").fetchone()[0] or 0)==0:
+        primeiro_admin=conn.execute("SELECT id FROM usuarios_educacao ORDER BY id LIMIT 1").fetchone()
+        if primeiro_admin is not None: conn.execute("UPDATE usuarios_educacao SET perfil='ADMINISTRADOR' WHERE id=?",(int(primeiro_admin["id"]),))
+    conn.execute("""CREATE TABLE IF NOT EXISTS sessoes_educacao (
+        token TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL, criado_em TEXT, expira_em TEXT,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios_educacao(id)
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS pacientes_modelo_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER, nome TEXT NOT NULL, prontuario TEXT,
+        apelido TEXT, sexo TEXT, cpf TEXT, rg TEXT, data_nascimento TEXT, telefone TEXT, email TEXT,
+        cep TEXT, endereco TEXT, complemento TEXT, numero TEXT, bairro TEXT, cidade TEXT, estado TEXT,
+        estado_civil TEXT, profissao TEXT, origem TEXT, menor_idade INTEGER DEFAULT 0,
+        responsavel TEXT, cpf_responsavel TEXT, indicado_aluno_id INTEGER, indicado_por_aluno TEXT, indicado_clinica INTEGER DEFAULT 0,
+        procedimento TEXT, observacoes TEXT, ativo INTEGER DEFAULT 1,
+        criado_em TEXT, atualizado_em TEXT
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS contratos_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER, paciente_modelo_id INTEGER,
+        treinamento_id INTEGER, descricao TEXT, valor REAL DEFAULT 0, valor_total REAL DEFAULT 0,
+        entrada REAL DEFAULT 0, parcelas INTEGER DEFAULT 1, forma_pagamento TEXT,
+        plano_pagamento_json TEXT, desconto_percentual REAL DEFAULT 0, desconto_valor REAL DEFAULT 0,
+        validade_orcamento TEXT, status TEXT DEFAULT 'EM_ABERTO', aprovado_por TEXT, data_aprovacao TEXT,
+        data_contrato TEXT, documento_path TEXT, criado_em TEXT, atualizado_em TEXT
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS procedimentos_contrato_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, contrato_id INTEGER NOT NULL, procedimento_id INTEGER,
+        procedimento TEXT NOT NULL, profissional_snapshot TEXT, denticao_snapshot TEXT,
+        valor REAL DEFAULT 0, regioes_json TEXT DEFAULT '[]', ativo INTEGER DEFAULT 1, criado_em TEXT
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS financeiro_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER, contrato_educacao_id INTEGER, matricula_id INTEGER,
+        descricao TEXT, tipo TEXT, categoria TEXT, valor REAL DEFAULT 0, data_vencimento TEXT,
+        data_pagamento TEXT, status TEXT DEFAULT 'Em aberto', forma_pagamento TEXT,
+        criado_em TEXT, atualizado_em TEXT
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS configuracoes_financeiro_educacao (
+        id INTEGER PRIMARY KEY CHECK (id=1), contas_json TEXT DEFAULT '[]',
+        maquinas_json TEXT DEFAULT '[]', taxas_json TEXT DEFAULT '{}',
+        parcelas_maximas INTEGER DEFAULT 12, descontos_json TEXT DEFAULT '{}',
+        atualizado_em TEXT
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS procedimentos_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, categoria TEXT,
+        descricao TEXT, valor REAL DEFAULT 0, duracao_minutos INTEGER DEFAULT 60,
+        ativo INTEGER DEFAULT 1, criado_em TEXT, atualizado_em TEXT
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS agenda_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL, hora_inicio TEXT,
+        hora_fim TEXT, aluno_id INTEGER, paciente_modelo_id INTEGER, turma_id INTEGER,
+        titulo TEXT NOT NULL, responsavel TEXT, local TEXT, status TEXT DEFAULT 'Agendado',
+        observacoes TEXT, criado_em TEXT, atualizado_em TEXT
+    )""")
+    for definicao in (
+        "procedimento_id INTEGER", "guia_id INTEGER", "tipo_atendimento TEXT",
+        "criado_por TEXT", "cancelado_motivo TEXT",
+    ):
+        garantir_coluna(conn, "agenda_educacao", definicao)
+    conn.execute("""CREATE TABLE IF NOT EXISTS guias_educacao (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, paciente_modelo_id INTEGER,
+        aluno_id INTEGER, turma_id INTEGER, procedimento_id INTEGER,
+        descricao TEXT, status TEXT DEFAULT 'Pendente', data_solicitacao TEXT,
+        data_conclusao TEXT, responsavel TEXT, observacoes TEXT,
+        criado_em TEXT, atualizado_em TEXT
+    )""")
+    for definicao in (
+        "procedimento_nome_snapshot TEXT", "material TEXT", "material_outro TEXT",
+        "cor TEXT", "escala TEXT", "elemento_arcada TEXT",
+        "carga_imediata INTEGER DEFAULT 0", "retorno_solicitado TEXT",
+        "documento_nome TEXT", "criado_por TEXT",
+    ):
+        garantir_coluna(conn, "guias_educacao", definicao)
+    conn.execute("""CREATE TABLE IF NOT EXISTS guia_educacao_etapas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, guia_id INTEGER NOT NULL,
+        etapa TEXT, descricao_outro TEXT, criado_em TEXT
+    )""")
+    for definicao in (
+        "prontuario TEXT", "apelido TEXT", "sexo TEXT", "rg TEXT", "data_nascimento TEXT",
+        "email TEXT", "cep TEXT", "endereco TEXT", "complemento TEXT", "numero TEXT",
+        "bairro TEXT", "cidade TEXT", "estado TEXT", "estado_civil TEXT", "profissao TEXT",
+        "origem TEXT", "menor_idade INTEGER DEFAULT 0", "responsavel TEXT", "cpf_responsavel TEXT",
+        "indicado_aluno_id INTEGER", "indicado_por_aluno TEXT", "indicado_clinica INTEGER DEFAULT 0",
+    ):
+        garantir_coluna(conn, "pacientes_modelo_educacao", definicao)
+    usados_educacao = set()
+    for row in conn.execute("SELECT id, prontuario FROM pacientes_modelo_educacao ORDER BY id").fetchall():
+        prontuario_atual = str(row["prontuario"] or "").strip().upper()
+        if re.fullmatch(r"T\d+", prontuario_atual):
+            prontuario_atual = f"P{int(prontuario_atual[1:]):03d}"
+        if prontuario_atual and prontuario_atual not in usados_educacao:
+            conn.execute("UPDATE pacientes_modelo_educacao SET prontuario=? WHERE id=?", (prontuario_atual, int(row["id"])))
+            usados_educacao.add(prontuario_atual)
+            continue
+        numero_educacao = 1
+        while f"P{numero_educacao:03d}" in usados_educacao:
+            numero_educacao += 1
+        novo_prontuario = f"P{numero_educacao:03d}"
+        conn.execute("UPDATE pacientes_modelo_educacao SET prontuario=? WHERE id=?", (novo_prontuario, int(row["id"])))
+        usados_educacao.add(novo_prontuario)
+    for definicao in (
+        "valor_total REAL DEFAULT 0", "entrada REAL DEFAULT 0", "parcelas INTEGER DEFAULT 1",
+        "forma_pagamento TEXT", "plano_pagamento_json TEXT", "desconto_percentual REAL DEFAULT 0",
+        "desconto_valor REAL DEFAULT 0", "validade_orcamento TEXT", "aprovado_por TEXT",
+        "data_aprovacao TEXT", "documento_path TEXT",
+    ):
+        garantir_coluna(conn, "contratos_educacao", definicao)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_pacientes_modelo_educacao_prontuario ON pacientes_modelo_educacao(prontuario)")
+    garantir_coluna(conn, "alunos", "ativo INTEGER DEFAULT 1")
+    for definicao in (
+        "quantidade_turmas INTEGER DEFAULT 1", "max_alunos_por_turma INTEGER DEFAULT 0",
+        "data_inicio TEXT", "horario_inicio TEXT", "periodicidade TEXT", "dias_horarios_json TEXT DEFAULT '{}'",
+    ):
+        garantir_coluna(conn, "treinamentos", definicao)
+    for treinamento in conn.execute("SELECT * FROM treinamentos WHERE ativo=1 ORDER BY id").fetchall():
+        existentes = int(conn.execute("SELECT COUNT(*) FROM turmas_treinamento WHERE treinamento_id=?", (int(treinamento["id"]),)).fetchone()[0] or 0)
+        desejadas = max(1, int(treinamento["quantidade_turmas"] or 1))
+        if existentes >= desejadas:
+            continue
+        try:
+            dias = json.loads(treinamento["dias_horarios_json"] or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            dias = {}
+        horarios = "; ".join(
+            f"{dia}: {dados.get('inicio', '')}–{dados.get('fim', '')}"
+            for dia, dados in dias.items() if isinstance(dados, dict)
+        )
+        agora_turmas = agora_str()
+        for indice in range(existentes + 1, desejadas + 1):
+            conn.execute(
+                """INSERT INTO turmas_treinamento
+                (treinamento_id,nome,instrutor,data_inicio,data_fim,horario,local,vagas,status,criado_em,atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (int(treinamento["id"]), f"Turma {indice}", "", treinamento["data_inicio"] or "", "",
+                 f"{treinamento['periodicidade'] or 'Semanal'}: {horarios}".strip(": "), "",
+                 max(0, int(treinamento["max_alunos_por_turma"] or 0)), "Turma confirmada", agora_turmas, agora_turmas),
+            )
+    conn.execute("""UPDATE turmas_treinamento SET status='Turma confirmada'
+        WHERE COALESCE(status,'')='' OR status IN ('Planejada','Inscrições abertas','Confirmada')""")
+    conn.execute("UPDATE turmas_treinamento SET status='Turma em andamento' WHERE status='Em andamento'")
+    conn.execute("UPDATE turmas_treinamento SET status='Turma encerrada' WHERE status='Concluída'")
+    conn.execute("UPDATE turmas_treinamento SET status='Turma cancelada' WHERE status='Cancelada'")
+    garantir_coluna(conn, "alunos", "observacoes TEXT")
+    garantir_coluna(conn, "alunos", "criado_em TEXT")
+    garantir_coluna(conn, "alunos", "atualizado_em TEXT")
+    for definicao in (
+        "codigo TEXT", "sexo TEXT", "rg TEXT", "data_nascimento TEXT", "cep TEXT", "endereco TEXT",
+        "complemento TEXT", "numero TEXT", "bairro TEXT", "cidade TEXT", "estado TEXT", "estado_civil TEXT", "cro TEXT",
+        "profissao TEXT", "origem TEXT", "menor_idade INTEGER DEFAULT 0", "responsavel TEXT",
+        "cpf_responsavel TEXT", "indicado_por_aluno TEXT", "indicado_clinica INTEGER DEFAULT 0",
+    ):
+        garantir_coluna(conn, "alunos", definicao)
+    codigos_alunos = set()
+    for row in conn.execute("SELECT id, codigo FROM alunos ORDER BY id").fetchall():
+        codigo = str(row["codigo"] or "").strip().upper()
+        if not re.fullmatch(r"A\d+", codigo) or codigo in codigos_alunos:
+            numero_aluno = 1
+            while f"A{numero_aluno:03d}" in codigos_alunos:
+                numero_aluno += 1
+            codigo = f"A{numero_aluno:03d}"
+            conn.execute("UPDATE alunos SET codigo=? WHERE id=?", (codigo, int(row["id"])))
+        codigos_alunos.add(codigo)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_alunos_codigo ON alunos(codigo)")
+    for definicao in (
+        "valor_curso REAL DEFAULT 0", "desconto_percentual REAL DEFAULT 0", "desconto_valor REAL DEFAULT 0",
+        "entrada REAL DEFAULT 0", "parcelas INTEGER DEFAULT 1", "forma_pagamento TEXT",
+        "plano_pagamento_json TEXT DEFAULT '[]'", "contrato_path TEXT",
+    ):
+        garantir_coluna(conn, "matriculas_treinamento", definicao)
+    for tabela in ("alunos", "pacientes_modelo_educacao"):
+        garantir_coluna(conn, tabela, "excluido_em TEXT")
+        garantir_coluna(conn, tabela, "excluido_motivo TEXT")
+        garantir_coluna(conn, tabela, "excluido_por TEXT")
+    garantir_coluna(conn, "financeiro_educacao", "matricula_id INTEGER")
+    for definicao in (
+        "paciente_modelo_id INTEGER", "origem TEXT", "parcela TEXT", "conta_caixa TEXT",
+        "operadora_cartao TEXT", "bandeira_cartao TEXT", "valor_bruto REAL DEFAULT 0",
+        "taxa_valor REAL DEFAULT 0", "valor_liquido REAL DEFAULT 0", "observacoes TEXT",
+    ):
+        garantir_coluna(conn, "financeiro_educacao", definicao)
+    garantir_coluna(conn, "configuracoes_financeiro_educacao", "parcelas_boleto INTEGER DEFAULT 1")
+    garantir_coluna(conn, "configuracoes_financeiro_educacao", "parcelas_cartao INTEGER DEFAULT 12")
+    ambiente_producao = os.getenv("APP_ENV", "development").strip().lower() in {"production", "producao", "prod"}
+    usuario_admin_educacao = EDUCACAO_ADMIN_USUARIO or ("educacao.admin" if not ambiente_producao else "")
+    senha_admin_educacao = EDUCACAO_ADMIN_SENHA or (SENHA_ADMIN_INICIAL if not ambiente_producao else "")
+    if usuario_admin_educacao and senha_admin_educacao:
+        existente_educacao = conn.execute(
+            "SELECT id FROM usuarios_educacao WHERE lower(usuario)=lower(?)", (usuario_admin_educacao,)
+        ).fetchone()
+        if existente_educacao is None:
+            agora = agora_str()
+            conn.execute(
+                "INSERT INTO usuarios_educacao (nome,usuario,senha_hash,ativo,precisa_trocar_senha,perfil,permissoes_json,criado_em,atualizado_em) VALUES (?,?,?,?,?,?,?,?,?)",
+                ("Administrador Educação", usuario_admin_educacao, gerar_hash_senha(senha_admin_educacao), 1, 1, "ADMINISTRADOR", "{}", agora, agora),
+            )
 
     conn.execute(
         """
@@ -743,6 +1053,106 @@ def inicializar_banco():
             criado_por TEXT,
             criado_em TEXT,
             automatico INTEGER DEFAULT 0
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS plano_tratamento_procedimentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            paciente_id INTEGER NOT NULL,
+            contrato_id INTEGER,
+            procedimento_contrato_id INTEGER,
+            procedimento_id INTEGER,
+            procedimento_nome TEXT NOT NULL,
+            status TEXT DEFAULT 'Planejado',
+            observacao TEXT,
+            criado_por TEXT,
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS plano_tratamento_passos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plano_procedimento_id INTEGER NOT NULL,
+            titulo TEXT NOT NULL,
+            ordem INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'Pendente',
+            data_prevista TEXT,
+            data_realizacao TEXT,
+            observacao TEXT,
+            criado_por TEXT,
+            criado_em TEXT,
+            atualizado_em TEXT,
+            FOREIGN KEY (plano_procedimento_id) REFERENCES plano_tratamento_procedimentos(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crm_conversas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            crm_id INTEGER,
+            paciente_id INTEGER,
+            canal TEXT NOT NULL,
+            contato_nome TEXT,
+            contato_telefone TEXT,
+            contato_instagram TEXT,
+            externo_usuario_id TEXT,
+            externo_conversa_id TEXT,
+            etapa_funil TEXT DEFAULT 'Novo lead',
+            responsavel TEXT,
+            ultima_mensagem TEXT,
+            ultima_mensagem_em TEXT,
+            ultima_mensagem_sentido TEXT,
+            nao_lidas INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'aberta',
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crm_mensagens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversa_id INTEGER NOT NULL,
+            crm_id INTEGER,
+            paciente_id INTEGER,
+            canal TEXT NOT NULL,
+            mensagem_externa_id TEXT,
+            status_externo_id TEXT,
+            remetente_externo_id TEXT,
+            direcao TEXT NOT NULL,
+            remetente_tipo TEXT NOT NULL,
+            tipo_mensagem TEXT DEFAULT 'text',
+            conteudo TEXT,
+            midia_url TEXT,
+            status_envio TEXT DEFAULT 'received',
+            erro_envio TEXT,
+            metadata_json TEXT DEFAULT '{}',
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crm_webhook_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canal TEXT NOT NULL,
+            evento_externo_id TEXT NOT NULL,
+            tipo_evento TEXT,
+            payload_json TEXT,
+            processado_em TEXT
         )
         """
     )
@@ -1238,6 +1648,7 @@ def inicializar_banco():
     garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
     garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
     garantir_coluna(conn, "contratos", "incluir_total_vendido INTEGER DEFAULT 1")
+    garantir_coluna(conn, "pacientes", "criado_em TEXT")
     garantir_coluna(conn, "pacientes", "numero TEXT")
     garantir_coluna(conn, "pacientes", "bairro TEXT")
     garantir_coluna(conn, "pacientes", "cidade TEXT")
@@ -1295,6 +1706,45 @@ def inicializar_banco():
     garantir_coluna(conn, "crm_contatos_historico", "criado_por TEXT")
     garantir_coluna(conn, "crm_contatos_historico", "criado_em TEXT")
     garantir_coluna(conn, "crm_contatos_historico", "automatico INTEGER DEFAULT 0")
+    garantir_coluna(conn, "crm_conversas", "crm_id INTEGER")
+    garantir_coluna(conn, "crm_conversas", "paciente_id INTEGER")
+    garantir_coluna(conn, "crm_conversas", "canal TEXT")
+    garantir_coluna(conn, "crm_conversas", "contato_nome TEXT")
+    garantir_coluna(conn, "crm_conversas", "contato_telefone TEXT")
+    garantir_coluna(conn, "crm_conversas", "contato_instagram TEXT")
+    garantir_coluna(conn, "crm_conversas", "externo_usuario_id TEXT")
+    garantir_coluna(conn, "crm_conversas", "externo_conversa_id TEXT")
+    garantir_coluna(conn, "crm_conversas", "etapa_funil TEXT DEFAULT 'Novo lead'")
+    garantir_coluna(conn, "crm_conversas", "responsavel TEXT")
+    garantir_coluna(conn, "crm_conversas", "ultima_mensagem TEXT")
+    garantir_coluna(conn, "crm_conversas", "ultima_mensagem_em TEXT")
+    garantir_coluna(conn, "crm_conversas", "ultima_mensagem_sentido TEXT")
+    garantir_coluna(conn, "crm_conversas", "nao_lidas INTEGER DEFAULT 0")
+    garantir_coluna(conn, "crm_conversas", "status TEXT DEFAULT 'aberta'")
+    garantir_coluna(conn, "crm_conversas", "criado_em TEXT")
+    garantir_coluna(conn, "crm_conversas", "atualizado_em TEXT")
+    garantir_coluna(conn, "crm_mensagens", "conversa_id INTEGER")
+    garantir_coluna(conn, "crm_mensagens", "crm_id INTEGER")
+    garantir_coluna(conn, "crm_mensagens", "paciente_id INTEGER")
+    garantir_coluna(conn, "crm_mensagens", "canal TEXT")
+    garantir_coluna(conn, "crm_mensagens", "mensagem_externa_id TEXT")
+    garantir_coluna(conn, "crm_mensagens", "status_externo_id TEXT")
+    garantir_coluna(conn, "crm_mensagens", "remetente_externo_id TEXT")
+    garantir_coluna(conn, "crm_mensagens", "direcao TEXT")
+    garantir_coluna(conn, "crm_mensagens", "remetente_tipo TEXT")
+    garantir_coluna(conn, "crm_mensagens", "tipo_mensagem TEXT DEFAULT 'text'")
+    garantir_coluna(conn, "crm_mensagens", "conteudo TEXT")
+    garantir_coluna(conn, "crm_mensagens", "midia_url TEXT")
+    garantir_coluna(conn, "crm_mensagens", "status_envio TEXT DEFAULT 'received'")
+    garantir_coluna(conn, "crm_mensagens", "erro_envio TEXT")
+    garantir_coluna(conn, "crm_mensagens", "metadata_json TEXT DEFAULT '{}'")
+    garantir_coluna(conn, "crm_mensagens", "criado_em TEXT")
+    garantir_coluna(conn, "crm_mensagens", "atualizado_em TEXT")
+    garantir_coluna(conn, "crm_webhook_eventos", "canal TEXT")
+    garantir_coluna(conn, "crm_webhook_eventos", "evento_externo_id TEXT")
+    garantir_coluna(conn, "crm_webhook_eventos", "tipo_evento TEXT")
+    garantir_coluna(conn, "crm_webhook_eventos", "payload_json TEXT")
+    garantir_coluna(conn, "crm_webhook_eventos", "processado_em TEXT")
     conn.execute(
         """
         UPDATE agendamentos
@@ -1372,6 +1822,15 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_laboratorio ON ordens_servico_protetico(laboratorio_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_movimentacoes_ordem ON ordem_servico_movimentacoes(ordem_servico_id)")
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pacientes_paciente_id ON crm_pacientes(paciente_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_conversas_paciente_id ON crm_conversas(paciente_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_conversas_crm_id ON crm_conversas(crm_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_conversas_canal ON crm_conversas(canal)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_conversas_externo_usuario ON crm_conversas(canal, externo_usuario_id)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_conversas_externo_conversa ON crm_conversas(canal, externo_conversa_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_mensagens_conversa_id ON crm_mensagens(conversa_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_mensagens_criado_em ON crm_mensagens(criado_em)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_mensagens_externa_id ON crm_mensagens(canal, mensagem_externa_id)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_webhook_eventos_externo_id ON crm_webhook_eventos(canal, evento_externo_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_retorno_crm ON contratos(data_retorno_crm)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
@@ -1385,8 +1844,15 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_profissionais_ativo_ordem ON profissionais(ativo, ordem_exibicao)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_tipos_atendimento_ativo_ordem ON tipos_atendimento(ativo, ordem_exibicao)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_procedimentos_ativo_categoria ON procedimentos(ativo, categoria)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_plano_tratamento_paciente ON plano_tratamento_procedimentos(paciente_id, id)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_plano_tratamento_proc_contrato ON plano_tratamento_procedimentos(procedimento_contrato_id) WHERE procedimento_contrato_id IS NOT NULL")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_plano_tratamento_passos_procedimento ON plano_tratamento_passos(plano_procedimento_id, ordem, id)")
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_metas_mensais_ano_mes ON metas_mensais(ano, mes)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_notas_fiscais_competencia ON notas_fiscais_emitidas(competencia, data_emissao)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_turmas_treinamento ON turmas_treinamento(treinamento_id, data_inicio)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_matriculas_aluno ON matriculas_treinamento(aluno_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_matriculas_turma ON matriculas_treinamento(turma_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_alunos_nome ON alunos(nome)")
 
     conn.execute(
         """

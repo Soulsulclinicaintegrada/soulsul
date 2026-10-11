@@ -44,7 +44,7 @@ type PadraoAcessoCargo = {
   pacientesAbas: Record<string, NivelPermissao>;
 };
 
-const MODULOS_BASE = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"] as const;
+const MODULOS_BASE = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Educacao", "Tabelas", "Usuarios"] as const;
 const ABAS_PACIENTES = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"] as const;
 const OPCOES_PERMISSAO: NivelPermissao[] = ["Sem acesso", "Visualizacao", "Edicao"];
 const CHAVES_PADRAO_CARGO: Record<CargoUsuario, string> = {
@@ -131,6 +131,7 @@ function fallbackPermissoesRecepcionista() {
   modulos.Agenda = "Edicao";
   modulos.CRM = "Edicao";
   modulos.Financeiro = "Visualizacao";
+  modulos.Educacao = "Edicao";
   pacientesAbas.Cadastro = "Edicao";
   pacientesAbas.Orcamentos = "Visualizacao";
   pacientesAbas.Financeiro = "Visualizacao";
@@ -219,7 +220,7 @@ export function UsuariosPage() {
     status: "Ativo" as "Ativo" | "Inativo"
   });
   const [dataRelatorio, setDataRelatorio] = useState(hojeIso);
-  const [senhaAdmin, setSenhaAdmin] = useState({ aberta: false, nova: "", confirmar: "", erro: "", sucesso: "" });
+  const [resetandoSenha, setResetandoSenha] = useState(false);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
   const [feedbackPerfil, setFeedbackPerfil] = useState("");
 
@@ -429,25 +430,19 @@ export function UsuariosPage() {
 
   async function redefinirSenhaUsuarioSelecionado() {
     if (!usuarioSelecionado) return;
-    const nova = senhaAdmin.nova.trim();
-    const confirmar = senhaAdmin.confirmar.trim();
-    if (!nova || !confirmar) {
-      setSenhaAdmin((atual) => ({ ...atual, erro: "Preencha e confirme a nova senha.", sucesso: "" }));
-      return;
-    }
-    if (nova !== confirmar) {
-      setSenhaAdmin((atual) => ({ ...atual, erro: "As senhas nao conferem.", sucesso: "" }));
-      return;
-    }
+    const confirmou = window.confirm(
+      `Resetar a senha de ${usuarioSelecionado.nome}?\n\nA senha voltará ao padrão e o usuário deverá criar uma nova no próximo acesso.`
+    );
+    if (!confirmou) return;
     try {
-      await redefinirSenhaUsuarioApi(usuarioSelecionado.id, { nova_senha: nova });
-      setSenhaAdmin({ aberta: false, nova: "", confirmar: "", erro: "", sucesso: "Senha alterada com sucesso." });
+      setResetandoSenha(true);
+      setFeedbackPerfil("");
+      await redefinirSenhaUsuarioApi(usuarioSelecionado.id);
+      setFeedbackPerfil("Senha resetada com sucesso para o padrão. A troca será obrigatória no próximo acesso.");
     } catch (error) {
-      setSenhaAdmin((atual) => ({
-        ...atual,
-        erro: error instanceof Error ? error.message : "Falha ao alterar a senha.",
-        sucesso: ""
-      }));
+      setFeedbackPerfil(error instanceof Error ? error.message : "Falha ao resetar a senha.");
+    } finally {
+      setResetandoSenha(false);
     }
   }
 
@@ -663,7 +658,7 @@ export function UsuariosPage() {
               >
                 <div>
                   <strong>{usuario.nome}</strong>
-                  <span>{usuario.cargo} Â· ultimo acesso {usuario.ultimoAcesso}</span>
+                  <span>{usuario.cargo} · último acesso {usuario.ultimoAcesso}</span>
                 </div>
                 <div className="module-subitem-right">
                   <strong>{Object.values(usuario.modulos).filter((item) => item !== "Sem acesso").length} modulos</strong>
@@ -770,45 +765,16 @@ export function UsuariosPage() {
                   <button
                     type="button"
                     className="ghost-action"
-                    onClick={() => setSenhaAdmin({ aberta: true, nova: "", confirmar: "", erro: "", sucesso: "" })}
+                    onClick={redefinirSenhaUsuarioSelecionado}
+                    disabled={resetandoSenha}
                   >
-                    Alterar senha
+                    {resetandoSenha ? "Resetando senha..." : "Resetar senha"}
                   </button>
                   <button type="button" className="ghost-action danger" onClick={excluirUsuarioSelecionado}>
                     Excluir usuário
                   </button>
                 </div>
                 {feedbackPerfil ? <p className={`users-password-feedback ${feedbackPerfil.includes("sucesso") ? "success" : "error"}`}>{feedbackPerfil}</p> : null}
-                {senhaAdmin.sucesso ? <p className="users-password-feedback success">{senhaAdmin.sucesso}</p> : null}
-                {senhaAdmin.aberta ? (
-                  <div className="users-password-panel">
-                    <label>
-                      <span>Nova senha</span>
-                      <input
-                        type="password"
-                        value={senhaAdmin.nova}
-                        onChange={(e) => setSenhaAdmin((atual) => ({ ...atual, nova: e.target.value, erro: "", sucesso: "" }))}
-                      />
-                    </label>
-                    <label>
-                      <span>Confirmar nova senha</span>
-                      <input
-                        type="password"
-                        value={senhaAdmin.confirmar}
-                        onChange={(e) => setSenhaAdmin((atual) => ({ ...atual, confirmar: e.target.value, erro: "", sucesso: "" }))}
-                      />
-                    </label>
-                    {senhaAdmin.erro ? <p className="users-password-feedback error">{senhaAdmin.erro}</p> : null}
-                    <div className="users-template-actions">
-                      <button type="button" className="ghost-action" onClick={() => setSenhaAdmin({ aberta: false, nova: "", confirmar: "", erro: "", sucesso: "" })}>
-                        Cancelar
-                      </button>
-                      <button type="button" className="primary-action" onClick={redefinirSenhaUsuarioSelecionado}>
-                        Salvar nova senha
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
               </section>
 
               <section className="users-permission-section">

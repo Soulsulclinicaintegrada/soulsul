@@ -1,6 +1,6 @@
 ﻿import { LogOut, Menu, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CheckSquare2, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import { CheckSquare2, KeyRound, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
 import logoUrl from "./assets/logo-soul-sul.png";
 import { carregarUsuarioSessao, salvarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { AgendaPage } from "./AgendaPage";
@@ -34,6 +34,7 @@ type NavegacaoPaciente = {
 
 // Rotinas temporariamente retiradas da interface para revisao do fluxo e das permissoes.
 const ROTINAS_ATIVAS = false;
+const SIDEBAR_PREFERENCE_KEY = "soulsul.sidebar.expanded";
 
 const MENU_TO_MODULO: Record<MenuKey, string> = {
   Dashboard: "Dashboard",
@@ -81,6 +82,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
     Agenda: "Sem acesso",
     CRM: "Sem acesso",
     Financeiro: "Sem acesso",
+    Educacao: "Sem acesso",
     Tabelas: "Sem acesso",
     Usuarios: "Sem acesso"
   };
@@ -119,6 +121,7 @@ function permissoesPadraoSessao(usuario?: UsuarioSessao | null) {
   modulos.Agenda = "Edicao";
   modulos.CRM = "Edicao";
   modulos.Financeiro = "Visualizacao";
+  modulos.Educacao = "Edicao";
   pacientesAbas.Cadastro = "Edicao";
   pacientesAbas.Orcamentos = "Visualizacao";
   pacientesAbas.Financeiro = "Visualizacao";
@@ -141,7 +144,9 @@ function mesclarPermissoes(
   const modulos = Object.fromEntries(
     Object.keys(padrao.modulos).map((chave) => [
       chave,
-      temModulosSalvos ? textoPermissao(nivelPermissao(modulosSalvos[chave])) : padrao.modulos[chave]
+      temModulosSalvos && modulosSalvos[chave] !== undefined
+        ? textoPermissao(nivelPermissao(modulosSalvos[chave]))
+        : padrao.modulos[chave]
     ])
   );
   const pacientesAbas = Object.fromEntries(
@@ -158,7 +163,13 @@ function App() {
   const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Agenda");
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [sidebarOverlayAberta, setSidebarOverlayAberta] = useState(false);
-  const [menuExpandido, setMenuExpandido] = useState(() => localStorage.getItem("soulsul.clinica.sidebar.expanded") !== "false");
+  const [sidebarExpandida, setSidebarExpandida] = useState(() => {
+    try {
+      return window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [navegacaoPaciente, setNavegacaoPaciente] = useState<NavegacaoPaciente | null>(null);
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioSessao | null>(carregarUsuarioSessao());
   const [usuariosSistema, setUsuariosSistema] = useState<UsuarioResumoApi[]>([]);
@@ -188,6 +199,14 @@ function App() {
     [modulosUsuario]
   );
   const acessoModuloAtual = nivelPermissao(modulosUsuario[MENU_TO_MODULO[menuAtivo]]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_PREFERENCE_KEY, String(sidebarExpandida));
+    } catch {
+      // O sistema continua funcional quando o navegador bloqueia o armazenamento local.
+    }
+  }, [sidebarExpandida]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -355,7 +374,7 @@ function App() {
     if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar paciente" };
     if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar paciente" };
     if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar paciente" };
-    return { titulo: "Usuarios", busca: "Buscar paciente" };
+    return { titulo: "Usuários", busca: "Buscar paciente" };
   }, [menuAtivo]);
 
   const checklistResumo = checklistPainel?.resumo;
@@ -563,7 +582,7 @@ function App() {
         />
       );
     }
-    if (menuAtivo === "Financeiro") return <FinanceiroPage />;
+    if (menuAtivo === "Financeiro") return <FinanceiroPage usuarioLogado={usuarioLogado} />;
     if (menuAtivo === "Tabelas") return <ImportacoesPage />;
     if (menuAtivo === "Usuários") return <UsuariosPage />;
     return null;
@@ -695,11 +714,11 @@ function App() {
   }
 
   return (
-    <div className={`shell${agendaEmFoco ? " agenda-focus" : ""}${!agendaEmFoco && !menuExpandido ? " sidebar-collapsed" : ""}`}>
+    <div className={`shell${agendaEmFoco ? " agenda-focus" : ""}${sidebarExpandida ? " sidebar-expanded" : " sidebar-collapsed"}`}>
       <div className="app-ambient app-ambient-one" />
       <div className="app-ambient app-ambient-two" />
 
-      {agendaEmFoco && sidebarOverlayAberta ? (
+      {sidebarOverlayAberta ? (
         <button type="button" className="sidebar-overlay-backdrop" aria-label="Fechar menu" onClick={() => setSidebarOverlayAberta(false)} />
       ) : null}
 
@@ -1051,30 +1070,36 @@ function App() {
         </div>
       ) : null}
 
-      <aside className={`sidebar${agendaEmFoco ? " sidebar-floating" : ""}${sidebarOverlayAberta ? " open" : ""}`}>
+      <aside className={`sidebar${sidebarOverlayAberta ? " open" : ""}`} aria-label="Navegação principal">
         <button
-          className="sidebar-collapse-toggle"
           type="button"
-          aria-label={menuExpandido ? "Recolher menu" : "Expandir menu"}
-          title={menuExpandido ? "Recolher menu" : "Expandir menu"}
-          onClick={() => setMenuExpandido((atual) => {
-            const proximo = !atual;
-            localStorage.setItem("soulsul.clinica.sidebar.expanded", String(proximo));
-            return proximo;
-          })}
+          className="sidebar-toggle"
+          aria-label={sidebarExpandida ? "Recolher menu lateral" : "Expandir menu lateral"}
+          aria-expanded={sidebarExpandida}
+          title={sidebarExpandida ? "Recolher menu" : "Expandir menu"}
+          onClick={() => setSidebarExpandida((atual) => !atual)}
         >
-          {menuExpandido ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
+          {sidebarExpandida ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
         </button>
         <div className="brand-card">
           <div className="brand-logo-wrap">
             <img className="brand-logo" src={logoUrl} alt="SoulSul" />
           </div>
+          <div className="brand-title">SoulSul</div>
         </div>
 
         <div className="sidebar-section-title">Menu</div>
         <nav className="menu-list">
           {menuDisponivel.map((item) => (
-            <button key={item.key} className={`menu-item${menuAtivo === item.key ? " active" : ""}`} type="button" aria-label={item.label} title={!menuExpandido ? item.label : undefined} onClick={() => selecionarMenu(item.key)}>
+            <button
+              key={item.key}
+              className={`menu-item${menuAtivo === item.key ? " active" : ""}`}
+              type="button"
+              title={!sidebarExpandida ? item.label : undefined}
+              aria-label={item.label}
+              aria-current={menuAtivo === item.key ? "page" : undefined}
+              onClick={() => selecionarMenu(item.key)}
+            >
               <span className="menu-icon">{item.icon}</span>
               <span className="menu-label">{item.label}</span>
             </button>
@@ -1091,13 +1116,14 @@ function App() {
           </div>
           <button
             type="button"
-            className="ghost-action sidebar-logout sidebar-password-action"
+            className="ghost-action sidebar-logout"
             onClick={() => {
               setMinhaSenha({ atual: "", nova: "", confirmar: "", erro: "", sucesso: "" });
               setModalMinhaSenhaAberto(true);
             }}
           >
-            Alterar senha
+            <KeyRound size={16} />
+            <span className="sidebar-action-label">Alterar senha</span>
           </button>
           <button
             type="button"
@@ -1111,7 +1137,7 @@ function App() {
             }}
           >
             <LogOut size={14} />
-            <span>Deslogar</span>
+            <span className="sidebar-action-label">Deslogar</span>
           </button>
         </div>
       </aside>
@@ -1119,11 +1145,15 @@ function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
-            {agendaEmFoco ? (
-              <button type="button" className="topbar-menu-toggle" aria-label="Abrir menu" onClick={() => setSidebarOverlayAberta((atual) => !atual)}>
-                <Menu size={18} />
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="topbar-menu-toggle"
+              aria-label={sidebarOverlayAberta ? "Fechar menu" : "Abrir menu"}
+              aria-expanded={sidebarOverlayAberta}
+              onClick={() => setSidebarOverlayAberta((atual) => !atual)}
+            >
+              <Menu size={18} />
+            </button>
             <div className="page-title-wrap">
               <span className="page-eyebrow">Soul Sul Clínica</span>
               <h1 className="page-title">{paginaAtual.titulo}</h1>
@@ -1143,7 +1173,7 @@ function App() {
             ) : null}
             <div className="header-user">
               <div className="header-user-text">
-                <span className="header-user-kicker">{usuarioLogado.cargo || "Usuario"}</span>
+                <span className="header-user-kicker">{usuarioLogado.cargo || "Usuário"}</span>
                 <strong>{usuarioLogado.nome}</strong>
               </div>
               <div className="header-avatar">{inicialUsuario}</div>

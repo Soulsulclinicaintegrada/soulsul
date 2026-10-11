@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { DollarSign, Target, TrendingUp, X } from "lucide-react";
 import {
-  atualizarInclusaoVendaDashboardApi,
   atualizarMetaFinanceiraApi,
+  atualizarInclusaoVendaDashboardApi,
   painelDashboardApi,
   type ContaPagarResumoApi,
   type DashboardCalendarioPagamentoItemApi,
@@ -28,13 +28,6 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
     saidasPrevistas: "R$ 0,00",
     saldoProjetado: "R$ 0,00"
   },
-  entradasCaixa: {
-    totalMes: "R$ 0,00",
-    entradasContratos: "R$ 0,00",
-    boletosRecebidos: "R$ 0,00",
-    outrosRecebimentos: "R$ 0,00",
-    quantidadeMovimentos: 0
-  },
   metas: {
     vendidoMes: "R$ 0,00",
     vendidoAno: "R$ 0,00",
@@ -56,7 +49,8 @@ const DASHBOARD_VAZIO: DashboardPainelApi = {
 const TICKET_MEDIO = 4000;
 
 const FUNIL_CORES = [
-  { chave: "agendou", rotulo: "Avaliações agendadas", cor: "#42c0c7" },
+  { chave: "leads", rotulo: "Leads", cor: "#5b64b5" },
+  { chave: "agendou", rotulo: "Agendou avaliação", cor: "#42c0c7" },
   { chave: "compareceu", rotulo: "Compareceu à avaliação", cor: "#f2898c" },
   { chave: "fechou", rotulo: "Fechou após avaliar", cor: "#efc449" }
 ] as const;
@@ -92,6 +86,7 @@ function misturarCores(base: string, destino: string, intensidade: number) {
 function montarFunilMeta(metaNumero: number) {
   const fechou = Math.max(1, Math.ceil((metaNumero || 0) / TICKET_MEDIO));
   return {
+    leads: fechou * 4,
     agendou: fechou * 3,
     compareceu: fechou * 2,
     fechou
@@ -148,7 +143,7 @@ type FunilProps = {
 };
 
 function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0, mostrarPercentual = true }: FunilProps) {
-  const base = valores.agendou || 0;
+  const base = valores.leads || 0;
   return (
     <article className="panel dashboard-funnel-panel">
       <div className="section-title-row">
@@ -211,62 +206,39 @@ function FunilCard({ titulo, subtitulo, valores, metasReferencia, metaNumero = 0
   );
 }
 
-function ResgatesCard({ valores }: { valores: { total: number; fechamentoJuliana: number; novaAvaliacao: number } }) {
-  const maior = Math.max(valores.fechamentoJuliana, valores.novaAvaliacao, 1);
+function ResgatesCard({ valores }: { valores: { total: number; ate30Dias: number; mais30Dias: number } }) {
+  const maior = Math.max(valores.ate30Dias, valores.mais30Dias, 1);
   const itens = [
-    { rotulo: "Retorno para fechamento com Juliana", valor: valores.fechamentoJuliana, classe: "new" },
-    { rotulo: "Nova avaliação após 3 meses", valor: valores.novaAvaliacao, classe: "old" }
+    { rotulo: "Retornaram em até 30 dias", valor: valores.ate30Dias, classe: "new" },
+    { rotulo: "Retornaram após 30 dias", valor: valores.mais30Dias, classe: "old" }
   ];
   return (
     <article className="panel dashboard-rescue-panel">
       <div className="section-title-row">
-        <div><span className="panel-kicker">Relacionamento</span><h2>Resgates do mês</h2></div>
-        <div className="dashboard-rescue-total"><strong>{valores.total}</strong><span>paciente(s)</span></div>
+        <div>
+          <span className="panel-kicker">Relacionamento</span>
+          <h2>Resgates do mês</h2>
+        </div>
+        <div className="dashboard-rescue-total">
+          <strong>{valores.total}</strong>
+          <span>paciente(s)</span>
+        </div>
       </div>
-      <p className="dashboard-rescue-description">Pacientes com orçamento anterior que foram recuperados e retornaram neste mês.</p>
+      <p className="dashboard-rescue-description">Pacientes que compareceram a uma avaliação, não fecharam no dia e retornaram para fechar neste mês.</p>
       <div className="dashboard-rescue-chart">
         {itens.map((item) => (
           <div className="dashboard-rescue-row" key={item.rotulo}>
-            <div><span>{item.rotulo}</span><strong>{item.valor}</strong></div>
-            <div className="dashboard-rescue-track"><span className={`dashboard-rescue-bar ${item.classe}`} style={{ width: `${(item.valor / maior) * 100}%` }} /></div>
+            <div>
+              <span>{item.rotulo}</span>
+              <strong>{item.valor}</strong>
+            </div>
+            <div className="dashboard-rescue-track">
+              <span className={`dashboard-rescue-bar ${item.classe}`} style={{ width: `${(item.valor / maior) * 100}%` }} />
+            </div>
           </div>
         ))}
       </div>
-      <small>Conta retorno comercial comparecido com Juliana ou nova avaliação no setor Avaliação após mais de 90 dias.</small>
-    </article>
-  );
-}
-
-function EntradasCaixaCard({ valores }: { valores: NonNullable<DashboardPainelApi["entradasCaixa"]> }) {
-  const itens = [
-    { rotulo: "Entradas de contratos", valor: valores.entradasContratos, classe: "contract" },
-    { rotulo: "Boletos recebidos", valor: valores.boletosRecebidos, classe: "boleto" },
-    { rotulo: "Outros recebimentos", valor: valores.outrosRecebimentos, classe: "other" }
-  ];
-
-  return (
-    <article className="panel dashboard-cash-panel">
-      <div className="section-title-row">
-        <div>
-          <span className="panel-kicker">Caixa do mês</span>
-          <h2>Dinheiro que entrou</h2>
-          <p>Somente valores efetivamente recebidos e baixados no caixa.</p>
-        </div>
-        <div className="dashboard-cash-total">
-          <span>Total recebido</span>
-          <strong>{valores.totalMes}</strong>
-          <small>{valores.quantidadeMovimentos} recebimento(s)</small>
-        </div>
-      </div>
-      <div className="dashboard-cash-breakdown">
-        {itens.map((item) => (
-          <div className={`dashboard-cash-item ${item.classe}`} key={item.rotulo}>
-            <span>{item.rotulo}</span>
-            <strong>{item.valor}</strong>
-          </div>
-        ))}
-      </div>
-      <small className="dashboard-cash-note">Uma entrada paga por boleto aparece nas duas categorias, sem duplicar o total recebido.</small>
+      <small>O intervalo é calculado entre a última avaliação comparecida e o primeiro fechamento do paciente.</small>
     </article>
   );
 }
@@ -425,27 +397,45 @@ function VendasMensaisCard({ meses, serie }: { meses: string[]; serie: number[] 
     mes,
     valor: Number(serie[indice] || 0),
   }));
+  const maiorValor = Math.max(...itens.map((item) => item.valor), 1);
+  const totalAno = itens.reduce((total, item) => total + item.valor, 0);
+  const mesAtual = new Date().getMonth();
+  const anoAtual = new Date().getFullYear();
   return (
-    <article className="panel summary-panel">
+    <article className="panel dashboard-annual-sales-panel">
       <div className="section-title-row">
         <div>
           <span className="panel-kicker">Financeiro</span>
-          <h2>Vendas por mês</h2>
+          <h2>Vendas do ano</h2>
         </div>
-        <span className="panel-meta">{`${itens.length} mês(es)`}</span>
+        <div className="dashboard-annual-sales-total">
+          <span>{anoAtual}</span>
+          <strong>{numeroParaMoedaBr(totalAno)}</strong>
+        </div>
       </div>
-      <div className="module-sublist">
-        {itens.map((item) => (
-          <div className="module-subitem finance-module-subitem" key={`dashboard-venda-mes-${item.mes}`}>
-            <div>
-              <strong>{item.mes}</strong>
-              <span>Contratos aprovados no mês</span>
-            </div>
-            <div className="module-subitem-right">
-              <strong>{numeroParaMoedaBr(item.valor)}</strong>
-            </div>
-          </div>
-        ))}
+      <div className="dashboard-annual-chart-scroll">
+        <div className="dashboard-annual-chart" role="img" aria-label={`Gráfico de vendas mensais de ${anoAtual}`}>
+          {itens.map((item, indice) => {
+            const altura = item.valor > 0 ? Math.max((item.valor / maiorValor) * 100, 3) : 0;
+            return (
+              <div
+                className={`dashboard-annual-bar-group${indice === mesAtual ? " current" : ""}`}
+                key={`dashboard-venda-mes-${item.mes}`}
+                title={`${item.mes}: ${numeroParaMoedaBr(item.valor)}`}
+              >
+                <strong>{item.valor > 0 ? numeroParaMoedaBr(item.valor) : "R$ 0"}</strong>
+                <div className="dashboard-annual-bar-track">
+                  <span className="dashboard-annual-bar" style={{ height: `${altura}%` }} />
+                </div>
+                <span>{item.mes}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="dashboard-annual-chart-caption">
+        <span>Somente contratos aprovados incluídos no total vendido.</span>
+        <strong>{`${itens.filter((item) => item.valor > 0).length} mês(es) com vendas`}</strong>
       </div>
     </article>
   );
@@ -532,9 +522,11 @@ export function DashboardPage() {
   const [mesVendasSelecionado, setMesVendasSelecionado] = useState(new Date().getMonth() + 1);
   const [salvandoVendaId, setSalvandoVendaId] = useState<number | null>(null);
 
-  async function carregar() {
-    setCarregando(true);
-    setErro("");
+  async function carregar(silencioso = false) {
+    if (!silencioso) {
+      setCarregando(true);
+      setErro("");
+    }
     try {
       const resposta = await painelDashboardApi();
       setPainel({
@@ -547,15 +539,26 @@ export function DashboardPage() {
       setMetaEditavel(resposta.metas?.metaMes || DASHBOARD_VAZIO.metas.metaMes);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar dashboard.");
-      setPainel(DASHBOARD_VAZIO);
-      setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
+      if (!silencioso) {
+        setPainel(DASHBOARD_VAZIO);
+        setMetaEditavel(DASHBOARD_VAZIO.metas.metaMes);
+      }
     } finally {
-      setCarregando(false);
+      if (!silencioso) setCarregando(false);
     }
   }
 
   useEffect(() => {
     void carregar();
+    const intervalo = window.setInterval(() => void carregar(true), 60_000);
+    const atualizarAoVoltar = () => {
+      if (document.visibilityState === "visible") void carregar(true);
+    };
+    document.addEventListener("visibilitychange", atualizarAoVoltar);
+    return () => {
+      window.clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", atualizarAoVoltar);
+    };
   }, []);
 
   const metaMesNumero = useMemo(() => moedaParaNumero(painel.metas.metaMes), [painel.metas.metaMes]);
@@ -573,8 +576,8 @@ export function DashboardPage() {
   const resgates = useMemo(
     () => ({
       total: Number(painel.funilReal?.resgates || 0),
-      fechamentoJuliana: Number(painel.funilReal?.resgatesFechamentoJuliana || 0),
-      novaAvaliacao: Number(painel.funilReal?.resgatesNovaAvaliacao || 0)
+      ate30Dias: Number(painel.funilReal?.resgatesAte30Dias || 0),
+      mais30Dias: Number(painel.funilReal?.resgatesMais30Dias || 0)
     }),
     [painel.funilReal]
   );
@@ -637,12 +640,10 @@ export function DashboardPage() {
         ) : null}
       </section>
 
-      <EntradasCaixaCard valores={painel.entradasCaixa || DASHBOARD_VAZIO.entradasCaixa!} />
-
       <section className="dashboard-funnels-grid">
         <FunilCard
           titulo="Meta ideal"
-          subtitulo="Modelo 75 / 50 / 25"
+          subtitulo="Modelo 100 / 75 / 50 / 25"
           valores={funilMeta}
           metaNumero={metaEditavelNumero || metaMesNumero}
         />
@@ -655,6 +656,11 @@ export function DashboardPage() {
       </section>
 
       <ResgatesCard valores={resgates} />
+
+      <VendasMensaisCard
+        meses={painel.meses || DASHBOARD_VAZIO.meses}
+        serie={painel.serieVendas || DASHBOARD_VAZIO.serieVendas}
+      />
 
       <section className="content-grid">
         <article className="panel dashboard-calendar-panel">
@@ -724,7 +730,11 @@ export function DashboardPage() {
                 <strong>{numeroParaMoedaBr(TICKET_MEDIO)}</strong>
               </div>
               <div className="summary-row">
-                <span>Avaliações agendadas necessárias</span>
+                <span>Leads necessários</span>
+                <strong>{funilMeta.leads}</strong>
+              </div>
+              <div className="summary-row">
+                <span>Agendamentos necessários</span>
                 <strong>{funilMeta.agendou}</strong>
               </div>
               <div className="summary-row">

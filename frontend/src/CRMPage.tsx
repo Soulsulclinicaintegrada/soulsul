@@ -11,13 +11,17 @@ import {
   atualizarCrmResgateApi,
   listarPacientesApi,
   listarCrmApi,
+  listarCrmConversasApi,
+  buscarCrmConversaApi,
+  enviarMensagemCrmConversaApi,
   type CrmAvaliacaoItemApi,
   type CrmNovoLeadPayloadApi,
   type CrmPacienteItemApi,
   type CrmResgateItemApi,
+  type CrmConversaResumoApi,
+  type CrmConversaDetalheApi,
 } from "./pacientesApi";
 import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
-import { WhatsAppConversations } from "./WhatsAppConversations";
 
 type CRMPageProps = {
   busca: string;
@@ -316,6 +320,46 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
   const [novoLeadManual, setNovoLeadManual] = useState<CrmNovoLeadPayloadApi>({ nome: "", telefone: "" });
   const [pacientesSomenteAvaliacaoIds, setPacientesSomenteAvaliacaoIds] = useState<number[]>([]);
   const [kanbanArrastandoId, setKanbanArrastandoId] = useState<number | null>(null);
+  const [conversas, setConversas] = useState<CrmConversaResumoApi[]>([]);
+  const [conversaSelecionada, setConversaSelecionada] = useState<CrmConversaDetalheApi | null>(null);
+  const [buscaConversa, setBuscaConversa] = useState("");
+  const [respostaConversa, setRespostaConversa] = useState("");
+  const [enviandoConversa, setEnviandoConversa] = useState(false);
+
+  async function carregarConversas() {
+    try {
+      const itens = await listarCrmConversasApi({ canal: "whatsapp", busca: buscaConversa });
+      setConversas(itens);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao carregar conversas.");
+    }
+  }
+
+  async function abrirConversa(id: number) {
+    try {
+      const detalhe = await buscarCrmConversaApi(id);
+      setConversaSelecionada(detalhe);
+      setConversas((atuais) => atuais.map((item) => item.id === id ? { ...item, naoLidas: 0 } : item));
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao abrir conversa.");
+    }
+  }
+
+  async function enviarRespostaConversa() {
+    const conteudo = respostaConversa.trim();
+    if (!conversaSelecionada || !conteudo) return;
+    setEnviandoConversa(true);
+    try {
+      await enviarMensagemCrmConversaApi(conversaSelecionada.id, { conteudo });
+      setRespostaConversa("");
+      await abrirConversa(conversaSelecionada.id);
+      await carregarConversas();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao enviar mensagem.");
+    } finally {
+      setEnviandoConversa(false);
+    }
+  }
 
   async function carregarPainel() {
     setCarregando(true);
@@ -546,6 +590,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
 
   useEffect(() => {
     void carregarPainel();
+    void carregarConversas();
   }, []);
 
   useEffect(() => {
@@ -1271,7 +1316,7 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
       <section className="panel crm-tabs-panel">
         <div className="tab-shell tab-shell-primary crm-tabs-shell">
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "funil" ? "active" : ""}`} onClick={() => setAbaAtiva("funil")}>Funil</button>
-          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "conversas" ? "active" : ""}`} onClick={() => setAbaAtiva("conversas")}>Conversas</button>
+          <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "conversas" ? "active" : ""}`} onClick={() => { setAbaAtiva("conversas"); void carregarConversas(); }}>Conversas</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "agendados" ? "active" : ""}`} onClick={() => setAbaAtiva("agendados")}>Agendados</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "finalizacao" ? "active" : ""}`} onClick={() => setAbaAtiva("finalizacao")}>Finalização</button>
           <button type="button" className={`segmented-tab segmented-tab-primary ${abaAtiva === "cancelados" ? "active" : ""}`} onClick={() => setAbaAtiva("cancelados")}>Cancelados</button>
@@ -1291,7 +1336,48 @@ export function CRMPage({ busca, onAbrirPaciente }: CRMPageProps) {
         ) : null}
       </section>
 
-      {abaAtiva === "conversas" ? <WhatsAppConversations /> : null}
+      <section className={abaAtiva === "conversas" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
+        <div className="crm-conversations-toolbar">
+          <div><span className="panel-kicker">WhatsApp</span><h2>Conversas</h2></div>
+          <div className="crm-conversations-search">
+            <input value={buscaConversa} onChange={(event) => setBuscaConversa(event.target.value)} placeholder="Nome, telefone ou mensagem" />
+            <button type="button" className="ghost-action compact" onClick={() => void carregarConversas()}><Search size={16} /> Buscar</button>
+          </div>
+        </div>
+        <div className="crm-conversations-layout">
+          <div className="crm-conversations-list">
+            {conversas.map((item) => (
+              <button key={item.id} type="button" className={`crm-conversation-item${conversaSelecionada?.id === item.id ? " active" : ""}`} onClick={() => void abrirConversa(item.id)}>
+                <span className="crm-conversation-copy">
+                  <strong>{item.contatoNome || item.pacienteNome || item.contatoTelefone || "Contato WhatsApp"}</strong>
+                  <small>{item.ultimaMensagem || "Sem mensagens"}</small>
+                  <small>{item.ultimaMensagemEm || item.contatoTelefone || ""}</small>
+                </span>
+                {(item.naoLidas || 0) > 0 ? <span className="crm-unread-badge">{item.naoLidas}</span> : null}
+              </button>
+            ))}
+            {!conversas.length ? <p className="crm-kanban-empty">Nenhuma conversa do WhatsApp.</p> : null}
+          </div>
+          <div className="crm-conversation-detail">
+            {conversaSelecionada ? <>
+              <header><strong>{conversaSelecionada.contatoNome || conversaSelecionada.pacienteNome || "Contato WhatsApp"}</strong><span>{conversaSelecionada.contatoTelefone || ""}</span></header>
+              <div className="crm-message-history">
+                {conversaSelecionada.mensagens.map((mensagem) => (
+                  <article key={mensagem.id} className={`crm-message-bubble ${mensagem.direcao === "saida" ? "outgoing" : "incoming"}`}>
+                    <p>{mensagem.conteudo || `[${mensagem.tipoMensagem || "mensagem"}]`}</p>
+                    {mensagem.midiaUrl ? <small>Anexo: {mensagem.tipoMensagem}</small> : null}
+                    <small>{mensagem.criadoEm || ""}{mensagem.direcao === "saida" && mensagem.statusEnvio ? ` · ${mensagem.statusEnvio}` : ""}</small>
+                  </article>
+                ))}
+              </div>
+              <form className="crm-message-composer" onSubmit={(event) => { event.preventDefault(); void enviarRespostaConversa(); }}>
+                <textarea rows={2} value={respostaConversa} onChange={(event) => setRespostaConversa(event.target.value)} placeholder="Digite uma resposta..." />
+                <button type="submit" className="primary-action" disabled={enviandoConversa || !respostaConversa.trim()}>{enviandoConversa ? "Enviando..." : "Enviar"}</button>
+              </form>
+            </> : <p className="crm-kanban-empty">Selecione uma conversa para ver o histórico.</p>}
+          </div>
+        </div>
+      </section>
 
       <section className={abaAtiva === "agendados" || abaAtiva === "finalizacao" || abaAtiva === "cancelados" || abaAtiva === "avaliacoes" ? "crm-grid" : "crm-grid crm-section-hidden"}>
         <article className={abaAtiva === "agendados" ? "panel crm-panel" : "panel crm-panel crm-section-hidden"}>
