@@ -2577,12 +2577,13 @@ textarea::placeholder {
 }
 
 .budget-finance-calculator { display: grid; gap: 18px; padding: 22px; border: 1px solid rgba(198,176,139,.28); border-radius: 20px; background: linear-gradient(145deg,rgba(255,255,255,.98),rgba(247,241,232,.9)); }
-.budget-finance-calculator-head,.budget-finance-card-table-head,.budget-finance-boleto { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.budget-finance-calculator-head,.budget-finance-card-table-head,.budget-finance-boleto { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; min-width: 0; }
+.budget-finance-calculator-head > div { min-width: 0; flex: 1 1 auto; }
 .budget-finance-calculator h4 { margin: 3px 0 5px; font-size: 1.18rem; }
 .budget-finance-calculator p { margin: 0; color: #746557; }
-.budget-finance-value-field { display: grid; gap: 6px; min-width: min(100%,260px); }
+.budget-finance-value-field { display: grid; gap: 6px; width: min(100%, 360px); min-width: 260px; flex: 0 1 360px; }
 .budget-finance-value-field span,.budget-finance-card-table-head label span { color: #756658; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-.budget-finance-value-field input { min-height: 50px; font-size: 1.35rem; font-weight: 800; text-align: right; }
+.budget-finance-value-field input { display: block; width: 100%; min-width: 0; min-height: 50px; padding-inline: 14px; font-size: 1.35rem; font-weight: 800; text-align: right; overflow: visible; }
 .budget-finance-results { display: grid; gap: 18px; }
 .budget-finance-boleto,.budget-finance-card-table { padding: 18px; border-radius: 16px; border: 1px solid rgba(198,176,139,.24); background: rgba(255,255,255,.88); }
 .budget-finance-boleto > div:first-child { display: grid; gap: 4px; }
@@ -10229,3 +10230,11 @@ input::placeholder, textarea::placeholder { text-transform: none; }
   background: rgba(255, 255, 255, .97);
   box-shadow: 0 24px 70px rgba(46, 38, 26, .12);
 }
+.finance-legacy-field{display:none!important}
+.finance-rate-list{margin-top:14px;padding:22px;background:#fff;border:1px solid #e8ddd0;border-radius:18px}
+.finance-rate-add{display:grid;grid-template-columns:1.2fr 1.4fr .7fr .8fr auto;gap:10px;align-items:end;padding:14px;background:#f8f3ec;border-radius:14px}
+.finance-rate-add label{display:flex;flex-direction:column;gap:6px;font-size:12px;text-transform:uppercase;color:#725f4c}
+.finance-rate-add input,.finance-rate-add select{min-height:42px;border:1px solid #ddcfbf;border-radius:10px;padding:0 12px;background:#fff}
+.finance-rate-list table{width:100%;border-collapse:collapse;margin-top:14px}
+.finance-rate-list th,.finance-rate-list td{padding:12px;border-bottom:1px solid #eee4d8;text-align:left}
+@media(max-width:900px){.finance-rate-add{grid-template-columns:1fr 1fr}.finance-rate-add button{grid-column:1/-1}}
