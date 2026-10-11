@@ -776,7 +776,7 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
     <section className="education-page">
       <div className="education-hero">
         <div>
-          <span className="page-eyebrow">SOULSUL EDUCAÇÃO</span>
+          <span className="page-eyebrow">Soul Sul Treinamentos</span>
           <h1>{modulo}</h1>
         </div>
         <div className="education-row-actions">
