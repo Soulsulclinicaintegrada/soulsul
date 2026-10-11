@@ -9644,3 +9644,256 @@ textarea::placeholder {
   font-family: "Trebuchet MS", Arial, sans-serif;
   letter-spacing: -.025em;
 }
+
+/* Sistema clínico — mesma linguagem visual e tipográfica do portal Educação. */
+:root {
+  --bg: #f8f6f1;
+  --bg-deep: #f1ede6;
+  --card: #fff;
+  --card-soft: #fbfaf7;
+  --sidebar: #fbfaf7;
+  --sidebar-top: #fffdf9;
+  --line: #e4ded4;
+  --line-strong: #d7c9b6;
+  --text: #2d2822;
+  --muted: #756d64;
+  --champagne: #b9914f;
+  --champagne-soft: #f1e7d5;
+  --green-accent: #718777;
+  --accent: #718777;
+  --accent-strong: #5f7465;
+  --accent-soft: #f1f5ef;
+  --accent-line: #d5dfd5;
+  --shadow: 0 8px 28px rgba(67, 51, 29, .05);
+  --shadow-soft: 0 5px 18px rgba(46, 38, 26, .035);
+}
+
+html, body, #root, button, input, select, textarea, option {
+  font-family: "Trebuchet MS", Arial, sans-serif;
+}
+
+html, body, #root {
+  background: #f8f6f1;
+  color: var(--text);
+  text-transform: none;
+}
+
+input::placeholder, textarea::placeholder { text-transform: none; }
+
+.shell:not(.education-portal-shell) .sidebar {
+  color: #302b25;
+  background: radial-gradient(circle at 8% 2%, rgba(199, 157, 82, .10), transparent 15rem), #fbfaf7;
+  border-right: 1px solid #e6dfd4;
+  box-shadow: 8px 0 28px rgba(67, 51, 29, .035);
+}
+
+.shell:not(.education-portal-shell) .sidebar-toggle {
+  color: #755a2e;
+  background: #fffdf9;
+  border-color: #d7c9b6;
+}
+
+.shell:not(.education-portal-shell) .sidebar-toggle:hover,
+.shell:not(.education-portal-shell) .sidebar-toggle:focus-visible {
+  color: #4f432f;
+  background: #fff;
+  border-color: #bda77f;
+}
+
+.shell:not(.education-portal-shell) .brand-card {
+  background: #fff;
+  border-color: #e6dfd4;
+  box-shadow: 0 5px 18px rgba(46, 38, 26, .04);
+}
+
+.shell:not(.education-portal-shell) .brand-logo-wrap {
+  background: #fffdf9;
+  box-shadow: inset 0 0 0 1px #eadfce;
+}
+
+.shell:not(.education-portal-shell) .brand-title,
+.shell:not(.education-portal-shell) .sidebar-section-title,
+.shell:not(.education-portal-shell) .sidebar-user-info strong { color: #302b25; }
+
+.shell:not(.education-portal-shell) .sidebar-section-title,
+.shell:not(.education-portal-shell) .page-eyebrow,
+.shell:not(.education-portal-shell) .panel-kicker,
+.shell:not(.education-portal-shell) label > span,
+.shell:not(.education-portal-shell) th {
+  text-transform: uppercase;
+  letter-spacing: .075em;
+}
+
+.shell:not(.education-portal-shell) .menu-item {
+  color: #756d63;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.shell:not(.education-portal-shell) .menu-item .menu-icon { color: #9a773d; }
+
+.shell:not(.education-portal-shell) .menu-item:hover {
+  color: #2d271f;
+  background: rgba(255, 255, 255, .68);
+  border-color: rgba(176, 151, 111, .22);
+  transform: none;
+}
+
+.shell:not(.education-portal-shell) .menu-item.active {
+  color: #2d2417;
+  background: #f1f5ef;
+  border-color: #d5dfd5;
+  box-shadow: inset 3px 0 0 #718777, 0 4px 12px rgba(83, 59, 25, .035);
+}
+
+.shell:not(.education-portal-shell) .menu-item.active .menu-icon { color: #718777; }
+
+.shell:not(.education-portal-shell) .sidebar-user-card {
+  background: rgba(255, 255, 255, .58);
+  border-color: #e3d9cc;
+}
+
+.shell:not(.education-portal-shell) .sidebar-user-avatar,
+.shell:not(.education-portal-shell) .header-avatar {
+  color: #fffdf9;
+  background: #718777;
+}
+
+.shell:not(.education-portal-shell) .sidebar-user-info span { color: #8a7d6c; }
+.shell:not(.education-portal-shell) .sidebar-logout { color: #776b5d; background: transparent; border-color: #e3d9cc; }
+.shell:not(.education-portal-shell) .main-area { background: #f8f6f1; }
+
+.shell:not(.education-portal-shell) .topbar {
+  background: rgba(255, 255, 255, .90);
+  border: 1px solid #e6e0d7;
+  border-radius: 14px;
+  box-shadow: 0 5px 18px rgba(46, 38, 26, .035);
+}
+
+.shell:not(.education-portal-shell) .page-title,
+.shell:not(.education-portal-shell) .patient-hero-copy h2,
+.shell:not(.education-portal-shell) .modal-header h2,
+.shell:not(.education-portal-shell) .drawer-header h2,
+.shell:not(.education-portal-shell) .section-title-row h2,
+.login-card h1 {
+  color: #201c17;
+  font-family: "Trebuchet MS", Arial, sans-serif;
+  letter-spacing: -.035em;
+}
+
+.shell:not(.education-portal-shell) .page-eyebrow,
+.shell:not(.education-portal-shell) .panel-kicker { color: #9a7840; font-weight: 800; }
+
+.shell:not(.education-portal-shell) .panel,
+.shell:not(.education-portal-shell) .kpi-card,
+.shell:not(.education-portal-shell) .summary-card,
+.shell:not(.education-portal-shell) .patient-tabs-panel,
+.shell:not(.education-portal-shell) .budget-card,
+.shell:not(.education-portal-shell) .doc-card,
+.shell:not(.education-portal-shell) .exam-card,
+.shell:not(.education-portal-shell) .finance-card,
+.shell:not(.education-portal-shell) .schedule-item,
+.shell:not(.education-portal-shell) .placeholder-card,
+.shell:not(.education-portal-shell) .placeholder-hero {
+  background: #fff;
+  border: 1px solid #e4ded4;
+  border-radius: 15px;
+  box-shadow: 0 5px 18px rgba(46, 38, 26, .035);
+}
+
+.shell:not(.education-portal-shell) .kpi-card::before,
+.shell:not(.education-portal-shell) .module-kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: #b9914f;
+}
+
+.shell:not(.education-portal-shell) .kpi-icon { color: #765a29; background: #f1e7d5; }
+.shell:not(.education-portal-shell) .kpi-value,
+.shell:not(.education-portal-shell) .module-kpi-card strong { color: #211c17; letter-spacing: -.025em; }
+
+.shell:not(.education-portal-shell) .primary-action {
+  color: #fffdf9;
+  background: #718777;
+  border: 1px solid #657a6b;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell) .primary-action:hover {
+  background: #5f7465;
+  box-shadow: 0 6px 16px rgba(71, 94, 78, .15);
+}
+
+.shell:not(.education-portal-shell) .ghost-action,
+.shell:not(.education-portal-shell) .icon-action,
+.shell:not(.education-portal-shell) .icon-only,
+.shell:not(.education-portal-shell) .topbar-menu-toggle {
+  color: #2d2822;
+  background: #fff;
+  border: 1px solid #ded4c6;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell) input,
+.shell:not(.education-portal-shell) select,
+.shell:not(.education-portal-shell) textarea,
+.login-card input,
+.login-card select,
+.login-card textarea {
+  border-color: #ded4c6;
+  background: #fffefa;
+  border-radius: 10px;
+  text-transform: none;
+}
+
+.shell:not(.education-portal-shell) input:focus,
+.shell:not(.education-portal-shell) select:focus,
+.shell:not(.education-portal-shell) textarea:focus,
+.login-card input:focus,
+.login-card select:focus,
+.login-card textarea:focus {
+  outline: none;
+  border-color: #bd9650;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(201, 164, 91, .13);
+}
+
+.shell:not(.education-portal-shell) .search-box,
+.shell:not(.education-portal-shell) .year-select {
+  background: #fffefa;
+  border-color: #ded4c6;
+  border-radius: 10px;
+}
+
+.shell:not(.education-portal-shell) .module-subitem,
+.shell:not(.education-portal-shell) .patient-list-row,
+.shell:not(.education-portal-shell) .patient-chip-card,
+.shell:not(.education-portal-shell) .patient-result-card {
+  background: #fbfaf7;
+  border-color: #eee9e1;
+  border-radius: 12px;
+}
+
+.shell:not(.education-portal-shell) .module-subitem:hover,
+.shell:not(.education-portal-shell) .patient-list-row:hover,
+.shell:not(.education-portal-shell) .patient-chip-card:hover,
+.shell:not(.education-portal-shell) .patient-result-card:hover {
+  background: #fffdf9;
+  border-color: #dfd2be;
+  transform: translateY(-1px);
+}
+
+.login-shell {
+  background: radial-gradient(circle at 16% 14%, rgba(185, 145, 79, .12), transparent 23rem), #f8f6f1;
+}
+
+.login-card {
+  border: 1px solid #e4ded4;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 24px 70px rgba(46, 38, 26, .12);
+}
