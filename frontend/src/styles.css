@@ -10343,3 +10343,53 @@ input, select, textarea, option,
 input::placeholder, textarea::placeholder {
   text-transform: uppercase !important;
 }
+
+/* Mantém a assinatura da clínica como um único bloco visual no menu. */
+.shell:not(.education-portal-shell) .brand-card {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 20px 18px 16px;
+  box-sizing: border-box;
+}
+
+.shell:not(.education-portal-shell) .brand-logo-wrap {
+  width: min(100%, 184px);
+  min-height: 92px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+
+.shell:not(.education-portal-shell) .brand-logo {
+  width: 100%;
+  max-width: 158px;
+}
+
+.shell:not(.education-portal-shell) .brand-title {
+  width: 100%;
+  margin: 0;
+  color: #302b25;
+  font-size: 1.45rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.shell:not(.education-portal-shell) .sidebar-section-title {
+  margin-top: 2px;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-card {
+  gap: 0;
+  padding: 9px 6px;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-logo-wrap {
+  width: 43px;
+  min-height: 43px;
+  padding: 7px 4px;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-logo {
+  width: 37px;
+}
