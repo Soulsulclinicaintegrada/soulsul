@@ -1,6 +1,6 @@
 ﻿import { LogOut, Menu, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CheckSquare2, Plus, Trash2 } from "lucide-react";
+import { CheckSquare2, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
 import logoUrl from "./assets/logo-soul-sul.png";
 import { carregarUsuarioSessao, salvarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { AgendaPage } from "./AgendaPage";
@@ -158,6 +158,7 @@ function App() {
   const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Agenda");
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [sidebarOverlayAberta, setSidebarOverlayAberta] = useState(false);
+  const [menuExpandido, setMenuExpandido] = useState(() => localStorage.getItem("soulsul.clinica.sidebar.expanded") !== "false");
   const [navegacaoPaciente, setNavegacaoPaciente] = useState<NavegacaoPaciente | null>(null);
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioSessao | null>(carregarUsuarioSessao());
   const [usuariosSistema, setUsuariosSistema] = useState<UsuarioResumoApi[]>([]);
@@ -694,7 +695,7 @@ function App() {
   }
 
   return (
-    <div className={`shell${agendaEmFoco ? " agenda-focus" : ""}`}>
+    <div className={`shell${agendaEmFoco ? " agenda-focus" : ""}${menuExpandido ? "" : " sidebar-collapsed"}`}>
       <div className="app-ambient app-ambient-one" />
       <div className="app-ambient app-ambient-two" />
 
@@ -1051,11 +1052,23 @@ function App() {
       ) : null}
 
       <aside className={`sidebar${agendaEmFoco ? " sidebar-floating" : ""}${sidebarOverlayAberta ? " open" : ""}`}>
+        <button
+          className="sidebar-collapse-toggle"
+          type="button"
+          aria-label={menuExpandido ? "Recolher menu" : "Expandir menu"}
+          title={menuExpandido ? "Recolher menu" : "Expandir menu"}
+          onClick={() => setMenuExpandido((atual) => {
+            const proximo = !atual;
+            localStorage.setItem("soulsul.clinica.sidebar.expanded", String(proximo));
+            return proximo;
+          })}
+        >
+          {menuExpandido ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
+        </button>
         <div className="brand-card">
           <div className="brand-logo-wrap">
             <img className="brand-logo" src={logoUrl} alt="SoulSul" />
           </div>
-          <div className="brand-title">SoulSul</div>
         </div>
 
         <div className="sidebar-section-title">Menu</div>
@@ -1078,7 +1091,7 @@ function App() {
           </div>
           <button
             type="button"
-            className="ghost-action sidebar-logout"
+            className="ghost-action sidebar-logout sidebar-password-action"
             onClick={() => {
               setMinhaSenha({ atual: "", nova: "", confirmar: "", erro: "", sucesso: "" });
               setModalMinhaSenhaAberto(true);
@@ -1098,7 +1111,7 @@ function App() {
             }}
           >
             <LogOut size={14} />
-            Deslogar
+            <span>Deslogar</span>
           </button>
         </div>
       </aside>

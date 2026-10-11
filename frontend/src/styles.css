@@ -9293,3 +9293,145 @@ textarea::placeholder {
   line-height: 1;
   text-align: center;
 }
+
+/* Recolhimento do menu clínico no mesmo comportamento do Soul Sul Treinamento. */
+.shell:not(.education-portal-shell) {
+  transition: grid-template-columns 220ms ease;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed {
+  grid-template-columns: 77px minmax(0, 1fr);
+}
+
+.shell:not(.education-portal-shell) .sidebar-collapse-toggle {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d7c9b6;
+  border-radius: 10px;
+  background: rgba(255, 253, 249, .94);
+  color: #8b682f;
+  cursor: pointer;
+}
+
+.shell:not(.education-portal-shell) .brand-card {
+  padding-top: 24px;
+}
+
+.shell:not(.education-portal-shell) .brand-title {
+  display: none;
+}
+
+.shell:not(.education-portal-shell) .menu-list {
+  scrollbar-width: none;
+}
+
+.shell:not(.education-portal-shell) .menu-list::-webkit-scrollbar {
+  display: none;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar {
+  gap: 16px;
+  padding-inline: 10px;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-collapse-toggle {
+  position: static;
+  align-self: center;
+  order: -2;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-card {
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-logo-wrap {
+  width: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  height: 56px;
+  padding: 4px;
+  border-radius: 14px;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-logo {
+  width: 100%;
+  max-height: 100%;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-section-title,
+.shell:not(.education-portal-shell).sidebar-collapsed .menu-label,
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-user-info,
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-logout span,
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-password-action {
+  display: none;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .menu-list {
+  padding-right: 0;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .menu-item,
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-logout {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .menu-item {
+  min-height: 46px;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .sidebar-user-card {
+  display: flex;
+  justify-content: center;
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+@media (max-width: 900px) {
+  .shell:not(.education-portal-shell).sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .shell:not(.education-portal-shell).sidebar-collapsed .sidebar {
+    padding-inline: 14px;
+  }
+
+  .shell:not(.education-portal-shell).sidebar-collapsed .sidebar-collapse-toggle {
+    display: none;
+  }
+
+  .shell:not(.education-portal-shell).sidebar-collapsed .brand-card {
+    min-height: 0;
+    padding: 24px 18px 18px;
+    border: 1px solid #e6dfd4;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(46, 38, 26, .04);
+  }
+
+  .shell:not(.education-portal-shell).sidebar-collapsed .brand-logo-wrap {
+    width: 100%;
+    height: auto;
+    min-height: 88px;
+    padding: 10px 14px;
+  }
+
+  .shell:not(.education-portal-shell).sidebar-collapsed .sidebar-section-title,
+  .shell:not(.education-portal-shell).sidebar-collapsed .menu-label,
+  .shell:not(.education-portal-shell).sidebar-collapsed .sidebar-user-info,
+  .shell:not(.education-portal-shell).sidebar-collapsed .sidebar-logout span,
+  .shell:not(.education-portal-shell).sidebar-collapsed .sidebar-password-action {
+    display: initial;
+  }
+}
