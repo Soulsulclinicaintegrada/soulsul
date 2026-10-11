@@ -583,7 +583,7 @@ function App() {
             <img className="brand-logo" src={logoUrl} alt="SoulSul" />
           </div>
           <div className="login-copy">
-            <span className="page-eyebrow">SoulSul ERP</span>
+            <span className="page-eyebrow">Soul Sul Clínica</span>
             <h1 className="page-title">Entrar no sistema</h1>
           </div>
           <label className="login-field">
@@ -1112,7 +1112,7 @@ function App() {
               </button>
             ) : null}
             <div className="page-title-wrap">
-              <span className="page-eyebrow">SoulSul ERP</span>
+              <span className="page-eyebrow">Soul Sul Clínica</span>
               <h1 className="page-title">{paginaAtual.titulo}</h1>
             </div>
           </div>
