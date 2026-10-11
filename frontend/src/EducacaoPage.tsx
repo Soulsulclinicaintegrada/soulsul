@@ -5,6 +5,8 @@ import {
   FileText,
   GraduationCap,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   HeartHandshake,
   LayoutDashboard,
   LogOut,
@@ -24,6 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ComponentType, type FormEvent } from "react";
 import logoUrl from "./assets/logo-soulsul-eleven.png";
+import { EducacaoAgendaPage } from "./EducacaoAgendaPage";
 import {
   atualizarAlunoApi,
   atualizarTreinamentoApi,
@@ -54,6 +57,13 @@ import {
   baixarContratoMatriculaEducacaoApi,
   resetarSenhaUsuarioEducacaoApi,
   trocarSenhaEducacaoApi,
+  listarGuiasEducacaoApi,
+  criarGuiaEducacaoApi,
+  baixarGuiaEducacaoApi,
+  baixarLancamentoFinanceiroEducacaoApi,
+  buscarConfiguracoesFinanceiroEducacaoApi,
+  salvarConfiguracoesFinanceiroEducacaoApi,
+  type GuiaEducacaoApi,
   type AlunoApi,
   type MatriculaTreinamentoApi,
   type TreinamentoApi,
@@ -149,6 +159,11 @@ const TAXAS_CARTAO_INFINITEPAY = {
   "Elo / Amex / Hipercard": [4.91, 6.47, 7.2, 7.92, 8.63, 9.33, 10.03, 10.72, 11.41, 12.08, 12.75, 13.41],
 } as const;
 const FATORES_CARTAO_PAGBANK = [1.0526, 1.1101, 1.1273, 1.1447, 1.1624, 1.1803, 1.1984, 1.2167, 1.2352, 1.2538, 1.2728, 1.2919, 1.3112, 1.3307, 1.3505, 1.3703, 1.3905, 1.4109] as const;
+const TAXAS_CONFIGURACAO_PADRAO = [
+  ...TAXAS_CARTAO_INFINITEPAY["Visa / Mastercard"].map((taxa, i) => ({ maquina: "InfinitePay", bandeira: "Visa / Mastercard", parcelas: i + 1, taxa: String(taxa) })),
+  ...TAXAS_CARTAO_INFINITEPAY["Elo / Amex / Hipercard"].map((taxa, i) => ({ maquina: "InfinitePay", bandeira: "Elo / Amex / Hipercard", parcelas: i + 1, taxa: String(taxa) })),
+  ...FATORES_CARTAO_PAGBANK.map((fator, i) => ({ maquina: "PagBank", bandeira: "Todas", parcelas: i + 1, taxa: String(((fator - 1) * 100).toFixed(2)) })),
+];
 type OperadoraCartaoEducacao = "InfinitePay" | "PagBank";
 type BandeiraCartaoEducacao = keyof typeof TAXAS_CARTAO_INFINITEPAY;
 type AbaFichaPaciente = "Cadastro"|"Orçamentos"|"Financeiro"|"Documentos"|"Agendamentos";
@@ -180,14 +195,14 @@ export function EducacaoPortal() {
   const [pacienteAbaInicial,setPacienteAbaInicial]=useState<AbaFichaPaciente>("Cadastro");
   const modulos = [
     "Dashboard",
-    "Alunos",
-    "Treinamentos",
-    "Pacientes",
-    "Orçamentos",
-    "CRM",
-    "Guias",
     "Agenda",
+    "Alunos",
+    "Pacientes",
+    "Treinamentos",
+    "Orçamentos",
+    "Guias",
     "Financeiro",
+    "CRM",
     "Usuários",
   ].filter(item => {
     const admin = usuarioEducacao?.perfil === "ADMINISTRADOR" || usuarioEducacao?.usuario === "educacao.admin";
@@ -277,6 +292,10 @@ export function EducacaoPortal() {
           <EducacaoCrm />
         ) : modulo === "Financeiro" ? (
           <EducacaoFinanceiro />
+        ) : modulo === "Guias" ? (
+          <EducacaoGuias />
+        ) : modulo === "Agenda" ? (
+          <EducacaoAgendaPage usuarioLogado={usuarioEducacao} />
         ) : modulo === "Usuários" ? (
           <EducacaoUsuarios />
         ) : (
@@ -317,10 +336,6 @@ export function EducacaoPortal() {
         </div>
         <span className="page-eyebrow">PORTAL EXCLUSIVO</span>
         <h1>Bem-vindo de volta</h1>
-        <p>
-          Alunos, treinamentos e gestão financeira educacional em um ambiente
-          separado da clínica.
-        </p>
         <label>
           Usuário
           <input
@@ -472,30 +487,112 @@ const camposModulo: Record<string, CampoModulo[]> = {
 };
 
 function EducacaoFinanceiro() {
-  const [abaFinanceiro, setAbaFinanceiro] = useState<"Financeiro" | "Tabela de preços">("Financeiro");
+  const [abaFinanceiro, setAbaFinanceiro] = useState<"Caixa"|"Recebíveis"|"Contas a pagar"|"Tabela de preços"|"Configurações">("Caixa");
+  const [lancamentos,setLancamentos]=useState<any[]>([]);const [alunos,setAlunos]=useState<any[]>([]);const [pacientes,setPacientes]=useState<any[]>([]);const [erro,setErro]=useState("");const [receber,setReceber]=useState<any|null>(null);const [salvando,setSalvando]=useState(false);
+  const [manualAberto,setManualAberto]=useState(false);const [filtroConta,setFiltroConta]=useState("Todas");const [filtroInicio,setFiltroInicio]=useState("");const [filtroFim,setFiltroFim]=useState("");const [manual,setManual]=useState({descricao:"",tipo:"Entrada",valor:"",data_vencimento:new Date().toISOString().slice(0,10),forma_pagamento:"PIX",conta_caixa:"CAIXA",categoria:"Manual",origem:"Manual",operadora_cartao:"",parcelas_cartao:1,status:"Pago",data_pagamento:new Date().toISOString().slice(0,10)});
+  const [config,setConfig]=useState<any>({contas:["CAIXA","SICOOB","C6"],maquinas:["InfinitePay","PagBank"],taxas:{},parcelas_boleto:1,parcelas_cartao:12,descontos:{}});const [configTexto,setConfigTexto]=useState({contas:"CAIXA\nSICOOB\nC6",maquinas:"InfinitePay\nPagBank",taxas:"",descontos:""});
+  const [taxasLista,setTaxasLista]=useState<any[]>(TAXAS_CONFIGURACAO_PADRAO);const [novaTaxa,setNovaTaxa]=useState({maquina:"InfinitePay",bandeira:"Visa / Mastercard",parcelas:1,taxa:""});
+  const hoje=new Date().toISOString().slice(0,10);const brl=(v:any)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+  const carregar=()=>Promise.all([buscarRecursoEducacaoApi<any[]>("financeiro"),buscarRecursoEducacaoApi<any[]>("alunos"),buscarRecursoEducacaoApi<any[]>("pacientes-modelo")]).then(([f,a,p])=>{setLancamentos(f);setAlunos(a);setPacientes(p);setErro("")}).catch(e=>setErro(e instanceof Error?e.message:"Falha ao carregar o financeiro."));
+  useEffect(()=>{void carregar();void buscarConfiguracoesFinanceiroEducacaoApi().then((c:any)=>{setConfig(c);setConfigTexto({contas:(c.contas||[]).join("\n"),maquinas:(c.maquinas||[]).join("\n"),taxas:"",descontos:""});const lista=Object.entries(c.taxas||{}).map(([k,v])=>{const p=String(k).split("|");return {maquina:p[0]||"InfinitePay",bandeira:p[2]||"Visa / Mastercard",parcelas:Number(p[1])||1,taxa:String(v)}});setTaxasLista(lista.length?lista:TAXAS_CONFIGURACAO_PADRAO)}).catch(()=>{})},[]);
+  const nome=(l:any)=>l.aluno_id?alunos.find(a=>Number(a.id)===Number(l.aluno_id))?.nome:l.paciente_modelo_id?pacientes.find(p=>Number(p.id)===Number(l.paciente_modelo_id))?.nome:"";
+  const receitasPagas=lancamentos.filter(l=>l.tipo==="Receita"&&l.status==="Pago");const despesasPagas=lancamentos.filter(l=>l.tipo==="Despesa"&&l.status==="Pago");const abertos=lancamentos.filter(l=>l.tipo==="Receita"&&l.status!=="Pago"&&l.status!=="Cancelado");
+  const total=(lista:any[],campo="valor")=>lista.reduce((s,l)=>s+Number(l[campo]||l.valor||0),0);
+  async function confirmarBaixa(){if(!receber)return;const cartao=String(receber.forma_pagamento||"").toUpperCase().includes("CARTAO");if(cartao&&!receber.operadora_cartao){setErro("Selecione a máquina de cartão utilizada.");return}setSalvando(true);try{await baixarLancamentoFinanceiroEducacaoApi(receber.id,receber);setReceber(null);await carregar()}catch(e){setErro(e instanceof Error?e.message:"Não foi possível registrar o recebimento.")}finally{setSalvando(false)}}
+  const listaBase=abaFinanceiro==="Recebíveis"?abertos:abaFinanceiro==="Contas a pagar"?lancamentos.filter(l=>l.tipo==="Despesa"&&l.status!=="Pago"&&l.status!=="Cancelado"):lancamentos.filter(l=>l.status==="Pago");
+  const lista=listaBase.filter(l=>(filtroConta==="Todas"||String(l.conta_caixa||"CAIXA").toUpperCase()===filtroConta)&&(!filtroInicio||String(l.data_pagamento||l.data_vencimento||"")>=filtroInicio)&&(!filtroFim||String(l.data_pagamento||l.data_vencimento||"")<=filtroFim));
+  async function salvarManual(){if(!manual.descricao||Number(manual.valor)<=0){setErro("Informe a descrição e um valor válido.");return}const bruto=Number(manual.valor);const cartao=String(manual.forma_pagamento).includes("CARTAO");const parcelas=Math.max(1,Number(manual.parcelas_cartao)||1);const taxa=cartao?Number(config.taxas?.[`${manual.operadora_cartao}|${parcelas}|Visa / Mastercard`]??config.taxas?.[`${manual.operadora_cartao}|${parcelas}`]??0):0;const taxaValor=cartao?bruto*(taxa/100):0;setSalvando(true);try{await criarRecursoEducacaoApi("financeiro",{...manual,valor:bruto,valor_bruto:bruto,taxa_valor:taxaValor,valor_liquido:bruto-taxaValor,tipo:manual.tipo==="Saída"?"Despesa":"Receita",parcelas_cartao:cartao?parcelas:1});setManualAberto(false);setManual({...manual,descricao:"",valor:""});await carregar()}catch(e){setErro(e instanceof Error?e.message:"Não foi possível lançar no caixa.")}finally{setSalvando(false)}}
+  async function salvarConfig(){try{const taxas=Object.fromEntries(taxasLista.filter(x=>Number(x.taxa)>=0).map(x=>[`${x.maquina}|${x.parcelas}|${x.bandeira}`,Number(String(x.taxa).replace(",","."))]));const payload={contas:configTexto.contas.split("\n").map(x=>x.trim()).filter(Boolean),maquinas:configTexto.maquinas.split("\n").map(x=>x.trim()).filter(Boolean),taxas,parcelas_boleto:Number(config.parcelas_boleto)||1,parcelas_cartao:Number(config.parcelas_cartao)||12};await salvarConfiguracoesFinanceiroEducacaoApi(payload);setConfig({...config,...payload});setErro("")}catch(e){setErro(e instanceof Error?e.message:"Não foi possível salvar as configurações.")}}
   return (
     <div className="education-finance-shell">
+      <section className="education-hero finance-hero"><div><span className="page-eyebrow">GESTÃO FINANCEIRA</span><h1>Financeiro</h1></div></section>
+      <div className="finance-kpi-grid"><article><span>Recebido</span><strong>{brl(total(receitasPagas,"valor_liquido"))}</strong><small>Valor líquido após taxas</small></article><article><span>A receber</span><strong>{brl(total(abertos,"valor_bruto"))}</strong><small>{abertos.length} lançamento(s)</small></article><article><span>Taxas de cartão</span><strong>{brl(total(receitasPagas,"taxa_valor"))}</strong><small>Descontadas pelas maquininhas</small></article><article><span>Saldo de caixa</span><strong>{brl(total(receitasPagas,"valor_liquido")-total(despesasPagas,"valor_liquido"))}</strong><small>Receitas líquidas menos despesas</small></article></div>
       <nav className="education-tabs education-finance-tabs" aria-label="Seções do financeiro">
-        <button className={abaFinanceiro === "Financeiro" ? "active" : ""} onClick={() => setAbaFinanceiro("Financeiro")}>Movimentações financeiras</button>
+        {(["Caixa","Recebíveis","Contas a pagar"] as const).map(aba=><button key={aba} className={abaFinanceiro===aba?"active":""} onClick={()=>setAbaFinanceiro(aba)}>{aba}</button>)}
         <button className={abaFinanceiro === "Tabela de preços" ? "active" : ""} onClick={() => setAbaFinanceiro("Tabela de preços")}>Tabela de preços</button>
+        <button className={abaFinanceiro === "Configurações" ? "active" : ""} onClick={() => setAbaFinanceiro("Configurações")}>Configurações</button>
       </nav>
-      <EducacaoModulo modulo={abaFinanceiro} />
+      <section className="finance-settings panel" style={{display:abaFinanceiro==="Configurações"?"block":"none"}}><div className="finance-ledger-head"><div><span className="panel-kicker">FINANCEIRO</span><h2>Configurações</h2></div></div><div className="finance-settings-grid"><label>Contas e bancos<textarea rows={6} value={configTexto.contas} onChange={e=>setConfigTexto({...configTexto,contas:e.target.value})}/></label><label>Maquininhas<textarea rows={6} value={configTexto.maquinas} onChange={e=>setConfigTexto({...configTexto,maquinas:e.target.value})}/></label><label className="finance-legacy-field">Taxas<textarea rows={6} value={configTexto.taxas} onChange={e=>setConfigTexto({...configTexto,taxas:e.target.value})}/></label><label className="finance-legacy-field">Descontos<textarea rows={6} value={configTexto.descontos} onChange={e=>setConfigTexto({...configTexto,descontos:e.target.value})}/></label><label>Máximo de parcelas no boleto<input type="number" min="1" max="60" value={config.parcelas_boleto} onChange={e=>setConfig({...config,parcelas_boleto:Number(e.target.value)})}/></label><label>Máximo de parcelas no cartão<input type="number" min="1" max="60" value={config.parcelas_cartao} onChange={e=>setConfig({...config,parcelas_cartao:Number(e.target.value)})}/></label></div><button className="primary-action" onClick={()=>void salvarConfig()}>Salvar configurações</button></section>
+      <section className="finance-rate-list panel" style={{display:abaFinanceiro==="Configurações"?"block":"none"}}><div className="finance-ledger-head"><div><span className="panel-kicker">CARTÕES</span><h2>Taxas por maquininha</h2></div></div><div className="finance-rate-add"><label>Maquininha<select value={novaTaxa.maquina} onChange={e=>setNovaTaxa({...novaTaxa,maquina:e.target.value})}>{(config.maquinas||["InfinitePay","PagBank"]).map((m:string)=><option key={m}>{m}</option>)}</select></label><label>Bandeira<select value={novaTaxa.bandeira} onChange={e=>setNovaTaxa({...novaTaxa,bandeira:e.target.value})}><option>Visa / Mastercard</option><option>Elo</option><option>Hipercard</option><option>Amex</option></select></label><label>Parcelas<input type="number" min="1" max="60" value={novaTaxa.parcelas} onChange={e=>setNovaTaxa({...novaTaxa,parcelas:Number(e.target.value)})}/></label><label>Taxa (%)<input type="number" min="0" step="0.01" placeholder="2,99" value={novaTaxa.taxa} onChange={e=>setNovaTaxa({...novaTaxa,taxa:e.target.value})}/></label><button className="primary-action" onClick={()=>{if(!String(novaTaxa.taxa).trim())return;setTaxasLista([...taxasLista,{...novaTaxa}]);setNovaTaxa({...novaTaxa,taxa:""})}}>Adicionar taxa</button></div><div className="finance-table-scroll"><table><thead><tr><th>Maquininha</th><th>Bandeira</th><th>Parcelas</th><th>Taxa</th><th></th></tr></thead><tbody>{taxasLista.map((t,i)=><tr key={`${t.maquina}-${t.parcelas}-${i}`}><td>{t.maquina}</td><td>{t.bandeira}</td><td>{t.parcelas}x</td><td>{t.taxa}%</td><td><button className="ghost-action compact" onClick={()=>setTaxasLista(taxasLista.filter((_,j)=>j!==i))}>Remover</button></td></tr>)}{!taxasLista.length&&<tr><td colSpan={5} className="empty-inline">Nenhuma taxa cadastrada.</td></tr>}</tbody></table></div><button className="primary-action" onClick={()=>void salvarConfig()}>Salvar taxas e limites</button></section>
+      {manualAberto&&<div className="finance-manual-extra"><label>Origem<select value={manual.origem} onChange={e=>setManual({...manual,origem:e.target.value})}><option>Manual</option><option>Recebível</option><option>Contrato</option><option>Venda</option><option>Reembolso</option></select></label><label>Categoria<select value={manual.categoria} onChange={e=>setManual({...manual,categoria:e.target.value})}><option>Recebível</option><option>Despesa operacional</option><option>Tarifa bancária</option><option>Reembolso</option><option>Fornecedor</option><option>Imposto</option><option>Manual</option></select></label><label>Forma<select value={manual.forma_pagamento} onChange={e=>setManual({...manual,forma_pagamento:e.target.value})}><option>PIX</option><option>DINHEIRO</option><option>BOLETO</option><option>CARTAO_CREDITO</option><option>CARTAO_DEBITO</option></select></label>{String(manual.forma_pagamento).includes("CARTAO")&&<><label>Maquininha<select value={manual.operadora_cartao} onChange={e=>setManual({...manual,operadora_cartao:e.target.value})}><option value="">Selecione</option>{(config.maquinas||["InfinitePay","PagBank"]).map((m:string)=><option key={m}>{m}</option>)}</select></label><label>Parcelas<input type="number" min="1" max="60" value={manual.parcelas_cartao} onChange={e=>setManual({...manual,parcelas_cartao:Number(e.target.value)})}/></label></>}</div>}
+      {erro&&<div className="education-error">{erro}</div>}
+      {abaFinanceiro==="Tabela de preços"?<EducacaoModulo modulo="Tabela de preços" />:<section className="finance-ledger panel"><div className="finance-ledger-head"><div><span className="panel-kicker">{abaFinanceiro}</span><h2>{abaFinanceiro==="Caixa"?"Movimentações realizadas":abaFinanceiro}</h2></div><div className="finance-head-actions"><span>{lista.length} registro(s)</span>{abaFinanceiro==="Caixa"&&<button className="primary-action compact" onClick={()=>setManualAberto(v=>!v)}>+ Lançamento</button>}</div></div>{(abaFinanceiro==="Caixa"||abaFinanceiro==="Recebíveis")&&<div className="finance-filters"><label>Conta<select value={filtroConta} onChange={e=>setFiltroConta(e.target.value)}><option>Todas</option><option>CAIXA</option><option>SICOOB</option><option>INFINITEPAY</option><option>PAGBANK</option><option>C6</option></select></label><label>De<input type="date" value={filtroInicio} onChange={e=>setFiltroInicio(e.target.value)}/></label><label>Até<input type="date" value={filtroFim} onChange={e=>setFiltroFim(e.target.value)}/></label></div>}{manualAberto&&<div className="finance-manual-form"><label>Descrição<input value={manual.descricao} onChange={e=>setManual({...manual,descricao:e.target.value})}/></label><label>Tipo<select value={manual.tipo} onChange={e=>setManual({...manual,tipo:e.target.value})}><option>Entrada</option><option>Saída</option></select></label><label>Valor<input type="number" step="0.01" value={manual.valor} onChange={e=>setManual({...manual,valor:e.target.value})}/></label><label>Data<input type="date" value={manual.data_vencimento} onChange={e=>setManual({...manual,data_vencimento:e.target.value,data_pagamento:e.target.value})}/></label><label>Conta<select value={manual.conta_caixa} onChange={e=>setManual({...manual,conta_caixa:e.target.value})}><option>CAIXA</option><option>SICOOB</option><option>INFINITEPAY</option><option>PAGBANK</option><option>C6</option></select></label><button className="primary-action" disabled={salvando} onClick={()=>void salvarManual()}>{salvando?"Salvando...":"Salvar lançamento"}</button></div>}<div className="finance-table-scroll"><table><thead><tr><th>Data</th><th>Descrição / pessoa</th><th>Origem</th><th>Forma</th><th>Conta</th><th>Bruto</th><th>Taxa</th><th>Líquido</th><th>Status</th><th></th></tr></thead><tbody>{lista.map(l=><tr key={l.id}><td>{(l.data_pagamento||l.data_vencimento||"").split("-").reverse().join("/")}</td><td><strong>{l.descricao}</strong><small>{nome(l)||"Sem vínculo"}</small></td><td>{l.origem||l.categoria||"Manual"}</td><td>{String(l.forma_pagamento||"—").replaceAll("_"," ")}{l.operadora_cartao&&<small>{l.operadora_cartao}</small>}</td><td>{l.conta_caixa||"—"}</td><td>{brl(l.valor_bruto||l.valor)}</td><td>{brl(l.taxa_valor)}</td><td><strong>{brl(l.valor_liquido||l.valor)}</strong></td><td><span className={`finance-status ${l.status==="Pago"?"paid":"open"}`}>{l.status}</span></td><td>{abaFinanceiro==="Recebíveis"&&<button className="primary-action compact" onClick={()=>setReceber({...l,data_pagamento:hoje,valor_bruto:Number(l.valor_bruto||l.valor),valor_liquido:Number(l.valor_liquido||l.valor),conta_caixa:l.conta_caixa||"CAIXA"})}>Receber</button>}</td></tr>)}{!lista.length&&<tr><td colSpan={10} className="empty-inline">Nenhum lançamento nesta seção.</td></tr>}</tbody></table></div></section>}
+      {receber&&<div className="education-modal-backdrop"><section className="education-modal finance-receive-modal"><div className="education-list-head"><div><span className="page-eyebrow">BAIXA DE RECEBÍVEL</span><h2>Registrar recebimento</h2></div><button onClick={()=>setReceber(null)}><X size={18}/></button></div><div className="education-module-fields"><label><span>Data do recebimento</span><input type="date" value={receber.data_pagamento} onChange={e=>setReceber({...receber,data_pagamento:e.target.value})}/></label><label><span>Forma de pagamento</span><select value={receber.forma_pagamento||"PIX"} onChange={e=>setReceber({...receber,forma_pagamento:e.target.value,operadora_cartao:""})}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="BOLETO">Boleto</option><option value="CARTAO_DEBITO">Cartão de débito</option><option value="CARTAO_CREDITO">Cartão de crédito</option></select></label>{String(receber.forma_pagamento||"").includes("CARTAO")&&<label><span>Máquina utilizada *</span><select value={receber.operadora_cartao||""} onChange={e=>setReceber({...receber,operadora_cartao:e.target.value,conta_caixa:e.target.value})}><option value="">Selecione a maquininha</option><option value="InfinitePay">InfinitePay</option><option value="PagBank">PagBank</option></select></label>}<label><span>Conta de entrada</span><select value={receber.conta_caixa||"CAIXA"} onChange={e=>setReceber({...receber,conta_caixa:e.target.value})}><option>CAIXA</option><option>SICOOB</option><option>C6</option><option>InfinitePay</option><option>PagBank</option></select></label><label><span>Valor bruto</span><input type="number" step="0.01" value={receber.valor_bruto} onChange={e=>setReceber({...receber,valor_bruto:Number(e.target.value)})}/></label><label><span>Valor líquido</span><input type="number" step="0.01" value={receber.valor_liquido} onChange={e=>setReceber({...receber,valor_liquido:Number(e.target.value)})}/></label></div><div className="finance-fee-preview"><span>Taxa</span><strong>{brl(Math.max(0,Number(receber.valor_bruto)-Number(receber.valor_liquido)))}</strong></div><div className="users-template-actions"><button className="ghost-action" onClick={()=>setReceber(null)}>Cancelar</button><button className="primary-action" disabled={salvando} onClick={()=>void confirmarBaixa()}>{salvando?"Registrando...":"Confirmar recebimento"}</button></div></section></div>}
     </div>
   );
+}
+
+type EtapaGuiaForm={id:number;etapa:string;descricao_outro:string};
+const guiaVazia=()=>({paciente_modelo_id:0,procedimento_id:0,procedimento_nome:"",cor:"",escala:"",elemento_arcada:"",carga_imediata:false,retorno_solicitado:"",observacao:"",etapas:[{id:Date.now(),etapa:"",descricao_outro:""}] as EtapaGuiaForm[]});
+
+function EducacaoGuias(){
+  const [pacientes,setPacientes]=useState<any[]>([]);const [procedimentos,setProcedimentos]=useState<any[]>([]);const [busca,setBusca]=useState("");
+  const [pacienteId,setPacienteId]=useState(0);const [guias,setGuias]=useState<GuiaEducacaoApi[]>([]);const [form,setForm]=useState(guiaVazia());const [erro,setErro]=useState("");const [feedback,setFeedback]=useState("");const [salvando,setSalvando]=useState(false);
+  useEffect(()=>{void Promise.all([buscarRecursoEducacaoApi<any[]>("pacientes-modelo"),buscarRecursoEducacaoApi<any[]>("procedimentos")]).then(([p,t])=>{setPacientes(p);setProcedimentos(t);if(p[0]?.id)setPacienteId(Number(p[0].id))}).catch(e=>setErro(e instanceof Error?e.message:"Falha ao carregar guias."))},[]);
+  useEffect(()=>{if(!pacienteId){setGuias([]);return}setForm({...guiaVazia(),paciente_modelo_id:pacienteId});void listarGuiasEducacaoApi(pacienteId).then(setGuias).catch(e=>setErro(e instanceof Error?e.message:"Falha ao carregar o histórico."))},[pacienteId]);
+  const pacientesFiltrados=useMemo(()=>{const q=busca.trim().toLocaleLowerCase("pt-BR");return pacientes.filter(p=>!q||`${p.nome} ${p.prontuario} ${p.telefone}`.toLocaleLowerCase("pt-BR").includes(q)).slice(0,30)},[pacientes,busca]);
+  const paciente=pacientes.find(p=>Number(p.id)===pacienteId);
+  async function salvar(){setErro("");setFeedback("");setSalvando(true);try{const nova=await criarGuiaEducacaoApi({...form,paciente_modelo_id:pacienteId,etapas:form.etapas.map(({etapa,descricao_outro})=>({etapa,descricao_outro}))});setGuias(g=>[nova,...g]);setForm({...guiaVazia(),paciente_modelo_id:pacienteId});setFeedback("Guia emitida e salva no histórico do paciente-modelo.")}catch(e){setErro(e instanceof Error?e.message:"Não foi possível emitir a guia.")}finally{setSalvando(false)}}
+  return <section className="education-page"><div className="education-hero"><div><span className="page-eyebrow">CONTROLE PROTÉTICO</span><h1>Guias</h1></div></div>
+    <div className="guides-shell">
+      <aside className="panel guides-sidebar"><div className="section-title-row"><div><span className="panel-kicker">Paciente-modelo</span><h2>Selecionar</h2></div></div><label className="guides-search"><Search size={16}/><input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar nome, prontuário ou telefone"/></label><div className="guides-patient-list">{pacientesFiltrados.map(p=><button type="button" key={p.id} className={`guides-patient-card${Number(p.id)===pacienteId?" active":""}`} onClick={()=>setPacienteId(Number(p.id))}><strong>{p.nome}</strong><span>{p.prontuario||"Sem prontuário"}</span><small>{p.telefone||"Sem telefone"}</small></button>)}</div></aside>
+      <section className="panel guides-main"><div className="guides-main-header"><div><span className="panel-kicker">Ordem de serviço</span><h2>{paciente?.nome||"Selecione um paciente-modelo"}</h2><p>{paciente?`Prontuário ${paciente.prontuario||"não informado"}`:"Escolha um cadastro para emitir a guia."}</p></div></div>{erro&&<div className="education-error">{erro}</div>}{feedback&&<div className="dashboard-note success">{feedback}</div>}
+      {paciente&&<><div className="guides-summary-grid"><article className="dashboard-card"><span>Guias emitidas</span><strong>{guias.length}</strong></article></div>
+      <div className="clinical-panel"><div className="clinical-panel-header"><div><strong>Nova guia</strong><span>Preencha a ordem de serviço protético.</span></div></div><div className="users-create-grid procedures-form-grid">
+        <label className="procedures-form-wide"><span>Procedimento</span><select value={form.procedimento_id} onChange={e=>{const id=Number(e.target.value);setForm({...form,procedimento_id:id,procedimento_nome:id?"":form.procedimento_nome})}}><option value={0}>Informar procedimento não listado</option>{procedimentos.filter(p=>p.ativo!==false&&p.ativo!==0).map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
+        {!form.procedimento_id&&<label className="procedures-form-wide"><span>Procedimento não listado</span><input value={form.procedimento_nome} onChange={e=>setForm({...form,procedimento_nome:e.target.value})} placeholder="Digite o procedimento"/></label>}
+        <label><span>Elemento ou arcada</span><input value={form.elemento_arcada} onChange={e=>setForm({...form,elemento_arcada:e.target.value})} placeholder="Ex.: 11, 21 ou Arcada superior"/></label><label><span>Escala</span><input value={form.escala} onChange={e=>setForm({...form,escala:e.target.value})}/></label><label><span>Cor</span><input value={form.cor} onChange={e=>setForm({...form,cor:e.target.value})}/></label><label><span>Data de retorno solicitada</span><input type="date" value={form.retorno_solicitado} onChange={e=>setForm({...form,retorno_solicitado:e.target.value})}/></label>
+        <label className="checkbox-row"><input type="checkbox" checked={form.carga_imediata} onChange={e=>setForm({...form,carga_imediata:e.target.checked})}/><span>Carga imediata</span></label>
+        <div className="procedures-form-wide os-steps-box"><div className="clinical-panel-header compact"><div><strong>Etapas</strong><span>Adicione todas as etapas necessárias.</span></div><button type="button" className="ghost-action" onClick={()=>setForm({...form,etapas:[...form.etapas,{id:Date.now(),etapa:"",descricao_outro:""}]})}>Adicionar etapa</button></div><div className="os-steps-list">{form.etapas.map(et=><div className="os-step-row" key={et.id}><input value={et.etapa} onChange={e=>setForm({...form,etapas:form.etapas.map(x=>x.id===et.id?{...x,etapa:e.target.value}:x)})} placeholder="Ex.: Moldagem, prova, instalação ou Outro"/><input value={et.descricao_outro} onChange={e=>setForm({...form,etapas:form.etapas.map(x=>x.id===et.id?{...x,descricao_outro:e.target.value}:x)})} placeholder="Descrição complementar"/><button type="button" className="ghost-action danger" onClick={()=>setForm({...form,etapas:form.etapas.length>1?form.etapas.filter(x=>x.id!==et.id):form.etapas})}>Remover</button></div>)}</div></div>
+        <label className="procedures-form-wide"><span>Observação</span><textarea rows={4} value={form.observacao} onChange={e=>setForm({...form,observacao:e.target.value})}/></label></div><div className="users-template-actions"><button type="button" className="primary-action" disabled={salvando} onClick={()=>void salvar()}>{salvando?"Emitindo...":"Salvar ordem de serviço"}</button></div></div>
+      <div className="clinical-elements-panel"><div className="clinical-elements-header"><strong>Guias emitidas</strong><span>{guias.length} item(ns)</span></div>{guias.length?guias.map(g=><div className="clinical-element-card" key={g.id}><div className="clinical-element-row"><strong>{g.procedimento_nome_snapshot||"Procedimento"}</strong><span>{g.documento_nome||"Documento"}</span></div><div className="clinical-element-procedures"><span>{g.elemento_arcada}</span>{g.retorno_solicitado&&<span>Retorno {g.retorno_solicitado}</span>}{g.etapas?.map((e,i)=><span key={i}>{e.etapa}{e.descricao_outro?`: ${e.descricao_outro}`:""}</span>)}</div><div className="clinical-element-actions"><button type="button" className="ghost-action" onClick={()=>void baixarGuiaEducacaoApi(g.id,g.documento_nome||`GUIA_${g.id}.docx`)}>Abrir / imprimir</button></div></div>):<span className="empty-inline">Nenhuma guia emitida para este paciente.</span>}</div></>}</section>
+    </div></section>
+}
+
+type VisaoAgendaEducacao="Dia"|"Semana"|"Mês";
+const hojeAgendaEducacao=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`};
+const adicionarDiasAgenda=(iso:string,dias:number)=>{const d=new Date(`${iso}T12:00:00`);d.setDate(d.getDate()+dias);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`};
+const dataBrAgenda=(iso:string)=>iso?iso.split("-").reverse().join("/"):"";
+const formAgendaVazio=(data=hojeAgendaEducacao())=>({data,hora_inicio:"09:00",hora_fim:"10:00",paciente_modelo_id:0,procedimento_id:0,guia_id:0,titulo:"",tipo_atendimento:"Atendimento",responsavel:"",local:"",status:"Agendado",observacoes:"",cancelado_motivo:""});
+
+function AgendaEducacaoLegada(){
+  const [eventos,setEventos]=useState<any[]>([]);const [pacientes,setPacientes]=useState<any[]>([]);const [procedimentos,setProcedimentos]=useState<any[]>([]);const [usuarios,setUsuarios]=useState<any[]>([]);const [guias,setGuias]=useState<GuiaEducacaoApi[]>([]);
+  const [data,setData]=useState(hojeAgendaEducacao());const [visao,setVisao]=useState<VisaoAgendaEducacao>("Dia");const [form,setForm]=useState<any>(formAgendaVazio());const [modal,setModal]=useState(false);const [editando,setEditando]=useState<number|null>(null);const [erro,setErro]=useState("");
+  const carregar=()=>buscarRecursoEducacaoApi<any[]>("agenda").then(setEventos).catch(e=>setErro(e instanceof Error?e.message:"Falha ao carregar agenda."));
+  useEffect(()=>{void carregar();void Promise.all([buscarRecursoEducacaoApi<any[]>("pacientes-modelo"),buscarRecursoEducacaoApi<any[]>("procedimentos"),buscarRecursoEducacaoApi<any[]>("usuarios")]).then(([p,pr,u])=>{setPacientes(p);setProcedimentos(pr);setUsuarios(u.filter((x:any)=>x.ativo!==0&&x.ativo!==false&&x.agendaAtiva))})},[]);
+  useEffect(()=>{if(!form.paciente_modelo_id){setGuias([]);return}void listarGuiasEducacaoApi(Number(form.paciente_modelo_id)).then(setGuias)},[form.paciente_modelo_id]);
+  const dias=useMemo(()=>{if(visao==="Dia")return [data];if(visao==="Semana"){const d=new Date(`${data}T12:00:00`);const segunda=adicionarDiasAgenda(data,-((d.getDay()+6)%7));return Array.from({length:7},(_,i)=>adicionarDiasAgenda(segunda,i))}const d=new Date(`${data.slice(0,7)}-01T12:00:00`);const inicio=adicionarDiasAgenda(`${data.slice(0,7)}-01`,-d.getDay());return Array.from({length:42},(_,i)=>adicionarDiasAgenda(inicio,i))},[data,visao]);
+  const eventosVisiveis=useMemo(()=>eventos.filter(e=>dias.includes(String(e.data||""))).sort((a,b)=>`${a.data} ${a.hora_inicio}`.localeCompare(`${b.data} ${b.hora_inicio}`)),[eventos,dias]);
+  const pacienteNome=(id:any)=>pacientes.find(p=>Number(p.id)===Number(id))?.nome||"Compromisso interno";
+  const procedimentoNome=(id:any)=>procedimentos.find(p=>Number(p.id)===Number(id))?.nome||"";
+  function abrirNovo(d=data,hora="09:00"){setEditando(null);setForm(formAgendaVazio(d));setForm((f:any)=>({...f,hora_inicio:hora,hora_fim:`${String(Math.min(23,Number(hora.slice(0,2))+1)).padStart(2,"0")}:${hora.slice(3)}`}));setModal(true);setErro("")}
+  function abrirEditar(e:any){setEditando(Number(e.id));setForm({...formAgendaVazio(e.data),...e,paciente_modelo_id:Number(e.paciente_modelo_id||0),procedimento_id:Number(e.procedimento_id||0),guia_id:Number(e.guia_id||0)});setModal(true);setErro("")}
+  async function salvar(e:FormEvent){e.preventDefault();setErro("");try{if(editando)await atualizarRecursoEducacaoApi("agenda",editando,form);else await criarRecursoEducacaoApi("agenda",form);setModal(false);await carregar()}catch(ex){setErro(ex instanceof Error?ex.message:"Não foi possível salvar o agendamento.")}}
+  const tituloData=new Date(`${data}T12:00:00`).toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+  return <section className="education-page education-agenda-page"><div className="education-hero"><div><span className="page-eyebrow">AGENDA SOULSUL ELEVEN</span><h1>Agenda</h1></div><button className="primary-button" onClick={()=>abrirNovo()}><Plus size={17}/> Novo agendamento</button></div>
+    {erro&&!modal&&<div className="education-error">{erro}</div>}<div className="education-agenda-toolbar"><div className="education-agenda-nav"><button onClick={()=>setData(adicionarDiasAgenda(data,visao==="Dia"?-1:visao==="Semana"?-7:-30))}><ChevronLeft size={18}/></button><button onClick={()=>setData(hojeAgendaEducacao())}>Hoje</button><button onClick={()=>setData(adicionarDiasAgenda(data,visao==="Dia"?1:visao==="Semana"?7:30))}><ChevronRight size={18}/></button><strong>{tituloData}</strong></div><div className="education-agenda-views">{(["Dia","Semana","Mês"] as const).map(v=><button className={visao===v?"active":""} onClick={()=>setVisao(v)} key={v}>{v}</button>)}</div></div>
+    <div className={`education-agenda-calendar view-${visao.toLowerCase().replace("ê","e")}`}>{dias.map(d=><section className={`education-agenda-day${d===hojeAgendaEducacao()?" today":""}`} key={d}><header><b>{new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR",{weekday:"short"})}</b><span>{dataBrAgenda(d)}</span></header><div className="education-agenda-day-body" onDoubleClick={()=>abrirNovo(d)}>{eventosVisiveis.filter(e=>e.data===d).map(e=><button type="button" className={`education-agenda-event status-${String(e.status||"").toLowerCase().replaceAll(" ","-")}`} key={e.id} onClick={()=>abrirEditar(e)}><span>{e.hora_inicio}–{e.hora_fim}</span><strong>{pacienteNome(e.paciente_modelo_id)}</strong><small>{e.titulo||e.tipo_atendimento}{procedimentoNome(e.procedimento_id)?` · ${procedimentoNome(e.procedimento_id)}`:""}</small><em>{e.responsavel||"Sem profissional"} · {e.status}</em></button>)}{!eventosVisiveis.some(e=>e.data===d)&&<button className="education-agenda-empty-slot" onClick={()=>abrirNovo(d)}>+ Agendar</button>}</div></section>)}</div>
+    {modal&&<div className="education-modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><form className="education-modal education-agenda-modal" onSubmit={salvar}><div className="education-list-head"><div><span className="page-eyebrow">{editando?"EDITAR":"NOVO"}</span><h2>{editando?"Editar agendamento":"Novo agendamento"}</h2></div><button type="button" onClick={()=>setModal(false)}><X size={18}/></button></div>{erro&&<div className="education-error">{erro}</div>}<div className="education-module-fields">
+      <label>Tipo<select value={form.tipo_atendimento} onChange={e=>setForm({...form,tipo_atendimento:e.target.value})}><option>Atendimento</option><option>Avaliação</option><option>Retorno</option><option>Compromisso</option><option>Evento</option></select></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{["Agendado","Confirmado","Aguardando","Em atendimento","Atendido","Atrasado","Faltou","Desmarcado","Cancelado"].map(s=><option key={s}>{s}</option>)}</select></label>
+      <label>Data<input required type="date" value={form.data} onChange={e=>setForm({...form,data:e.target.value})}/></label><label>Horário inicial<input required type="time" value={form.hora_inicio} onChange={e=>setForm({...form,hora_inicio:e.target.value})}/></label><label>Horário final<input required type="time" value={form.hora_fim} onChange={e=>setForm({...form,hora_fim:e.target.value})}/></label><label>Profissional<select required value={form.responsavel} onChange={e=>setForm({...form,responsavel:e.target.value})}><option value="">Selecione</option>{usuarios.map(u=><option key={u.id} value={u.nomeAgenda||u.nome}>{u.nomeAgenda||u.nome}</option>)}</select></label>
+      <label className="education-field-wide">Paciente-modelo<select value={form.paciente_modelo_id} onChange={e=>setForm({...form,paciente_modelo_id:Number(e.target.value),guia_id:0})}><option value={0}>Sem paciente — compromisso interno</option>{pacientes.map(p=><option key={p.id} value={p.id}>{p.prontuario} — {p.nome}</option>)}</select></label><label>Procedimento<select value={form.procedimento_id} onChange={e=>setForm({...form,procedimento_id:Number(e.target.value)})}><option value={0}>Selecione</option>{procedimentos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></label><label>Guia vinculada<select value={form.guia_id} onChange={e=>setForm({...form,guia_id:Number(e.target.value)})}><option value={0}>Sem guia</option>{guias.map(g=><option key={g.id} value={g.id}>{g.procedimento_nome_snapshot} · {g.elemento_arcada}</option>)}</select></label>
+      <label className="education-field-wide">Título<input required value={form.titulo} onChange={e=>setForm({...form,titulo:e.target.value})} placeholder="Descrição do atendimento ou compromisso"/></label><label>Local / consultório<input value={form.local} onChange={e=>setForm({...form,local:e.target.value})}/></label><label className="education-field-wide">Observações<textarea rows={4} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})}/></label>{["Desmarcado","Cancelado"].includes(form.status)&&<label className="education-field-wide">Motivo<input required value={form.cancelado_motivo} onChange={e=>setForm({...form,cancelado_motivo:e.target.value})}/></label>}
+      </div><div className="education-actions"><button className="primary-button">{editando?"Salvar alterações":"Confirmar agendamento"}</button><button type="button" onClick={()=>setModal(false)}>Cancelar</button></div></form></div>}
+  </section>
 }
 
 const MODULOS_ACESSO_EDUCACAO = Object.keys(SUBFUNCOES_ACESSO_EDUCACAO);
 
 function EducacaoUsuarios() {
   const [usuarios, setUsuarios] = useState<any[]>([]);
-  const [form, setForm] = useState<any>({ nome:"", usuario:"", senha:"", perfil:"USUARIO", ativo:true, permissoes:permissoesPadraoEducacao() });
+  const [form, setForm] = useState<any>({ nome:"", usuario:"", senha:"", perfil:"USUARIO", ativo:true, agendaAtiva:false,nomeAgenda:"", permissoes:permissoesPadraoEducacao() });
   const [editando, setEditando] = useState<number|null>(null);
   const [erro, setErro] = useState("");
   const carregar = () => buscarRecursoEducacaoApi<any[]>("usuarios").then(setUsuarios).catch(e=>setErro(e instanceof Error?e.message:"Falha ao carregar usuários."));
   useEffect(()=>{void carregar()},[]);
-  async function salvar(e:FormEvent){e.preventDefault();setErro("");try{const permissoes={...form.permissoes};Object.entries(SUBFUNCOES_ACESSO_EDUCACAO).forEach(([m,subs])=>permissoes[m]=subs.some(s=>(permissoes[`${m}.${s}`]??"edit")!=="none"));const payload={...form,permissoes};if(editando)await atualizarRecursoEducacaoApi("usuarios",editando,payload);else await criarRecursoEducacaoApi("usuarios",payload);setEditando(null);setForm({nome:"",usuario:"",senha:"",perfil:"USUARIO",ativo:true,permissoes:permissoesPadraoEducacao()});await carregar()}catch(ex){setErro(ex instanceof Error?ex.message:"Não foi possível salvar.")}}
+  async function salvar(e:FormEvent){e.preventDefault();setErro("");try{const permissoes={...form.permissoes};Object.entries(SUBFUNCOES_ACESSO_EDUCACAO).forEach(([m,subs])=>permissoes[m]=subs.some(s=>(permissoes[`${m}.${s}`]??"edit")!=="none"));const payload={...form,nomeAgenda:form.nomeAgenda||form.nome,permissoes};if(editando)await atualizarRecursoEducacaoApi("usuarios",editando,payload);else await criarRecursoEducacaoApi("usuarios",payload);setEditando(null);setForm({nome:"",usuario:"",senha:"",perfil:"USUARIO",ativo:true,agendaAtiva:false,nomeAgenda:"",permissoes:permissoesPadraoEducacao()});await carregar()}catch(ex){setErro(ex instanceof Error?ex.message:"Não foi possível salvar.")}}
   return <section className="education-page">
-    <div className="education-hero"><div><span className="page-eyebrow">SEGURANÇA E ACESSOS</span><h1>Usuários</h1><p>Defina o nível e os módulos que cada pessoa pode acessar.</p></div></div>
+    <div className="education-hero"><div><span className="page-eyebrow">SEGURANÇA E ACESSOS</span><h1>Usuários</h1></div></div>
     {erro&&<div className="education-error">{erro}</div>}
     <div className="education-users-layout">
       <form className="education-card education-form" onSubmit={salvar}>
@@ -503,16 +600,19 @@ function EducacaoUsuarios() {
         <label>Nome<input required value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></label>
         {!editando&&<><label>Usuário<input required value={form.usuario} onChange={e=>setForm({...form,usuario:e.target.value})}/></label><label>Senha temporária<input required minLength={6} type="password" value={form.senha} onChange={e=>setForm({...form,senha:e.target.value})}/></label></>}
         <label>Nível<select value={form.perfil} onChange={e=>setForm({...form,perfil:e.target.value})}><option value="USUARIO">Usuário</option><option value="ADMINISTRADOR">Administrador</option></select></label>
+        <div className="education-agenda-user-config"><label className="education-check"><input type="checkbox" checked={Boolean(form.agendaAtiva)} onChange={e=>setForm({...form,agendaAtiva:e.target.checked})}/>Ter agenda aberta</label>{form.agendaAtiva&&<label>Nome exibido na agenda<input required value={form.nomeAgenda||""} onChange={e=>setForm({...form,nomeAgenda:e.target.value})} placeholder={form.nome||"Nome do profissional"}/></label>}<small>Pode ser ativado tanto para Administradores quanto para Usuários.</small></div>
         <fieldset className="education-permission-matrix" disabled={form.perfil==="ADMINISTRADOR"}><legend>Permissões por módulo e função</legend>{Object.entries(SUBFUNCOES_ACESSO_EDUCACAO).map(([modulo,subs])=><section className="education-permission-module" key={modulo}><h3>{modulo}</h3>{subs.map(sub=>{const chave=`${modulo}.${sub}`;const nivel=form.permissoes?.[chave]??(form.permissoes?.[modulo]===false?"none":"edit");return <label key={chave}><span>{sub}</span><select value={form.perfil==="ADMINISTRADOR"?"edit":nivel} onChange={e=>setForm({...form,permissoes:{...form.permissoes,[chave]:e.target.value}})}><option value="none">Sem acesso</option><option value="view">Somente visualizar</option><option value="edit">Visualizar e editar</option></select></label>})}</section>)}</fieldset>
         <label className="education-check"><input type="checkbox" checked={form.ativo} onChange={e=>setForm({...form,ativo:e.target.checked})}/>Usuário ativo</label>
         <div className="education-actions"><button className="primary-button">Salvar usuário</button>{editando&&<button type="button" onClick={()=>setEditando(null)}>Cancelar</button>}</div>
       </form>
-      <div className="education-card"><h2>Usuários cadastrados</h2><div className="education-list">{usuarios.map(u=><div className="education-row" key={u.id}><div><strong>{u.nome}</strong><small>{u.usuario} · {u.perfil}</small><span className={u.ativo?"status-pill ok":"status-pill"}>{u.ativo?"Ativo":"Inativo"}</span></div><div className="education-row-actions"><button onClick={()=>{setEditando(u.id);setForm({nome:u.nome,usuario:u.usuario,senha:"",perfil:u.perfil||"USUARIO",ativo:u.ativo,permissoes:u.permissoes||{}})}}><Pencil size={16}/> Permissões</button><button type="button" onClick={async()=>{if(!window.confirm(`Resetar a senha de ${u.nome} para soulsuledu?`))return;try{await resetarSenhaUsuarioEducacaoApi(u.id);window.alert("Senha resetada. No próximo acesso, o usuário deverá entrar com soulsuledu e criar uma nova senha.")}catch(ex){setErro(ex instanceof Error?ex.message:"Não foi possível resetar a senha.")}}}>Resetar senha</button></div></div>)}</div></div>
+      <div className="education-card"><h2>Usuários cadastrados</h2><div className="education-list">{usuarios.map(u=><div className="education-row" key={u.id}><div><strong>{u.nome}</strong><small>{u.usuario} · {u.perfil}</small>{u.agendaAtiva&&<small>Agenda aberta como: <b>{u.nomeAgenda||u.nome}</b></small>}<span className={u.ativo?"status-pill ok":"status-pill"}>{u.ativo?"Ativo":"Inativo"}</span></div><div className="education-row-actions"><button onClick={()=>{setEditando(u.id);setForm({nome:u.nome,usuario:u.usuario,senha:"",perfil:u.perfil||"USUARIO",ativo:u.ativo,agendaAtiva:Boolean(u.agendaAtiva),nomeAgenda:u.nomeAgenda||u.nome,permissoes:u.permissoes||{}})}}><Pencil size={16}/> Permissões e agenda</button><button type="button" onClick={async()=>{if(!window.confirm(`Resetar a senha de ${u.nome} para soulsuledu?`))return;try{await resetarSenhaUsuarioEducacaoApi(u.id);window.alert("Senha resetada. No próximo acesso, o usuário deverá entrar com soulsuledu e criar uma nova senha.")}catch(ex){setErro(ex instanceof Error?ex.message:"Não foi possível resetar a senha.")}}}>Resetar senha</button></div></div>)}</div></div>
     </div>
   </section>
 }
 
 function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cadastro",onPacienteAberto,onEditarOrcamento }: { modulo: string; pacienteInicialId?:number|null; pacienteAbaInicial?:AbaFichaPaciente; onPacienteAberto?:(id:number|null)=>void; onEditarOrcamento?:(id:number)=>void }) {
+  let usuarioModulo:any=null;try{usuarioModulo=JSON.parse(localStorage.getItem("soulsul_educacao_usuario")||"null")}catch{}
+  const administradorModulo=usuarioModulo?.perfil==="ADMINISTRADOR"||usuarioModulo?.usuario==="educacao.admin";
   const [dados, setDados] = useState<
     Record<string, unknown> | Record<string, unknown>[]
   >(() => modulo === "Dashboard" ? dashboardEducacaoVazio : []);
@@ -678,10 +778,9 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
         <div>
           <span className="page-eyebrow">SOULSUL EDUCAÇÃO</span>
           <h1>{modulo}</h1>
-          <p>Dados independentes da operação clínica.</p>
         </div>
         <div className="education-row-actions">
-          {modulo === "Pacientes" && (
+          {modulo === "Pacientes" && administradorModulo && (
             <button type="button" onClick={() => {
               const proximo = !mostrarPacientesExcluidos;
               setMostrarPacientesExcluidos(proximo);
@@ -1036,7 +1135,7 @@ function EducacaoFichaPaciente({pacienteId,abaInicial="Cadastro",onVoltar,onEdit
     {aba==="Cadastro"&&<form className="education-card education-form" onSubmit={salvar}><div className="education-list-head"><h2>Cadastro editável</h2><button className="primary-button" disabled={salvando}>{salvando?"Salvando...":"Salvar alterações"}</button></div><div className="education-module-fields">{camposModulo.Pacientes.filter(c=>!["indicado_aluno","indicado_por_aluno","responsavel","cpf_responsavel"].includes(c.nome)).map(c=><label key={c.nome} className={c.tipo==="checkbox"?"education-check":""}>{c.tipo!=="checkbox"&&c.rotulo}{c.tipo==="textarea"?<textarea value={form[c.nome]||""} onChange={e=>setForm({...form,[c.nome]:e.target.value})}/>:c.tipo==="radio"?<span className="education-choice-group">{c.opcoes?.map(o=><label key={o}><input type="radio" name={c.nome} checked={form[c.nome]===o} onChange={()=>setForm({...form,[c.nome]:o})}/>{o}</label>)}</span>:c.tipo==="checkbox"?<><input type="checkbox" checked={Boolean(form[c.nome])} onChange={e=>setForm({...form,[c.nome]:e.target.checked})}/>{c.rotulo}</>:<input type={c.tipo||"text"} required={c.obrigatorio} value={form[c.nome]||""} onChange={e=>setForm({...form,[c.nome]:e.target.value})}/>}</label>)}</div>{paciente.indicado_por_aluno&&<div className="education-record-note"><b>Indicado pelo aluno:</b> {paciente.indicado_por_aluno}</div>}</form>}
     {aba==="Orçamentos"&&<div className="education-card"><h2>Orçamentos</h2><div className="education-list">{ficha.orcamentos?.map((o:any)=><button type="button" className="education-row education-budget-record-row" key={o.id} onClick={()=>onEditarOrcamento?.(o.id)}><div><strong>Orçamento #{o.id}</strong><small>{o.data_contrato||"Sem data"} · {brlFicha(o.valor_total)}</small><span className={o.status==="APROVADO"?"status-pill ok":"status-pill"}>{o.status}</span></div><span>Editar orçamento →</span></button>)}{!ficha.orcamentos?.length&&<p className="education-empty">Nenhum orçamento.</p>}</div></div>}
     {aba==="Financeiro"&&<div className="education-card"><h2>Financeiro do paciente</h2><div className="education-list">{ficha.financeiro?.map((f:any)=><div className="education-row" key={f.id}><div><strong>{f.descricao||"Recebível"}</strong><small>Vencimento: {f.data_vencimento||"-"} · {f.forma_pagamento||"-"}</small></div><div><strong>{brlFicha(f.valor)}</strong><span className={f.status==="Pago"?"status-pill ok":"status-pill"}>{f.status}</span></div></div>)}{!ficha.financeiro?.length&&<p className="education-empty">Nenhum lançamento financeiro.</p>}</div></div>}
-    {aba==="Documentos"&&<div className="education-card"><h2>Documentos</h2><div className="education-list">{ficha.documentos?.map((d:any)=><div className="education-row" key={d.id}><div><strong>{d.nome}</strong><small>{d.data||"Sem data"}</small></div><button onClick={()=>void baixarContratoEducacaoApi(d.contrato_id,d.nome)}>Baixar</button></div>)}{!ficha.documentos?.length&&<p className="education-empty">Nenhum documento gerado.</p>}</div></div>}
+    {aba==="Documentos"&&<div className="education-card"><h2>Documentos</h2><div className="education-list">{ficha.documentos?.map((d:any)=><div className="education-row" key={d.id}><div><strong>{d.tipo?`${d.tipo} — `:""}{d.procedimento||d.nome}</strong>{d.procedimento&&<small>{d.nome}</small>}<small>{d.data||"Sem data"}</small></div><button onClick={()=>void (d.guia_id?baixarGuiaEducacaoApi(d.guia_id,d.nome):baixarContratoEducacaoApi(d.contrato_id,d.nome))}>Abrir / baixar</button></div>)}{!ficha.documentos?.length&&<p className="education-empty">Nenhum documento gerado.</p>}</div></div>}
     {aba==="Agendamentos"&&<div className="education-card"><h2>Agendamentos</h2><div className="education-list">{ficha.agendamentos?.map((a:any)=><div className="education-row" key={a.id}><div><strong>{a.titulo||"Atendimento"}</strong><small>{a.data||"-"} · {a.hora_inicio||""}{a.hora_fim?` às ${a.hora_fim}`:""} · {a.responsavel||"Sem responsável"}</small></div><span className={a.status==="Realizado"?"status-pill ok":"status-pill"}>{a.status}</span></div>)}{!ficha.agendamentos?.length&&<p className="education-empty">Nenhum agendamento.</p>}</div></div>}
   </section>
 }
@@ -1069,7 +1168,7 @@ type ItemOrcamentoEducacao = {
   ativo: boolean;
   expandido: boolean;
 };
-type ParcelaOrcamentoEducacao = { descricao:string; data:string; forma:string; valor:number; parcelas_cartao:number; operadora_cartao:string; bandeira_cartao:string };
+type ParcelaOrcamentoEducacao = { descricao:string; data:string; forma:string; valor:number; valor_liquido:number; parcelas_cartao:number; operadora_cartao:string; bandeira_cartao:string };
 
 function EducacaoOrcamentos({onAbrirPaciente,orcamentoId=null}:{onAbrirPaciente?:(id:number,aba?:AbaFichaPaciente)=>void;orcamentoId?:number|null}) {
   const [pacientes, setPacientes] = useState<PacienteModelo[]>([]);
@@ -1104,6 +1203,8 @@ function EducacaoOrcamentos({onAbrirPaciente,orcamentoId=null}:{onAbrirPaciente?
   const [salvando, setSalvando] = useState(false);
   const [operadoraCartao,setOperadoraCartao]=useState<OperadoraCartaoEducacao>("InfinitePay");
   const [bandeiraCartao,setBandeiraCartao]=useState<BandeiraCartaoEducacao>("Visa / Mastercard");
+  const [configFinanceiro,setConfigFinanceiro]=useState<any>({taxas:{},descontos:{},parcelas_maximas:12});
+  useEffect(()=>{void buscarConfiguracoesFinanceiroEducacaoApi().then(setConfigFinanceiro).catch(()=>{})},[]);
   const brl = (v: number) =>
     Number(v || 0).toLocaleString("pt-BR", {
       style: "currency",
@@ -1120,7 +1221,7 @@ function EducacaoOrcamentos({onAbrirPaciente,orcamentoId=null}:{onAbrirPaciente?
   const entradaOrcamento=Math.min(total,numeroEducacao(form.entrada));
   const saldoOrcamento=total-entradaOrcamento;
   const cartaoOrcamento=form.forma_pagamento==="CARTAO_CREDITO";
-  const cobrarComTaxa=(valor:number,parcelas:number)=>{if(!cartaoOrcamento||valor<=0)return valor;const indice=Math.max(0,parcelas-1);if(operadoraCartao==="PagBank")return arredondarCobrancaCartao(valor*FATORES_CARTAO_PAGBANK[Math.min(indice,17)]);const taxa=TAXAS_CARTAO_INFINITEPAY[bandeiraCartao][Math.min(indice,11)];return arredondarCobrancaCartao(valor/(1-taxa/100))};
+  const cobrarComTaxa=(valor:number,parcelas:number)=>{if(!cartaoOrcamento||valor<=0)return valor;const indice=Math.max(0,parcelas-1);const personalizada=Number(configFinanceiro.taxas?.[`${operadoraCartao}|${parcelas}`]??configFinanceiro.taxas?.[operadoraCartao]);if(personalizada>0)return arredondarCobrancaCartao(valor/(1-personalizada/100));if(operadoraCartao==="PagBank")return arredondarCobrancaCartao(valor*FATORES_CARTAO_PAGBANK[Math.min(indice,17)]);const taxa=TAXAS_CARTAO_INFINITEPAY[bandeiraCartao][Math.min(indice,11)];return arredondarCobrancaCartao(valor/(1-taxa/100))};
   const entradaCobrada=cobrarComTaxa(entradaOrcamento,1);const saldoCobrado=cobrarComTaxa(saldoOrcamento,parcelasOrcamento);const totalCobrado=entradaCobrada+saldoCobrado;
   async function carregar() {
     try {
@@ -1165,11 +1266,12 @@ function EducacaoOrcamentos({onAbrirPaciente,orcamentoId=null}:{onAbrirPaciente?
   function alternarItemExpandido(index:number){setItens(itens.map((item,i)=>i===index?{...item,expandido:!item.expandido}:item))}
   function alternarRegiaoAtivaResumo(index:number,regiao:string){setItens(itens.map((item,i)=>{if(i!==index)return item;const estavaInativa=item.regioesInativas.includes(regiao);const inativas=estavaInativa?item.regioesInativas.filter(r=>r!==regiao):[...item.regioesInativas,regiao];const quantidadeAtiva=item.regioes.filter(r=>!inativas.includes(r)).length;return {...item,regioesInativas:inativas,ativo:quantidadeAtiva>0,quantidade:Math.max(1,quantidadeAtiva)}}))}
   function criarPlanoPagamento(comEntrada=entradaOrcamento>0,quantidade=parcelasOrcamento):ParcelaOrcamentoEducacao[]{
+    const limiteParcelas=cartaoOrcamento?Number(configFinanceiro.parcelas_cartao||12):Number(configFinanceiro.parcelas_boleto||1);quantidade=Math.min(Math.max(1,quantidade),limiteParcelas);
     const linhas:ParcelaOrcamentoEducacao[]=[];
     const valorEntrada=comEntrada?(entradaOrcamento>0?entradaOrcamento:0):0;const saldo=total-valorEntrada;
-    if(comEntrada)linhas.push({descricao:"Entrada",data:form.data,forma:form.forma_pagamento||"PIX",valor:valorEntrada,parcelas_cartao:1,operadora_cartao:operadoraCartao,bandeira_cartao:bandeiraCartao});
+    if(comEntrada)linhas.push({descricao:"Entrada",data:form.data,forma:form.forma_pagamento||"PIX",valor:cobrarComTaxa(valorEntrada,1),valor_liquido:valorEntrada,parcelas_cartao:1,operadora_cartao:operadoraCartao,bandeira_cartao:bandeiraCartao});
     const base=new Date(`${form.data}T12:00:00`);
-    for(let i=0;i<quantidade;i++){const data=new Date(base);data.setMonth(data.getMonth()+i+(comEntrada?1:0));linhas.push({descricao:`Parcela ${i+1}`,data:data.toISOString().slice(0,10),forma:form.forma_pagamento||"PIX",valor:saldo/quantidade,parcelas_cartao:quantidade,operadora_cartao:operadoraCartao,bandeira_cartao:bandeiraCartao})}
+    for(let i=0;i<quantidade;i++){const data=new Date(base);data.setMonth(data.getMonth()+i+(comEntrada?1:0));const liquido=saldo/quantidade;linhas.push({descricao:`Parcela ${i+1}`,data:data.toISOString().slice(0,10),forma:form.forma_pagamento||"PIX",valor:cobrarComTaxa(liquido,quantidade),valor_liquido:liquido,parcelas_cartao:quantidade,operadora_cartao:operadoraCartao,bandeira_cartao:bandeiraCartao})}
     return linhas;
   }
   function abrirPagamento(){const comEntrada=entradaOrcamento>0;setPagamentoComEntrada(comEntrada);setQuantidadeParcelasPagamento(parcelasOrcamento);setPlanoPagamento(criarPlanoPagamento(comEntrada,parcelasOrcamento));setModalPagamentoAberto(true)}
@@ -1243,10 +1345,6 @@ function EducacaoOrcamentos({onAbrirPaciente,orcamentoId=null}:{onAbrirPaciente?
         <div>
           <span className="page-eyebrow">PACIENTES-MODELO</span>
           <h1>Orçamentos e contratos</h1>
-          <p>
-            Mesmo fluxo contratual da clínica, com dados financeiros exclusivos
-            da Educação.
-          </p>
         </div>
       </div>
       {orcamentoId&&pacienteId>0&&<nav className="education-record-tabs education-budget-patient-tabs" aria-label="Ficha do paciente">{(["Cadastro","Orçamentos","Financeiro","Documentos","Agendamentos"] as AbaFichaPaciente[]).map(aba=><button type="button" key={aba} className={aba==="Orçamentos"?"active":""} onClick={()=>{if(aba!=="Orçamentos")onAbrirPaciente?.(pacienteId,aba)}}>{aba}</button>)}</nav>}
@@ -1436,7 +1534,7 @@ function EducacaoCrm() {
   useEffect(()=>{void carregar()},[]);
   async function alterar(o:OrcamentoEducacao){setErro("");try{await alterarStatusOrcamentoEducacaoApi(o.id,o.status==="APROVADO"?"EM_ABERTO":"APROVADO");await carregar()}catch(e){setErro(e instanceof Error?e.message:"Não foi possível alterar o orçamento.")}}
   const lista=orcamentos.filter(o=>`${o.paciente_nome} ${o.prontuario}`.toLowerCase().includes(busca.toLowerCase()));
-  return <section className="education-page"><div className="education-hero"><div><span className="page-eyebrow">RELACIONAMENTO</span><h1>CRM de pacientes-modelo</h1><p>Acompanhe aqui o histórico de orçamentos e contratos.</p></div></div>{erro&&<div className="education-error">{erro}</div>}<div className="education-card"><div className="education-list-head"><h2>Histórico de orçamentos</h2><input placeholder="Buscar paciente ou prontuário" value={busca} onChange={e=>setBusca(e.target.value)}/></div><div className="education-list">{lista.map(o=><div className="education-row" key={o.id}><div><strong>{o.prontuario} — {o.paciente_nome}</strong><small>{o.data_contrato||"Sem data"} · {Number(o.valor_total||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</small><span className={o.status==="APROVADO"?"status-pill ok":"status-pill"}>{o.status==="APROVADO"?"Aprovado":"Em aberto"}</span></div><div className="education-row-actions">{administrador&&<button onClick={()=>void alterar(o)}>{o.status==="APROVADO"?"Reabrir":"Aprovar"}</button>}{o.status==="APROVADO"&&<button onClick={()=>void baixarContratoEducacaoApi(o.id,`CONTRATO_${o.prontuario}.docx`)}>Contrato</button>}</div></div>)}{lista.length===0&&<p className="education-empty">Nenhum orçamento encontrado.</p>}</div></div></section>
+  return <section className="education-page"><div className="education-hero"><div><span className="page-eyebrow">RELACIONAMENTO</span><h1>CRM de pacientes-modelo</h1></div></div>{erro&&<div className="education-error">{erro}</div>}<div className="education-card"><div className="education-list-head"><h2>Histórico de orçamentos</h2><input placeholder="Buscar paciente ou prontuário" value={busca} onChange={e=>setBusca(e.target.value)}/></div><div className="education-list">{lista.map(o=><div className="education-row" key={o.id}><div><strong>{o.prontuario} — {o.paciente_nome}</strong><small>{o.data_contrato||"Sem data"} · {Number(o.valor_total||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</small><span className={o.status==="APROVADO"?"status-pill ok":"status-pill"}>{o.status==="APROVADO"?"Aprovado":"Em aberto"}</span></div><div className="education-row-actions">{administrador&&<button onClick={()=>void alterar(o)}>{o.status==="APROVADO"?"Reabrir":"Aprovar"}</button>}{o.status==="APROVADO"&&<button onClick={()=>void baixarContratoEducacaoApi(o.id,`CONTRATO_${o.prontuario}.docx`)}>Contrato</button>}</div></div>)}{lista.length===0&&<p className="education-empty">Nenhum orçamento encontrado.</p>}</div></div></section>
 }
 
 export function EducacaoPage({
@@ -1444,6 +1542,8 @@ export function EducacaoPage({
 }: {
   secao?: "Alunos" | "Treinamentos";
 }) {
+  let usuarioPagina:any=null;try{usuarioPagina=JSON.parse(localStorage.getItem("soulsul_educacao_usuario")||"null")}catch{}
+  const administradorPagina=usuarioPagina?.perfil==="ADMINISTRADOR"||usuarioPagina?.usuario==="educacao.admin";
   const [aba, setAba] = useState<Aba>(secao);
   const [alunos, setAlunos] = useState<AlunoApi[]>([]);
   const [alunosExcluidos, setAlunosExcluidos] = useState<Record<string, any>[]>([]);
@@ -1688,6 +1788,9 @@ export function EducacaoPage({
     if(reembolso){const valor=window.prompt("Qual é o valor do reembolso?");if(valor===null)return;valor_reembolso=numeroEducacao(valor);data_reembolso=window.prompt("Data do pagamento do reembolso (AAAA-MM-DD):",new Date().toISOString().slice(0,10))||"";if(!valor_reembolso||!data_reembolso){setErro("Informe o valor e a data do reembolso.");return}}
     await executar(()=>cancelarMatriculaTreinamentoApi(matricula.id,{senha_admin:senha,reembolso,valor_reembolso,data_reembolso}),()=>{});
   }
+  function imprimirRelatorioTurma(){
+    const turmaAtual=turmas.find(t=>t.id===turmaConsulta);if(!turmaAtual)return;const lista=matriculas.filter(m=>m.turmaId===turmaConsulta&&m.status!=="Cancelado");const esc=(v:any)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));const linhas=lista.map(m=>`<tr><td>${esc(m.alunoNome)}</td><td>${esc(m.status)}</td><td>${(m.pacientesIndicadosFechados||[]).length?(m.pacientesIndicadosFechados||[]).map(p=>`${esc(p.prontuario)} — ${esc(p.nome)}`).join("<br>"):"Nenhum contrato fechado"}</td></tr>`).join("");const janela=window.open("","_blank","width=1000,height=760");if(!janela)return;janela.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Relatório da turma</title><style>body{font-family:Arial;padding:32px;color:#2d2925}h1{margin-bottom:4px}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #ddd;padding:10px;text-align:left;vertical-align:top}th{background:#332d27;color:white}</style></head><body><h1>${esc(turmaAtual.treinamentoNome)} — ${esc(turmaAtual.nome)}</h1><p>Relatório completo de matriculados e pacientes indicados com contrato aprovado.</p><table><thead><tr><th>Aluno</th><th>Status</th><th>Pacientes indicados que fecharam contrato</th></tr></thead><tbody>${linhas}</tbody></table><script>window.print()<\/script></body></html>`);janela.document.close();
+  }
 
   return (
     <section className="education-page">
@@ -1695,11 +1798,6 @@ export function EducacaoPage({
         <div>
           <span className="page-eyebrow">EDUCAÇÃO</span>
           <h1>{secao === "Alunos" ? "Alunos" : "Treinamentos"}</h1>
-          <p>
-            {secao === "Alunos"
-              ? "Cadastre e gerencie os alunos da Educação."
-              : "Organize cursos, turmas e matrículas em um só lugar."}
-          </p>
         </div>
         <div className="education-metrics">
           <span>
@@ -2041,13 +2139,13 @@ export function EducacaoPage({
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
               />
-              <button type="button" onClick={() => {
+              {administradorPagina&&<button type="button" onClick={() => {
                 const proximo = !mostrarExcluidos;
                 setMostrarExcluidos(proximo);
                 if (proximo) void carregarAlunosExcluidos();
               }}>
                 {mostrarExcluidos ? "Voltar aos ativos" : "Cadastros excluídos"}
-              </button>
+              </button>}
             </div>
             <div className="education-list">
               {mostrarExcluidos ? alunosExcluidos
@@ -2687,6 +2785,7 @@ export function EducacaoPage({
                 <strong>{turmas.find(t => t.id === turmaConsulta)?.treinamentoNome} — {turmas.find(t => t.id === turmaConsulta)?.nome}</strong>
                 <small>{turmas.find(t => t.id === turmaConsulta)?.matriculados}/{turmas.find(t => t.id === turmaConsulta)?.vagas || "∞"} alunos matriculados</small>
               </div>
+              <button type="button" onClick={imprimirRelatorioTurma}>Relatório completo</button>
             <label>Status da turma
               <select
                 value={turmas.find(t => t.id === turmaConsulta)?.status || ""}
@@ -2698,7 +2797,7 @@ export function EducacaoPage({
             </label>
             </div>
           )}
-          {turmaConsulta>0&&<div className="education-list education-class-students"><h3>Alunos matriculados</h3>{matriculas.filter(m=>m.turmaId===turmaConsulta&&m.status!=="Cancelado").length===0?<p className="education-empty">Nenhum aluno matriculado nesta turma.</p>:matriculas.filter(m=>m.turmaId===turmaConsulta&&m.status!=="Cancelado").map(m=><div className="education-row" key={m.id}><div><strong>{m.alunoNome}</strong><small>{brl(m.valorCurso)} · {m.parcelas} parcela(s) · {m.formaPagamento.replaceAll("_"," ")}</small></div><div className="education-row-actions"><button onClick={()=>void baixarContratoMatriculaEducacaoApi(m.id,`CONTRATO_${m.alunoNome}.docx`)}>Contrato</button><button onClick={()=>void retirarAluno(m)}>Retirar aluno</button></div></div>)}</div>}
+          {turmaConsulta>0&&<div className="education-list education-class-students"><div className="education-attendance-head"><h3>Alunos matriculados</h3><span>P</span></div>{matriculas.filter(m=>m.turmaId===turmaConsulta&&m.status!=="Cancelado").length===0?<p className="education-empty">Nenhum aluno matriculado nesta turma.</p>:matriculas.filter(m=>m.turmaId===turmaConsulta&&m.status!=="Cancelado").map(m=><div className="education-row education-attendance-row" key={m.id}><div><strong>{m.alunoNome}</strong><small>{brl(m.valorCurso)} · {m.parcelas} parcela(s) · {m.formaPagamento.replaceAll("_"," ")}</small></div><div className="education-row-actions"><button onClick={()=>void baixarContratoMatriculaEducacaoApi(m.id,`CONTRATO_${m.alunoNome}.docx`)}>Contrato</button><button onClick={()=>void retirarAluno(m)}>Retirar aluno</button></div><span className={`education-patient-referral-mark${m.pacienteIndicadoFechou?" checked":""}`} title={m.pacienteIndicadoFechou?"Paciente indicado com contrato aprovado":"Nenhum paciente indicado com contrato aprovado"}>P {m.pacienteIndicadoFechou?"✓":""}</span></div>)}</div>}
           {turmaConsulta === 0 && <p className="education-empty">Selecione uma turma acima para visualizar os matriculados.</p>}
         </div>
       )}

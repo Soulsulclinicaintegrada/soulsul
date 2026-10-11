@@ -84,7 +84,7 @@ export type TreinamentoApi = { id: number; nome: string; categoria: string; desc
 export type TreinamentoPayloadApi = { nome: string; categoria: string; descricao: string; carga_horaria: number; valor: number; ativo: boolean; quantidade_turmas:number; max_alunos_por_turma:number; data_inicio:string; horario_inicio:string; periodicidade:string; dias_horarios:Record<string,{inicio:string;fim:string}> };
 export type TurmaTreinamentoApi = { id: number; treinamentoId: number; treinamentoNome: string; treinamentoValor:number; nome: string; instrutor: string; dataInicio: string; dataFim: string; horario: string; local: string; vagas: number; matriculados: number; status: string };
 export type TurmaTreinamentoPayloadApi = { treinamento_id: number; nome: string; instrutor: string; data_inicio: string; data_fim: string; horario: string; local: string; vagas: number; status: string };
-export type MatriculaTreinamentoApi = { id: number; alunoId: number; alunoNome: string; turmaId: number; turmaNome: string; treinamentoNome: string; dataMatricula: string; status: string; observacoes: string; valorCurso:number; entrada:number; parcelas:number; formaPagamento:string; contratoDisponivel:boolean };
+export type MatriculaTreinamentoApi = { id: number; alunoId: number; alunoNome: string; turmaId: number; turmaNome: string; treinamentoNome: string; dataMatricula: string; status: string; observacoes: string; valorCurso:number; entrada:number; parcelas:number; formaPagamento:string; contratoDisponivel:boolean; pacienteIndicadoFechou?:boolean; pacientesIndicadosFechados?:Array<{id:number;prontuario:string;nome:string}> };
 
 export type PacienteDetalheApi = {
   id: number;
@@ -505,10 +505,6 @@ export type LoginResposta = UsuarioSessao;
 export type TrocaSenhaPayload = {
   usuario: string;
   senha_atual: string;
-  nova_senha: string;
-};
-
-export type RedefinirSenhaPayload = {
   nova_senha: string;
 };
 
@@ -1092,8 +1088,15 @@ export function apiPacientesDisponivel() {
 
 export const loginEducacaoApi = (usuario: string, senha: string) => fetchJson<{token:string;usuario:{id:number;nome:string;usuario:string;perfil:string;permissoes:Record<string,boolean>;precisaTrocarSenha:boolean}}>(`${EDUCACAO_API_BASE_URL}/auth/login`, { method: "POST", body: JSON.stringify({usuario, senha}) });
 export const buscarRecursoEducacaoApi = <T,>(recurso: string) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/${recurso}`);
+export type GuiaEducacaoApi={id:number;paciente_modelo_id:number;procedimento_id?:number;procedimento_nome_snapshot:string;cor?:string;escala?:string;elemento_arcada:string;carga_imediata?:number;retorno_solicitado:string;documento_nome?:string;observacoes?:string;criado_por?:string;criado_em?:string;etapas:Array<{etapa:string;descricao_outro?:string}>};
+export const listarGuiasEducacaoApi=(pacienteId:number)=>fetchJson<GuiaEducacaoApi[]>(`${EDUCACAO_API_BASE_URL}/guias?paciente_modelo_id=${pacienteId}`);
+export const criarGuiaEducacaoApi=(payload:Record<string,unknown>)=>fetchJson<GuiaEducacaoApi>(`${EDUCACAO_API_BASE_URL}/guias`,{method:"POST",body:JSON.stringify(payload)});
+export async function baixarGuiaEducacaoApi(id:number,nome:string){const headers=new Headers();const token=localStorage.getItem("soulsul_educacao_token");if(token)headers.set("x-educacao-token",token);const response=await fetch(`${EDUCACAO_API_BASE_URL}/guias/${id}/documento`,{headers});if(!response.ok)throw new Error(`Não foi possível abrir a guia (${response.status}).`);const url=URL.createObjectURL(await response.blob());const a=document.createElement("a");a.href=url;a.download=nome||`GUIA_${id}.docx`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 export const criarRecursoEducacaoApi = <T,>(recurso: string, payload: Record<string, unknown>) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/${recurso}`, { method: "POST", body: JSON.stringify(payload) });
 export const atualizarRecursoEducacaoApi = <T,>(recurso: string, id: number, payload: Record<string, unknown>) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/${recurso}/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export const baixarLancamentoFinanceiroEducacaoApi = <T,>(id:number,payload:Record<string,unknown>) => fetchJson<T>(`${EDUCACAO_API_BASE_URL}/financeiro/${id}/baixar`,{method:"PUT",body:JSON.stringify(payload)});
+export const buscarConfiguracoesFinanceiroEducacaoApi=()=>fetchJson<any>(`${EDUCACAO_API_BASE_URL}/financeiro/configuracoes`);
+export const salvarConfiguracoesFinanceiroEducacaoApi=(payload:Record<string,unknown>)=>fetchJson<any>(`${EDUCACAO_API_BASE_URL}/financeiro/configuracoes`,{method:"PUT",body:JSON.stringify(payload)});
 export const alterarStatusOrcamentoEducacaoApi = (id:number,status:string) => fetchJson<{ok:boolean;documento?:string}>(`${EDUCACAO_API_BASE_URL}/orcamentos/${id}/status`, { method:"PUT", body:JSON.stringify({status}) });
 export const resetarSenhaUsuarioEducacaoApi = (id:number) => fetchJson<{ok:boolean;senhaPadrao:string}>(`${EDUCACAO_API_BASE_URL}/usuarios/${id}/resetar-senha`, { method:"POST" });
 export const trocarSenhaEducacaoApi = (nova_senha:string) => fetchJson<{ok:boolean}>(`${EDUCACAO_API_BASE_URL}/auth/trocar-senha`, { method:"POST", body:JSON.stringify({nova_senha}) });
@@ -1421,10 +1424,9 @@ export async function trocarSenhaApi(payload: TrocaSenhaPayload) {
   });
 }
 
-export async function redefinirSenhaUsuarioApi(usuarioId: number, payload: RedefinirSenhaPayload) {
+export async function redefinirSenhaUsuarioApi(usuarioId: number) {
   return fetchJson<LoginResposta>(`${API_BASE_URL}/api/usuarios/${usuarioId}/redefinir-senha`, {
-    method: "POST",
-    body: JSON.stringify(payload)
+    method: "POST"
   });
 }
 

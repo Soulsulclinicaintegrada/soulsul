@@ -451,9 +451,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     void carregarPainel();
   }, [metasAno]);
 
-  const recebiveis = painel?.recebiveis || [];
-  const contasPagar = painel?.contasPagar || [];
-  const caixa = painel?.caixa || [];
+  // Preserve stable array identities while the panel is loading. Fresh `[]` values on
+  // every render retrigger the synchronization effects below and can create a render loop.
+  const recebiveis = useMemo(() => painel?.recebiveis || [], [painel?.recebiveis]);
+  const contasPagar = useMemo(() => painel?.contasPagar || [], [painel?.contasPagar]);
+  const caixa = useMemo(() => painel?.caixa || [], [painel?.caixa]);
   const movimentoEditando = useMemo(
     () => caixa.find((item) => item.id === movimentoEditandoId) || null,
     [caixa, movimentoEditandoId]

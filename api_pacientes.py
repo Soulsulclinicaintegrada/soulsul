@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
+import secrets
 import re
 import sqlite3
 import traceback
@@ -11,7 +12,7 @@ from io import BytesIO
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from shutil import copyfile
 import base64
 try:
@@ -58,6 +59,7 @@ except ImportError:  # pragma: no cover
 
 from database import (
     DB_PATH,
+    EDUCACAO_ADMIN_USUARIO,
     SENHA_PADRAO_USUARIOS,
     conectar,
     corrigir_texto_importado,
@@ -66,6 +68,7 @@ from database import (
     inicializar_banco,
     verificar_senha,
 )
+from whatsapp_service import WhatsAppAPIError, WhatsAppConfigurationError, WhatsAppService
 
 
 API_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -77,6 +80,7 @@ BOLETOS_DIR = os.path.join(ARQUIVOS_BASE_DIR, "dados_pacientes", "boletos")
 TEMPLATE_PATH = os.path.join(API_BASE_DIR, "modelo_documento_normalizado.docx")
 TEMPLATE_B64_PATH = os.path.join(API_BASE_DIR, "modelo_documento_normalizado.b64")
 TEMPLATE_ORDEM_SERVICO_PATH = os.path.join(API_BASE_DIR, "ORDEM DE SERVIÇO PROTÉTICO.docx")
+LOGO_SOULSUL_ELEVEN_PATH = os.path.join(API_BASE_DIR, "logo-soulsul-eleven.png")
 TEMPLATE_RECEBIMENTO_BOLETOS_PATH = os.path.join(API_BASE_DIR, "RECEBIMENTO DE BOLETOS.docx")
 CONTAS_CAIXA_MODELO = ["CAIXA", "SICOOB", "INFINITEPAY", "PAGBANK", "C6"]
 TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo") if ZoneInfo is not None else None
@@ -371,6 +375,7 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("UPDATE ordens_servico_protetico SET status='Emitida' WHERE COALESCE(status, '')=''")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ordens_servico_status ON ordens_servico_protetico(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ordem_servico_movimentacoes_ordem ON ordem_servico_movimentacoes(ordem_servico_id)")
+        garantir_coluna(conn, "procedimentos_contrato_educacao", "ativo INTEGER DEFAULT 1")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS crm_contatos_historico (
@@ -384,6 +389,66 @@ def garantir_colunas_pacientes_api() -> None:
                 criado_por TEXT,
                 criado_em TEXT,
                 automatico INTEGER DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crm_conversas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crm_id INTEGER,
+                paciente_id INTEGER,
+                canal TEXT NOT NULL,
+                contato_nome TEXT,
+                contato_telefone TEXT,
+                contato_instagram TEXT,
+                externo_usuario_id TEXT,
+                externo_conversa_id TEXT,
+                etapa_funil TEXT DEFAULT 'Novo lead',
+                responsavel TEXT,
+                ultima_mensagem TEXT,
+                ultima_mensagem_em TEXT,
+                ultima_mensagem_sentido TEXT,
+                nao_lidas INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'aberta',
+                criado_em TEXT,
+                atualizado_em TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crm_mensagens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversa_id INTEGER NOT NULL,
+                crm_id INTEGER,
+                paciente_id INTEGER,
+                canal TEXT NOT NULL,
+                mensagem_externa_id TEXT,
+                status_externo_id TEXT,
+                remetente_externo_id TEXT,
+                direcao TEXT NOT NULL,
+                remetente_tipo TEXT NOT NULL,
+                tipo_mensagem TEXT DEFAULT 'text',
+                conteudo TEXT,
+                midia_url TEXT,
+                status_envio TEXT DEFAULT 'received',
+                erro_envio TEXT,
+                metadata_json TEXT DEFAULT '{}',
+                criado_em TEXT,
+                atualizado_em TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS crm_webhook_eventos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                canal TEXT NOT NULL,
+                evento_externo_id TEXT NOT NULL,
+                tipo_evento TEXT,
+                payload_json TEXT,
+                processado_em TEXT
             )
             """
         )
@@ -422,6 +487,13 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_data_retorno_crm ON contratos(data_retorno_crm)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_conversas_paciente_id ON crm_conversas(paciente_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_conversas_crm_id ON crm_conversas(crm_id)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_conversas_externo_usuario ON crm_conversas(canal, externo_usuario_id)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_conversas_externo_conversa ON crm_conversas(canal, externo_conversa_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_mensagens_conversa_id ON crm_mensagens(conversa_id)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_mensagens_externa_id ON crm_mensagens(canal, mensagem_externa_id)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_webhook_eventos_externo_id ON crm_webhook_eventos(canal, evento_externo_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_recebiveis_historico_recebivel_id ON recebiveis_historico(recebivel_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_orcamentos_historico_contrato_id ON orcamentos_historico(contrato_id)")
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
@@ -452,6 +524,1144 @@ def garantir_colunas_pacientes_api() -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# Recursos exclusivos do ERP educacional. Nenhuma consulta usa as tabelas
+# pacientes, contratos ou financeiro da clinica.
+app = FastAPI(title="SoulSul Pacientes API", version="0.1.0")
+def educacao_row(row):
+    return {chave: row[chave] for chave in row.keys()}
+
+
+def numero_educacao(valor, padrao=0.0):
+    if isinstance(valor, (list, tuple)):
+        valor = valor[0] if valor else padrao
+    texto = str(valor if valor is not None else "").strip().replace(" ", "")
+    if not texto:
+        return float(padrao)
+
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    try:
+        return float(texto)
+    except (TypeError, ValueError):
+        return float(padrao)
+
+
+class DesativarCadastroPayload(BaseModel):
+    senha_gerencial: str
+    justificativa: str
+
+
+@app.get("/api/educacao/dashboard")
+def dashboard_educacao():
+    conn = conectar()
+    try:
+        def total(sql, params=()): return conn.execute(sql, params).fetchone()[0] or 0
+        return {
+            "alunos": int(total("SELECT COUNT(*) FROM alunos WHERE ativo=1")),
+            "pacientesModelo": int(total("SELECT COUNT(*) FROM pacientes_modelo_educacao WHERE ativo=1")),
+            "turmasAtivas": int(total("SELECT COUNT(*) FROM turmas_treinamento WHERE status NOT IN ('Turma encerrada','Turma cancelada')")),
+            "agendaHoje": int(total("SELECT COUNT(*) FROM agenda_educacao WHERE data=?", (date.today().isoformat(),))),
+            "receitas": float(total("SELECT SUM(valor) FROM financeiro_educacao WHERE tipo='Receita' AND status='Pago'")),
+            "despesas": float(total("SELECT SUM(valor) FROM financeiro_educacao WHERE tipo='Despesa' AND status='Pago'")),
+            "aReceber": float(total("SELECT SUM(valor) FROM financeiro_educacao WHERE tipo='Receita' AND status!='Pago'")),
+        }
+    finally: conn.close()
+
+
+@app.get("/api/educacao/pacientes-modelo")
+def listar_pacientes_modelo_educacao():
+    conn=conectar()
+    try: return [educacao_row(r) for r in conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE ativo=1 ORDER BY CAST(substr(prontuario,2) AS INTEGER), nome").fetchall()]
+    finally: conn.close()
+
+
+@app.get("/api/educacao/pacientes-modelo/{item_id}/ficha")
+def ficha_paciente_modelo_educacao(item_id:int):
+    conn=conectar()
+    try:
+        paciente=conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(item_id,)).fetchone()
+        if paciente is None: raise HTTPException(404,"Paciente-modelo não encontrado.")
+        orcamentos=conn.execute("SELECT * FROM contratos_educacao WHERE paciente_modelo_id=? ORDER BY id DESC",(item_id,)).fetchall()
+        financeiro=conn.execute("""SELECT f.* FROM financeiro_educacao f JOIN contratos_educacao c ON c.id=f.contrato_educacao_id
+            WHERE c.paciente_modelo_id=? ORDER BY f.data_vencimento DESC,f.id DESC""",(item_id,)).fetchall()
+        agendamentos=conn.execute("SELECT * FROM agenda_educacao WHERE paciente_modelo_id=? ORDER BY data DESC,hora_inicio DESC",(item_id,)).fetchall()
+        documentos=[{"id":f"contrato-{int(r['id'])}","tipo":"Contrato","nome":os.path.basename(str(r["documento_path"] or "")) or f"CONTRATO_{int(r['id'])}.docx","data":str(r["data_aprovacao"] or r["data_contrato"] or ""),"contrato_id":int(r["id"])} for r in orcamentos if str(r["documento_path"] or "").strip()]
+        guias=conn.execute("SELECT * FROM guias_educacao WHERE paciente_modelo_id=? AND COALESCE(documento_nome,'')<>'' ORDER BY id DESC",(item_id,)).fetchall()
+        documentos.extend({"id":f"guia-{int(r['id'])}","tipo":"Guia","nome":os.path.basename(str(r["documento_nome"] or "")),"data":str(r["criado_em"] or r["data_solicitacao"] or ""),"guia_id":int(r["id"]),"procedimento":str(r["procedimento_nome_snapshot"] or r["descricao"] or "")} for r in guias)
+        documentos.sort(key=lambda item:str(item.get("data") or ""),reverse=True)
+        return {"paciente":educacao_row(paciente),"orcamentos":[educacao_row(r) for r in orcamentos],"financeiro":[educacao_row(r) for r in financeiro],"documentos":documentos,"agendamentos":[educacao_row(r) for r in agendamentos]}
+    finally: conn.close()
+
+
+@app.get("/api/educacao/pacientes-modelo-excluidos")
+def listar_pacientes_modelo_excluidos_educacao():
+    conn=conectar()
+    try:
+        rows=conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE ativo=0 ORDER BY excluido_em DESC, nome").fetchall()
+        resultado=[]
+        for row in rows:
+            item=educacao_row(row)
+            item["historico"]={
+                "orcamentos": [educacao_row(r) for r in conn.execute("SELECT * FROM contratos_educacao WHERE paciente_modelo_id=? ORDER BY id DESC",(row["id"],)).fetchall()],
+                "agendamentos": [educacao_row(r) for r in conn.execute("SELECT * FROM agenda_educacao WHERE paciente_modelo_id=? ORDER BY data DESC, hora_inicio DESC",(row["id"],)).fetchall()],
+                "guias": [educacao_row(r) for r in conn.execute("SELECT * FROM guias_educacao WHERE paciente_modelo_id=? ORDER BY id DESC",(row["id"],)).fetchall()],
+            }
+            resultado.append(item)
+        return resultado
+    finally: conn.close()
+
+
+@app.post("/api/educacao/pacientes-modelo/{item_id}/desativar")
+def desativar_paciente_modelo_educacao(item_id:int,payload:DesativarCadastroPayload,request:Request):
+    motivo=payload.justificativa.strip()
+    if not motivo: raise HTTPException(400,"Informe a justificativa da exclusão.")
+    conn=conectar()
+    try:
+        validar_senha_gerencial_educacao(conn,payload.senha_gerencial)
+        row=conn.execute("SELECT nome FROM pacientes_modelo_educacao WHERE id=? AND ativo=1",(item_id,)).fetchone()
+        if row is None: raise HTTPException(404,"Paciente-modelo ativo não encontrado.")
+        responsavel=usuario_educacao_request(request,conn); agora=agora_str()
+        conn.execute("UPDATE pacientes_modelo_educacao SET ativo=0,excluido_em=?,excluido_motivo=?,excluido_por=?,atualizado_em=? WHERE id=?",(agora,motivo,responsavel,agora,item_id));conn.commit()
+        return {"ok":True}
+    finally: conn.close()
+
+
+PACIENTE_EDUCACAO_CAMPOS = (
+    "aluno_id", "nome", "apelido", "sexo", "cpf", "rg", "data_nascimento", "telefone", "email",
+    "cep", "endereco", "complemento", "numero", "bairro", "cidade", "estado", "estado_civil",
+    "profissao", "origem", "menor_idade", "responsavel", "cpf_responsavel", "procedimento",
+    "indicado_aluno_id", "indicado_por_aluno", "indicado_clinica", "observacoes", "ativo",
+)
+
+
+def proximo_prontuario_educacao(conn: sqlite3.Connection) -> str:
+    rows = conn.execute("SELECT prontuario FROM pacientes_modelo_educacao WHERE prontuario LIKE 'P%'").fetchall()
+    maior = 0
+    for row in rows:
+        texto = str(row["prontuario"] or "").strip().upper()
+        if re.fullmatch(r"P\d+", texto):
+            maior = max(maior, int(texto[1:]))
+    return f"P{maior + 1:03d}"
+
+
+def valores_paciente_educacao(payload: dict) -> list:
+    valores = []
+    for campo in PACIENTE_EDUCACAO_CAMPOS:
+        valor = payload.get(campo)
+        if campo in {"aluno_id","indicado_aluno_id"}: valor = valor or None
+        elif campo in {"menor_idade", "indicado_clinica", "ativo"}: valor = 1 if bool(valor if valor is not None else campo == "ativo") else 0
+        else: valor = str(valor or "").strip()
+        valores.append(valor)
+    return valores
+
+
+@app.post("/api/educacao/pacientes-modelo")
+def criar_paciente_modelo_educacao(payload: dict):
+    nome=str(payload.get("nome") or "").strip()
+    if not nome: raise HTTPException(400,"Informe o nome do paciente-modelo.")
+    obrigatorios = {"cpf":"CPF", "sexo":"sexo", "telefone":"telefone", "cep":"CEP", "endereco":"endereço", "numero":"número", "bairro":"bairro", "cidade":"cidade", "estado":"estado"}
+    faltantes = [rotulo for campo, rotulo in obrigatorios.items() if not str(payload.get(campo) or "").strip()]
+    if faltantes: raise HTTPException(400, f"Preencha os campos obrigatórios: {', '.join(faltantes)}.")
+    indicado_clinica=bool(payload.get("indicado_clinica"))
+    indicado_aluno_id=int(payload.get("indicado_aluno_id") or 0)
+    if indicado_clinica == bool(indicado_aluno_id): raise HTTPException(400,"Escolha exatamente uma indicação: aluno(a) ou clínica.")
+    conn=conectar()
+    try:
+        if indicado_aluno_id:
+            indicador=conn.execute("SELECT codigo,nome FROM alunos WHERE id=? AND ativo=1",(indicado_aluno_id,)).fetchone()
+            if indicador is None: raise HTTPException(400,"Selecione um aluno válido na lista de indicações.")
+            payload["indicado_por_aluno"]=f"{indicador['codigo']} — {indicador['nome']}"
+        agora=agora_str(); prontuario=proximo_prontuario_educacao(conn)
+        campos=",".join(PACIENTE_EDUCACAO_CAMPOS)
+        marcadores=",".join("?" for _ in PACIENTE_EDUCACAO_CAMPOS)
+        cur=conn.execute(f"INSERT INTO pacientes_modelo_educacao (prontuario,{campos},criado_em,atualizado_em) VALUES (?,{marcadores},?,?)",(prontuario,*valores_paciente_educacao(payload),agora,agora)); conn.commit()
+        return educacao_row(conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(cur.lastrowid,)).fetchone())
+    finally: conn.close()
+
+
+@app.post("/api/educacao/pacientes-modelo/cadastro-rapido")
+def criar_paciente_modelo_rapido_educacao(payload:dict):
+    nome=str(payload.get("nome") or "").strip();telefone=str(payload.get("telefone") or "").strip()
+    if not nome or not telefone: raise HTTPException(400,"Informe somente o nome e o telefone para o cadastro rápido.")
+    conn=conectar()
+    try:
+        dados={campo:"" for campo in PACIENTE_EDUCACAO_CAMPOS};dados.update({"nome":nome,"telefone":telefone,"origem":"Agenda","observacoes":"Cadastro rápido criado pela agenda. Complete os demais dados posteriormente.","ativo":True})
+        agora=agora_str();prontuario=proximo_prontuario_educacao(conn);campos=",".join(PACIENTE_EDUCACAO_CAMPOS);marcadores=",".join("?" for _ in PACIENTE_EDUCACAO_CAMPOS)
+        cur=conn.execute(f"INSERT INTO pacientes_modelo_educacao (prontuario,{campos},criado_em,atualizado_em) VALUES (?,{marcadores},?,?)",(prontuario,*valores_paciente_educacao(dados),agora,agora));conn.commit();return educacao_row(conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(cur.lastrowid,)).fetchone())
+    finally:conn.close()
+
+
+@app.put("/api/educacao/pacientes-modelo/{item_id}")
+def atualizar_paciente_modelo_educacao(item_id:int,payload:dict):
+    conn=conectar()
+    try:
+        atual=conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(item_id,)).fetchone()
+        if atual is None: raise HTTPException(404,"Paciente-modelo não encontrado.")
+        combinado={campo: payload.get(campo, atual[campo]) for campo in PACIENTE_EDUCACAO_CAMPOS}
+        indicado_clinica=bool(combinado.get("indicado_clinica")); indicado_aluno_id=int(combinado.get("indicado_aluno_id") or 0)
+        if indicado_clinica == bool(indicado_aluno_id): raise HTTPException(400,"Escolha exatamente uma indicação: aluno(a) ou clínica.")
+        if indicado_aluno_id:
+            indicador=conn.execute("SELECT codigo,nome FROM alunos WHERE id=? AND ativo=1",(indicado_aluno_id,)).fetchone()
+            if indicador is None: raise HTTPException(400,"Selecione um aluno válido na lista de indicações.")
+            combinado["indicado_por_aluno"]=f"{indicador['codigo']} — {indicador['nome']}"
+        atribuicoes=",".join(f"{campo}=?" for campo in PACIENTE_EDUCACAO_CAMPOS)
+        conn.execute(f"UPDATE pacientes_modelo_educacao SET {atribuicoes},atualizado_em=? WHERE id=?",(*valores_paciente_educacao(combinado),agora_str(),item_id));conn.commit();return educacao_row(conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(item_id,)).fetchone())
+    finally:conn.close()
+
+
+@app.get("/api/educacao/procedimentos")
+def listar_procedimentos_educacao():
+    conn=conectar()
+    try:return [educacao_row(r) for r in conn.execute("SELECT * FROM procedimentos_educacao ORDER BY nome").fetchall()]
+    finally:conn.close()
+
+
+@app.post("/api/educacao/procedimentos")
+def criar_procedimento_educacao(payload:dict):
+    nome=str(payload.get("nome") or "").strip()
+    if not nome:raise HTTPException(400,"Informe o tratamento.")
+    conn=conectar()
+    try:
+        agora=agora_str();cur=conn.execute("INSERT INTO procedimentos_educacao (nome,categoria,descricao,valor,duracao_minutos,ativo,criado_em,atualizado_em) VALUES (?,'',?,?,?,?,?,?)",(nome,str(payload.get("descricao") or ""),numero_educacao(payload.get("valor")),int(numero_educacao(payload.get("duracao_minutos"),60)),1,agora,agora));conn.commit();return educacao_row(conn.execute("SELECT * FROM procedimentos_educacao WHERE id=?",(cur.lastrowid,)).fetchone())
+    finally:conn.close()
+
+
+@app.get("/api/educacao/orcamentos")
+def listar_orcamentos_educacao():
+    conn=conectar()
+    try:
+        rows=conn.execute("""SELECT c.*,p.nome paciente_nome,p.prontuario FROM contratos_educacao c
+            JOIN pacientes_modelo_educacao p ON p.id=c.paciente_modelo_id ORDER BY c.id DESC""").fetchall()
+        return [educacao_row(r) for r in rows]
+    finally: conn.close()
+
+
+@app.get("/api/educacao/orcamentos/{contrato_id}")
+def obter_orcamento_educacao(contrato_id:int):
+    conn=conectar()
+    try:
+        contrato=conn.execute("SELECT * FROM contratos_educacao WHERE id=?",(contrato_id,)).fetchone()
+        if contrato is None: raise HTTPException(404,"Orçamento não encontrado.")
+        itens=[]
+        for row in conn.execute("SELECT * FROM procedimentos_contrato_educacao WHERE contrato_id=? ORDER BY id",(contrato_id,)).fetchall():
+            try: regioes=json.loads(str(row["regioes_json"] or "[]"))
+            except Exception: regioes=[]
+            quantidade=max(1,len(regioes) if isinstance(regioes,list) else 1)
+            itens.append({"procedimento_id":row["procedimento_id"],"procedimento":row["procedimento"],"profissional":row["profissional_snapshot"],"denticao":row["denticao_snapshot"],"valor":float(row["valor"] or 0)/quantidade,"quantidade":quantidade,"regioes":regioes,"ativo":bool(row["ativo"] if "ativo" in row.keys() else 1)})
+        resultado=educacao_row(contrato);resultado["itens"]=itens
+        try: resultado["plano_pagamento"]=json.loads(str(contrato["plano_pagamento_json"] or "[]"))
+        except Exception: resultado["plano_pagamento"]=[]
+        return resultado
+    finally: conn.close()
+
+
+@app.put("/api/educacao/orcamentos/{contrato_id}")
+def atualizar_orcamento_educacao(contrato_id:int,payload:dict):
+    paciente_id=int(payload.get("paciente_modelo_id") or 0);itens=payload.get("itens") or [];itens_ativos=[i for i in itens if bool(i.get("ativo",True))]
+    if not paciente_id or not itens_ativos: raise HTTPException(400,"Selecione o paciente e mantenha ao menos um tratamento ativo.")
+    bruto=sum(numero_educacao(i.get("valor"))*max(1,int(numero_educacao(i.get("quantidade"),1))) for i in itens_ativos);desconto_percentual=max(0,numero_educacao(payload.get("desconto_percentual")));desconto_valor=max(0,numero_educacao(payload.get("desconto_valor")));liquido=max(0,bruto-bruto*desconto_percentual/100-desconto_valor);total=max(liquido,numero_educacao(payload.get("valor_cobrado"),liquido));agora=agora_str()
+    conn=conectar()
+    try:
+        atual=conn.execute("SELECT id FROM contratos_educacao WHERE id=?",(contrato_id,)).fetchone()
+        if atual is None: raise HTTPException(404,"Orçamento não encontrado.")
+        conn.execute("""UPDATE contratos_educacao SET paciente_modelo_id=?,descricao=?,valor=?,valor_total=?,entrada=?,parcelas=?,forma_pagamento=?,plano_pagamento_json=?,desconto_percentual=?,desconto_valor=?,validade_orcamento=?,data_contrato=?,documento_path=NULL,atualizado_em=? WHERE id=?""",(paciente_id,str(payload.get("observacoes") or ""),total,total,numero_educacao(payload.get("entrada")),max(1,int(numero_educacao(payload.get("parcelas"),1))),str(payload.get("forma_pagamento") or ""),json.dumps(payload.get("plano_pagamento") or [],ensure_ascii=False),desconto_percentual,desconto_valor,str(payload.get("validade_orcamento") or ""),str(payload.get("data") or date.today().isoformat()),agora,contrato_id))
+        conn.execute("DELETE FROM procedimentos_contrato_educacao WHERE contrato_id=?",(contrato_id,))
+        for item in itens:
+            quantidade=max(1,int(numero_educacao(item.get("quantidade"),1)));valor=numero_educacao(item.get("valor"))*quantidade
+            conn.execute("INSERT INTO procedimentos_contrato_educacao (contrato_id,procedimento_id,procedimento,profissional_snapshot,denticao_snapshot,valor,regioes_json,ativo,criado_em) VALUES (?,?,?,?,?,?,?,?,?)",(contrato_id,item.get("procedimento_id") or None,str(item.get("procedimento") or ""),str(item.get("profissional") or ""),str(item.get("denticao") or ""),valor,json.dumps(item.get("regioes") or [],ensure_ascii=False),1 if bool(item.get("ativo",True)) else 0,agora))
+        conn.commit();return {"contrato_id":contrato_id,"valor_total":total}
+    finally: conn.close()
+
+
+@app.post("/api/educacao/orcamentos")
+def criar_orcamento_educacao(payload:dict):
+    paciente_id=int(payload.get("paciente_modelo_id") or 0)
+    itens=payload.get("itens") or []
+    if not paciente_id: raise HTTPException(400,"Selecione o paciente-modelo.")
+    if not itens: raise HTTPException(400,"Adicione pelo menos um tratamento.")
+    conn=conectar()
+    try:
+        if conn.execute("SELECT 1 FROM pacientes_modelo_educacao WHERE id=?",(paciente_id,)).fetchone() is None: raise HTTPException(404,"Paciente-modelo não encontrado.")
+        itens_ativos=[i for i in itens if bool(i.get("ativo",True))]
+        if not itens_ativos: raise HTTPException(400,"Mantenha pelo menos um tratamento ativo.")
+        bruto=sum(numero_educacao(i.get("valor"))*max(1,int(numero_educacao(i.get("quantidade"),1))) for i in itens_ativos)
+        desconto_percentual=max(0,numero_educacao(payload.get("desconto_percentual")))
+        desconto_valor=max(0,numero_educacao(payload.get("desconto_valor")))
+        total_liquido=max(0,bruto-(bruto*desconto_percentual/100)-desconto_valor)
+        total=max(total_liquido,numero_educacao(payload.get("valor_cobrado"),total_liquido))
+        agora=agora_str(); data_contrato=str(payload.get("data") or date.today().isoformat())
+        cur=conn.execute("""INSERT INTO contratos_educacao
+            (paciente_modelo_id,descricao,valor,valor_total,entrada,parcelas,forma_pagamento,plano_pagamento_json,
+             desconto_percentual,desconto_valor,validade_orcamento,status,data_contrato,criado_em,atualizado_em)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,'EM_ABERTO',?,?,?)""",
+            (paciente_id,str(payload.get("observacoes") or ""),total,total,numero_educacao(payload.get("entrada")),max(1,int(numero_educacao(payload.get("parcelas"),1))),str(payload.get("forma_pagamento") or ""),json.dumps(payload.get("plano_pagamento") or [],ensure_ascii=False),desconto_percentual,desconto_valor,str(payload.get("validade_orcamento") or ""),data_contrato,agora,agora))
+        contrato_id=int(cur.lastrowid)
+        for item in itens:
+            quantidade=max(1,int(numero_educacao(item.get("quantidade"),1)))
+            valor=numero_educacao(item.get("valor"))*quantidade
+            conn.execute("""INSERT INTO procedimentos_contrato_educacao
+                (contrato_id,procedimento_id,procedimento,profissional_snapshot,denticao_snapshot,valor,regioes_json,ativo,criado_em)
+                VALUES (?,?,?,?,?,?,?,?,?)""",(contrato_id,item.get("procedimento_id") or None,str(item.get("procedimento") or ""),str(item.get("profissional") or ""),str(item.get("denticao") or ""),valor,json.dumps(item.get("regioes") or [],ensure_ascii=False),1 if bool(item.get("ativo",True)) else 0,agora))
+        conn.commit(); return {"contrato_id":contrato_id,"valor_total":total}
+    finally: conn.close()
+
+
+@app.put("/api/educacao/orcamentos/{contrato_id}/status")
+def alterar_status_orcamento_educacao(contrato_id:int,payload:dict,request:Request):
+    status=normalizar_texto(str(payload.get("status") or "")).upper().replace(" ","_")
+    if status not in {"APROVADO","EM_ABERTO"}: raise HTTPException(400,"Status inválido.")
+    conn=conectar()
+    try:
+        usuario_atual=usuario_educacao_row(request,conn)
+        if status=="APROVADO" and normalizar_texto(str(usuario_atual["perfil"] or ""))!="administrador":
+            raise HTTPException(403,"Somente usuários com nível Administrador podem aprovar orçamentos.")
+        contrato=conn.execute("SELECT * FROM contratos_educacao WHERE id=?",(contrato_id,)).fetchone()
+        if contrato is None: raise HTTPException(404,"Orçamento não encontrado.")
+        paciente=conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(contrato["paciente_modelo_id"],)).fetchone()
+        documento=""
+        if status=="APROVADO":
+            conn.execute("UPDATE contratos_educacao SET status='APROVADO',aprovado_por=?,data_aprovacao=?,atualizado_em=? WHERE id=?",(str(usuario_atual["nome"] or usuario_atual["usuario"]),agora_str(),agora_str(),contrato_id))
+            contrato=conn.execute("SELECT * FROM contratos_educacao WHERE id=?",(contrato_id,)).fetchone()
+            documento=gerar_documento_contrato_educacao(conn,paciente,contrato,contrato_id)
+            conn.execute("UPDATE contratos_educacao SET documento_path=? WHERE id=?",(documento,contrato_id))
+            if conn.execute("SELECT COUNT(*) FROM financeiro_educacao WHERE contrato_educacao_id=?",(contrato_id,)).fetchone()[0]==0:
+                try: plano=json.loads(contrato["plano_pagamento_json"] or "[]")
+                except Exception: plano=[]
+                if not plano:
+                    plano=[{"descricao":"Parcela 1","data":contrato["data_contrato"],"forma":contrato["forma_pagamento"],"valor":contrato["valor_total"],"valor_liquido":contrato["valor"]}]
+                agora=agora_str()
+                for item in plano:
+                    bruto=max(0,numero_educacao(item.get("valor")))
+                    liquido=max(0,numero_educacao(item.get("valor_liquido"),bruto))
+                    if bruto<=0: continue
+                    forma=str(item.get("forma") or contrato["forma_pagamento"] or "").replace("_"," ")
+                    operadora=str(item.get("operadora_cartao") or "")
+                    conn.execute("""INSERT INTO financeiro_educacao
+                        (paciente_modelo_id,contrato_educacao_id,descricao,tipo,categoria,valor,valor_bruto,taxa_valor,valor_liquido,data_vencimento,status,forma_pagamento,operadora_cartao,bandeira_cartao,conta_caixa,origem,parcela,criado_em,atualizado_em)
+                        VALUES (?,?,?,'Receita','Tratamento',?,?,?,?,?,'Em aberto',?,?,?,?,?,?,?,?)""",
+                        (int(contrato["paciente_modelo_id"]),contrato_id,f"Contrato #{contrato_id} — {item.get('descricao') or 'Parcela'}",bruto,bruto,max(0,bruto-liquido),liquido,str(item.get("data") or contrato["data_contrato"] or ""),forma,operadora,str(item.get("bandeira_cartao") or ""),operadora if "CARTAO" in forma.upper() else "", "Contrato de paciente-modelo",str(item.get("descricao") or ""),agora,agora))
+        else: conn.execute("UPDATE contratos_educacao SET status='EM_ABERTO',aprovado_por='',data_aprovacao=NULL,atualizado_em=? WHERE id=?",(agora_str(),contrato_id))
+        conn.commit(); return {"ok":True,"documento":f"/api/educacao/orcamentos/{contrato_id}/contrato" if documento else ""}
+    finally: conn.close()
+
+
+@app.get("/api/educacao/orcamentos/{contrato_id}/contrato")
+def baixar_contrato_educacao(contrato_id:int):
+    conn=conectar()
+    try:
+        contrato=conn.execute("SELECT * FROM contratos_educacao WHERE id=?",(contrato_id,)).fetchone()
+        if contrato is None: raise HTTPException(404,"Contrato não encontrado.")
+        paciente=conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=?",(contrato["paciente_modelo_id"],)).fetchone()
+        caminho=str(contrato["documento_path"] or "")
+        if not caminho or not os.path.isfile(caminho): caminho=gerar_documento_contrato_educacao(conn,paciente,contrato,contrato_id)
+        return FileResponse(caminho,filename=os.path.basename(caminho),media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    finally: conn.close()
+
+
+def listar_recurso_educacao(tabela):
+    conn=conectar()
+    try:return [educacao_row(r) for r in conn.execute(f"SELECT * FROM {tabela} ORDER BY id DESC").fetchall()]
+    finally:conn.close()
+
+
+@app.get("/api/educacao/agenda")
+def listar_agenda_educacao(): return listar_recurso_educacao("agenda_educacao")
+
+
+@app.post("/api/educacao/agenda")
+def criar_agenda_educacao(payload:dict,request:Request):
+    conn=conectar()
+    try:
+        agora=agora_str();usuario=usuario_educacao_row(request,conn);cur=conn.execute("""INSERT INTO agenda_educacao
+        (data,hora_inicio,hora_fim,aluno_id,paciente_modelo_id,turma_id,procedimento_id,guia_id,titulo,tipo_atendimento,responsavel,local,status,observacoes,criado_por,criado_em,atualizado_em)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(payload.get("data"),payload.get("hora_inicio"),payload.get("hora_fim"),payload.get("aluno_id") or None,payload.get("paciente_modelo_id") or None,payload.get("turma_id") or None,payload.get("procedimento_id") or None,payload.get("guia_id") or None,payload.get("titulo"),payload.get("tipo_atendimento") or "Atendimento",payload.get("responsavel"),payload.get("local"),payload.get("status") or "Agendado",payload.get("observacoes"),str(usuario["nome"] or usuario["usuario"]),agora,agora));conn.commit();return educacao_row(conn.execute("SELECT * FROM agenda_educacao WHERE id=?",(cur.lastrowid,)).fetchone())
+    finally:conn.close()
+
+
+@app.put("/api/educacao/agenda/{item_id}")
+def atualizar_agenda_educacao(item_id:int,payload:dict):
+    conn=conectar()
+    try:
+        if conn.execute("SELECT id FROM agenda_educacao WHERE id=?",(item_id,)).fetchone() is None: raise HTTPException(404,"Agendamento não encontrado.")
+        conn.execute("""UPDATE agenda_educacao SET data=?,hora_inicio=?,hora_fim=?,paciente_modelo_id=?,procedimento_id=?,guia_id=?,titulo=?,tipo_atendimento=?,responsavel=?,local=?,status=?,observacoes=?,cancelado_motivo=?,atualizado_em=? WHERE id=?""",(payload.get("data"),payload.get("hora_inicio"),payload.get("hora_fim"),payload.get("paciente_modelo_id") or None,payload.get("procedimento_id") or None,payload.get("guia_id") or None,payload.get("titulo"),payload.get("tipo_atendimento") or "Atendimento",payload.get("responsavel"),payload.get("local"),payload.get("status") or "Agendado",payload.get("observacoes"),payload.get("cancelado_motivo") or "",agora_str(),item_id));conn.commit();return educacao_row(conn.execute("SELECT * FROM agenda_educacao WHERE id=?",(item_id,)).fetchone())
+    finally:conn.close()
+
+
+@app.get("/api/educacao/guias")
+def listar_guias_educacao(paciente_modelo_id:int|None=None):
+    conn=conectar()
+    try:
+        sql="SELECT g.*,p.nome paciente_nome,p.prontuario FROM guias_educacao g LEFT JOIN pacientes_modelo_educacao p ON p.id=g.paciente_modelo_id"
+        args=[]
+        if paciente_modelo_id:
+            sql+=" WHERE g.paciente_modelo_id=?";args.append(paciente_modelo_id)
+        sql+=" ORDER BY g.id DESC"
+        resultado=[]
+        for row in conn.execute(sql,args).fetchall():
+            item=educacao_row(row)
+            item["etapas"]=[educacao_row(e) for e in conn.execute("SELECT etapa,descricao_outro FROM guia_educacao_etapas WHERE guia_id=? ORDER BY id",(row["id"],)).fetchall()]
+            resultado.append(item)
+        return resultado
+    finally:conn.close()
+
+
+@app.post("/api/educacao/guias")
+def criar_guia_educacao(payload:dict,request:Request):
+    conn=conectar()
+    try:
+        paciente_id=int(payload.get("paciente_modelo_id") or 0)
+        paciente=conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE id=? AND COALESCE(ativo,1)=1",(paciente_id,)).fetchone()
+        if paciente is None: raise HTTPException(404,"Paciente-modelo não encontrado.")
+        procedimento_id=int(payload.get("procedimento_id") or 0)
+        procedimento=conn.execute("SELECT * FROM procedimentos_educacao WHERE id=? AND COALESCE(ativo,1)=1",(procedimento_id,)).fetchone() if procedimento_id else None
+        nome=corrigir_texto_importado(str((procedimento["nome"] if procedimento else payload.get("procedimento_nome")) or "").strip())
+        elemento=str(payload.get("elemento_arcada") or "").strip(); retorno=str(payload.get("retorno_solicitado") or "").strip()
+        if not nome: raise HTTPException(400,"Informe o procedimento da ordem de serviço.")
+        if not elemento: raise HTTPException(400,"Informe o elemento ou arcada.")
+        if not retorno: raise HTTPException(400,"Informe a data de retorno solicitada.")
+        etapas=[]
+        for etapa_payload in payload.get("etapas") or []:
+            etapa=str(etapa_payload.get("etapa") or "").strip(); outro=str(etapa_payload.get("descricao_outro") or "").strip()
+            if not etapa: continue
+            if normalizar_texto(etapa)=="outro" and not outro: raise HTTPException(400,"Descreva a etapa quando selecionar Outro.")
+            etapas.append((etapa,outro))
+        if not etapas: raise HTTPException(400,"Selecione ao menos uma etapa.")
+        agora=agora_str(); usuario=usuario_educacao_row(request,conn); criado_por=str(usuario["nome"] or usuario["usuario"] or "")
+        cur=conn.execute("""INSERT INTO guias_educacao
+          (paciente_modelo_id,procedimento_id,procedimento_nome_snapshot,descricao,status,data_solicitacao,responsavel,observacoes,cor,escala,elemento_arcada,carga_imediata,retorno_solicitado,criado_por,criado_em,atualizado_em)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(paciente_id,procedimento_id or None,nome,nome,"Emitida",date.today().isoformat(),criado_por,payload.get("observacao") or "",payload.get("cor") or "",payload.get("escala") or "",elemento,1 if payload.get("carga_imediata") else 0,retorno,criado_por,agora,agora))
+        guia_id=int(cur.lastrowid)
+        for etapa,outro in etapas: conn.execute("INSERT INTO guia_educacao_etapas (guia_id,etapa,descricao_outro,criado_em) VALUES (?,?,?,?)",(guia_id,etapa,outro,agora))
+        documento=gerar_documento_ordem_servico(paciente,guia_id,nome,"","",elemento,str(payload.get("escala") or ""),str(payload.get("cor") or ""),bool(payload.get("carga_imediata")),retorno,etapas,str(payload.get("observacao") or ""),criado_por,logo_path=LOGO_SOULSUL_ELEVEN_PATH)
+        conn.execute("UPDATE guias_educacao SET documento_nome=? WHERE id=?",(documento,guia_id));conn.commit()
+        item=educacao_row(conn.execute("SELECT * FROM guias_educacao WHERE id=?",(guia_id,)).fetchone());item["etapas"]=[{"etapa":e,"descricao_outro":o} for e,o in etapas];return item
+    finally:conn.close()
+
+
+@app.get("/api/educacao/guias/{guia_id}/documento")
+def baixar_guia_educacao(guia_id:int):
+    conn=conectar()
+    try:
+        row=conn.execute("SELECT documento_nome FROM guias_educacao WHERE id=?",(guia_id,)).fetchone()
+        if row is None: raise HTTPException(404,"Guia não encontrada.")
+        caminho=os.path.join(DOCS_DIR,os.path.basename(str(row["documento_nome"] or "")))
+        if not os.path.isfile(caminho): raise HTTPException(404,"Documento da guia não encontrado.")
+        return FileResponse(caminho,filename=os.path.basename(caminho),media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    finally:conn.close()
+
+
+@app.get("/api/educacao/financeiro")
+def listar_financeiro_educacao(): return listar_recurso_educacao("financeiro_educacao")
+
+@app.get("/api/educacao/financeiro/configuracoes")
+def listar_configuracoes_financeiro_educacao():
+    conn=conectar()
+    try:
+        row=conn.execute("SELECT * FROM configuracoes_financeiro_educacao WHERE id=1").fetchone()
+        if row is None:
+            return {"contas":["CAIXA","SICOOB","C6"],"maquinas":["InfinitePay","PagBank"],"taxas":{},"parcelas_maximas":12,"parcelas_boleto":1,"parcelas_cartao":12,"descontos":{}}
+        return {"contas":json.loads(row["contas_json"] or "[]"),"maquinas":json.loads(row["maquinas_json"] or "[]"),"taxas":json.loads(row["taxas_json"] or "{}"),"parcelas_maximas":int(row["parcelas_maximas"] or 12),"parcelas_boleto":int(row["parcelas_boleto"] or 1),"parcelas_cartao":int(row["parcelas_cartao"] or 12),"descontos":json.loads(row["descontos_json"] or "{}")}
+    finally: conn.close()
+
+@app.put("/api/educacao/financeiro/configuracoes")
+def atualizar_configuracoes_financeiro_educacao(payload:dict,request:Request):
+    conn=conectar()
+    try:
+        usuario=usuario_educacao_row(request,conn)
+        if normalizar_texto(str(usuario["perfil"] or ""))!="administrador": raise HTTPException(403,"Somente administradores podem alterar as configurações financeiras.")
+        agora=agora_str();contas=[str(x).strip().upper() for x in payload.get("contas",[]) if str(x).strip()];maquinas=[str(x).strip() for x in payload.get("maquinas",[]) if str(x).strip()]
+        boleto=max(1,int(payload.get("parcelas_boleto") or 1));cartao=max(1,int(payload.get("parcelas_cartao") or payload.get("parcelas_maximas") or 12))
+        conn.execute("""INSERT INTO configuracoes_financeiro_educacao (id,contas_json,maquinas_json,taxas_json,parcelas_maximas,parcelas_boleto,parcelas_cartao,descontos_json,atualizado_em) VALUES (1,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET contas_json=excluded.contas_json,maquinas_json=excluded.maquinas_json,taxas_json=excluded.taxas_json,parcelas_maximas=excluded.parcelas_maximas,parcelas_boleto=excluded.parcelas_boleto,parcelas_cartao=excluded.parcelas_cartao,descontos_json=excluded.descontos_json,atualizado_em=excluded.atualizado_em""",
+            (json.dumps(contas,ensure_ascii=False),json.dumps(maquinas,ensure_ascii=False),json.dumps(payload.get("taxas") or {},ensure_ascii=False),cartao,boleto,cartao,json.dumps(payload.get("descontos") or {},ensure_ascii=False),agora))
+        conn.commit();return {"ok":True}
+    finally: conn.close()
+
+
+@app.post("/api/educacao/financeiro")
+def criar_financeiro_educacao(payload:dict):
+    conn=conectar()
+    try:
+        agora=agora_str();valor=numero_educacao(payload.get("valor"));cur=conn.execute("""INSERT INTO financeiro_educacao (aluno_id,paciente_modelo_id,contrato_educacao_id,matricula_id,descricao,tipo,categoria,valor,valor_bruto,valor_liquido,data_vencimento,data_pagamento,status,forma_pagamento,conta_caixa,origem,observacoes,criado_em,atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(payload.get("aluno_id") or None,payload.get("paciente_modelo_id") or None,payload.get("contrato_educacao_id") or None,payload.get("matricula_id") or None,payload.get("descricao"),payload.get("tipo") or "Receita",payload.get("categoria"),valor,numero_educacao(payload.get("valor_bruto"),valor),numero_educacao(payload.get("valor_liquido"),valor),payload.get("data_vencimento"),payload.get("data_pagamento"),payload.get("status") or "Em aberto",payload.get("forma_pagamento"),payload.get("conta_caixa"),payload.get("origem"),payload.get("observacoes"),agora,agora));conn.commit();return educacao_row(conn.execute("SELECT * FROM financeiro_educacao WHERE id=?",(cur.lastrowid,)).fetchone())
+    finally:conn.close()
+
+
+@app.put("/api/educacao/financeiro/{item_id}/baixar")
+def baixar_financeiro_educacao(item_id:int,payload:dict,request:Request):
+    conn=conectar()
+    try:
+        usuario=usuario_educacao_row(request,conn)
+        row=conn.execute("SELECT * FROM financeiro_educacao WHERE id=?",(item_id,)).fetchone()
+        if row is None: raise HTTPException(404,"Lançamento não encontrado.")
+        if str(row["status"] or "").lower()=="pago": raise HTTPException(400,"Este lançamento já foi recebido.")
+        forma=str(payload.get("forma_pagamento") or row["forma_pagamento"] or "")
+        operadora=str(payload.get("operadora_cartao") or row["operadora_cartao"] or "")
+        if "CARTAO" in normalizar_texto(forma).upper() and not operadora:
+            raise HTTPException(400,"Selecione a máquina de cartão utilizada.")
+        bruto=max(0,numero_educacao(payload.get("valor_bruto"),numero_educacao(row["valor_bruto"],numero_educacao(row["valor"]))))
+        liquido=max(0,numero_educacao(payload.get("valor_liquido"),numero_educacao(row["valor_liquido"],bruto)))
+        taxa=max(0,bruto-liquido)
+        data=str(payload.get("data_pagamento") or datetime.now().strftime("%Y-%m-%d"))
+        conta=str(payload.get("conta_caixa") or (operadora if operadora else "CAIXA"))
+        conn.execute("""UPDATE financeiro_educacao SET status='Pago',data_pagamento=?,forma_pagamento=?,operadora_cartao=?,conta_caixa=?,valor=?,valor_bruto=?,taxa_valor=?,valor_liquido=?,observacoes=?,atualizado_em=? WHERE id=?""",
+            (data,forma,operadora,conta,bruto,bruto,taxa,liquido,str(payload.get("observacoes") or f"Recebido por {usuario['nome'] or usuario['usuario']}"),agora_str(),item_id))
+        conn.commit();return educacao_row(conn.execute("SELECT * FROM financeiro_educacao WHERE id=?",(item_id,)).fetchone())
+    finally:conn.close()
+
+
+@app.get("/api/educacao/usuarios")
+def listar_usuarios_educacao():
+    conn=conectar()
+    try:return [{"id":int(r["id"]),"nome":r["nome"],"usuario":r["usuario"],"perfil":r["perfil"] or "USUARIO","permissoes":json.loads(r["permissoes_json"] or "{}"),"ativo":bool(r["ativo"]),"agendaAtiva":bool(r["agenda_ativa"]),"nomeAgenda":r["nome_agenda"] or r["nome"],"ultimoLogin":r["ultimo_login"] or "-"} for r in conn.execute("SELECT * FROM usuarios_educacao ORDER BY nome").fetchall()]
+    finally:conn.close()
+
+
+@app.post("/api/educacao/usuarios")
+def criar_usuario_educacao(payload: dict,request:Request):
+    nome = str(payload.get("nome") or "").strip()
+    usuario = normalizar_texto(str(payload.get("usuario") or "").strip()).replace(" ", "")
+    senha = str(payload.get("senha") or "")
+    if not nome or not usuario:
+        raise HTTPException(status_code=400, detail="Informe o nome e o usuário de acesso.")
+    if len(senha) < 6:
+        raise HTTPException(status_code=400, detail="A senha precisa ter pelo menos 6 caracteres.")
+    conn = conectar()
+    try:
+        atual=usuario_educacao_row(request,conn)
+        if normalizar_texto(str(atual["perfil"] or ""))!="administrador": raise HTTPException(403,"Somente Administradores podem criar usuários.")
+        if conn.execute("SELECT 1 FROM usuarios_educacao WHERE lower(usuario)=lower(?)", (usuario,)).fetchone():
+            raise HTTPException(status_code=409, detail="Já existe um usuário com esse acesso.")
+        agora = agora_str()
+        cur = conn.execute(
+            "INSERT INTO usuarios_educacao (nome,usuario,senha_hash,ativo,precisa_trocar_senha,perfil,permissoes_json,agenda_ativa,nome_agenda,criado_em,atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (nome, usuario, gerar_hash_senha(senha), 1, 1,str(payload.get("perfil") or "USUARIO").upper(),json.dumps(payload.get("permissoes") or {},ensure_ascii=False),1 if payload.get("agendaAtiva") else 0,str(payload.get("nomeAgenda") or nome).strip(), agora, agora),
+        )
+        conn.commit()
+        return {"id": int(cur.lastrowid), "nome": nome, "usuario": usuario, "perfil":str(payload.get("perfil") or "USUARIO").upper(),"permissoes":payload.get("permissoes") or {}, "ativo": True,"agendaAtiva":bool(payload.get("agendaAtiva")),"nomeAgenda":str(payload.get("nomeAgenda") or nome).strip(), "ultimoLogin": "-"}
+    finally:
+        conn.close()
+
+
+@app.put("/api/educacao/usuarios/{usuario_id}")
+def atualizar_usuario_educacao(usuario_id:int,payload:dict,request:Request):
+    conn=conectar()
+    try:
+        atual=usuario_educacao_row(request,conn)
+        if normalizar_texto(str(atual["perfil"] or ""))!="administrador": raise HTTPException(403,"Somente Administradores podem alterar acessos.")
+        row=conn.execute("SELECT * FROM usuarios_educacao WHERE id=?",(usuario_id,)).fetchone()
+        if row is None: raise HTTPException(404,"Usuário não encontrado.")
+        perfil=str(payload.get("perfil") or row["perfil"] or "USUARIO").upper()
+        if perfil not in {"ADMINISTRADOR","USUARIO"}: raise HTTPException(400,"Nível de usuário inválido.")
+        conn.execute("UPDATE usuarios_educacao SET nome=?,perfil=?,permissoes_json=?,ativo=?,agenda_ativa=?,nome_agenda=?,atualizado_em=? WHERE id=?",(str(payload.get("nome") or row["nome"]).strip(),perfil,json.dumps(payload.get("permissoes") or {},ensure_ascii=False),1 if payload.get("ativo",bool(row["ativo"])) else 0,1 if payload.get("agendaAtiva",bool(row["agenda_ativa"])) else 0,str(payload.get("nomeAgenda") or row["nome_agenda"] or payload.get("nome") or row["nome"]).strip(),agora_str(),usuario_id));conn.commit()
+        return {"ok":True}
+    finally:conn.close()
+
+
+@app.post("/api/educacao/usuarios/{usuario_id}/resetar-senha")
+def resetar_senha_usuario_educacao(usuario_id:int,request:Request):
+    conn=conectar()
+    try:
+        atual=usuario_educacao_row(request,conn)
+        if normalizar_texto(str(atual["perfil"] or ""))!="administrador": raise HTTPException(403,"Somente Administradores podem resetar senhas.")
+        if conn.execute("SELECT 1 FROM usuarios_educacao WHERE id=?",(usuario_id,)).fetchone() is None: raise HTTPException(404,"Usuário não encontrado.")
+        conn.execute("UPDATE usuarios_educacao SET senha_hash=?,precisa_trocar_senha=1,atualizado_em=? WHERE id=?",(gerar_hash_senha("soulsuledu"),agora_str(),usuario_id))
+        conn.execute("DELETE FROM sessoes_educacao WHERE usuario_id=?",(usuario_id,));conn.commit();return {"ok":True,"senhaPadrao":"soulsuledu"}
+    finally:conn.close()
+
+
+# --- Educacao e treinamentos -------------------------------------------------
+# O app e estes contratos aparecem aqui porque este bloco tambem e reutilizado
+# pela inicializacao leve da API, antes dos demais modelos do arquivo.
+# app criado acima para registrar todos os recursos educacionais.
+
+
+class AlunoPayload(BaseModel):
+    nome: str
+    sexo: str = ""
+    cpf: str = ""
+    rg: str = ""
+    data_nascimento: str = ""
+    telefone: str = ""
+    email: str = ""
+    cep: str = ""
+    endereco: str = ""
+    complemento: str = ""
+    numero: str = ""
+    bairro: str = ""
+    cidade: str = ""
+    estado: str = ""
+    estado_civil: str = ""
+    cro: str = ""
+    profissao: str = ""
+    origem: str = ""
+    menor_idade: bool = False
+    responsavel: str = ""
+    cpf_responsavel: str = ""
+    indicado_por_aluno: str = ""
+    indicado_clinica: bool = False
+    observacoes: str = ""
+    ativo: bool = True
+
+
+class TreinamentoPayload(BaseModel):
+    nome: str
+    categoria: str = ""
+    descricao: str = ""
+    carga_horaria: float = 0
+    valor: float = 0
+    ativo: bool = True
+    quantidade_turmas: int = 1
+    max_alunos_por_turma: int = 0
+    data_inicio: str = ""
+    horario_inicio: str = ""
+    periodicidade: str = "Semanal"
+    dias_horarios: dict = Field(default_factory=dict)
+
+
+class TurmaTreinamentoPayload(BaseModel):
+    treinamento_id: int
+    nome: str
+    instrutor: str = ""
+    data_inicio: str = ""
+    data_fim: str = ""
+    horario: str = ""
+    local: str = ""
+    vagas: int = 0
+    status: str = "Turma confirmada"
+
+
+class MatriculaTreinamentoPayload(BaseModel):
+    aluno_id: int
+    turma_id: int
+    data_matricula: str = ""
+    status: str = "Matriculado"
+    observacoes: str = ""
+    valor_curso: float = 0
+    desconto_percentual: float = 0
+    desconto_valor: float = 0
+    entrada: float = 0
+    parcelas: int = 1
+    forma_pagamento: str = ""
+    plano_pagamento: list[dict] = Field(default_factory=list)
+
+
+class CancelarMatriculaPayload(BaseModel):
+    senha_admin: str
+    reembolso: bool = False
+    valor_reembolso: float = 0
+    data_reembolso: str = ""
+
+
+def usuario_educacao_request(request: Request, conn: sqlite3.Connection) -> str:
+    token = str(request.headers.get("x-educacao-token") or "").strip()
+    row = conn.execute(
+        """SELECT u.nome, u.usuario FROM sessoes_educacao s
+        JOIN usuarios_educacao u ON u.id=s.usuario_id WHERE s.token=? AND u.ativo=1""",
+        (token,),
+    ).fetchone()
+    return str((row["nome"] or row["usuario"]) if row else "Usuário da educação").strip()
+
+
+def usuario_educacao_row(request:Request,conn:sqlite3.Connection):
+    token=str(request.headers.get("x-educacao-token") or "").strip()
+    row=conn.execute("""SELECT u.* FROM sessoes_educacao s JOIN usuarios_educacao u ON u.id=s.usuario_id WHERE s.token=? AND u.ativo=1""",(token,)).fetchone()
+    if row is None: raise HTTPException(401,"Sessão da educação inválida.")
+    return row
+
+
+def validar_senha_gerencial_educacao(conn: sqlite3.Connection, senha: str) -> None:
+    administrador = None
+    if EDUCACAO_ADMIN_USUARIO:
+        administrador = conn.execute(
+            "SELECT * FROM usuarios_educacao WHERE lower(usuario)=lower(?) AND ativo=1",
+            (EDUCACAO_ADMIN_USUARIO,),
+        ).fetchone()
+    if administrador is None:
+        administrador = conn.execute("SELECT * FROM usuarios_educacao WHERE ativo=1 ORDER BY id LIMIT 1").fetchone()
+    if administrador is None or not verificar_senha(str(senha or ""), administrador["senha_hash"]):
+        raise HTTPException(status_code=403, detail="Senha gerencial inválida.")
+
+
+class EducacaoLoginPayload(BaseModel):
+    usuario: str
+    senha: str
+
+class EducacaoNovaSenhaPayload(BaseModel):
+    nova_senha: str
+
+
+@app.post("/api/educacao/auth/login")
+def login_educacao(payload: EducacaoLoginPayload):
+    conn = conectar()
+    try:
+        row = conn.execute("SELECT * FROM usuarios_educacao WHERE lower(usuario)=lower(?) AND ativo=1", (payload.usuario.strip(),)).fetchone()
+        if row is None or not verificar_senha(payload.senha, row["senha_hash"]):
+            raise HTTPException(status_code=401, detail="Usuário ou senha inválidos.")
+        token = secrets.token_urlsafe(40)
+        agora = datetime.now()
+        conn.execute("DELETE FROM sessoes_educacao WHERE expira_em<?", (agora.isoformat(),))
+        conn.execute("INSERT INTO sessoes_educacao (token,usuario_id,criado_em,expira_em) VALUES (?,?,?,?)", (token, int(row["id"]), agora.isoformat(), (agora + timedelta(hours=12)).isoformat()))
+        conn.execute("UPDATE usuarios_educacao SET ultimo_login=? WHERE id=?", (agora_str(), int(row["id"])))
+        conn.commit()
+        return {"token": token, "usuario": {"id": int(row["id"]), "nome": row["nome"], "usuario": row["usuario"], "perfil":row["perfil"] or "USUARIO","permissoes":json.loads(row["permissoes_json"] or "{}"), "precisaTrocarSenha": bool(row["precisa_trocar_senha"])}}
+    finally:
+        conn.close()
+
+
+@app.post("/api/educacao/auth/trocar-senha")
+def trocar_senha_educacao(payload:EducacaoNovaSenhaPayload,request:Request):
+    nova=str(payload.nova_senha or "").strip()
+    if len(nova)<6: raise HTTPException(400,"A nova senha precisa ter pelo menos 6 caracteres.")
+    conn=conectar()
+    try:
+        usuario=usuario_educacao_row(request,conn)
+        conn.execute("UPDATE usuarios_educacao SET senha_hash=?,precisa_trocar_senha=0,atualizado_em=? WHERE id=?",(gerar_hash_senha(nova),agora_str(),int(usuario["id"])))
+        conn.commit();return {"ok":True}
+    finally:conn.close()
+
+def mapear_aluno_educacao(row):
+    dados = educacao_row(row)
+    dados["id"] = int(row["id"]); dados["ativo"] = bool(row["ativo"])
+    dados["menor_idade"] = bool(row["menor_idade"]); dados["indicado_clinica"] = bool(row["indicado_clinica"])
+    dados["criadoEm"] = row["criado_em"] or ""; dados["atualizadoEm"] = row["atualizado_em"] or ""
+    return dados
+
+
+ALUNO_EDUCACAO_CAMPOS = ("nome","sexo","cpf","rg","data_nascimento","telefone","email","cep","endereco","complemento","numero","bairro","cidade","estado","estado_civil","cro","profissao","origem","menor_idade","responsavel","cpf_responsavel","indicado_por_aluno","indicado_clinica","observacoes","ativo")
+
+
+def valores_aluno_educacao(payload: AlunoPayload) -> list:
+    valores=[]
+    for campo in ALUNO_EDUCACAO_CAMPOS:
+        valor=getattr(payload,campo)
+        if campo in {"menor_idade","indicado_clinica","ativo"}:
+            valores.append(1 if bool(valor) else 0)
+        else:
+            valores.append(str(valor or "").strip())
+    return valores
+
+
+def proximo_codigo_aluno_educacao(conn: sqlite3.Connection) -> str:
+    maior=0
+    for row in conn.execute("SELECT codigo FROM alunos WHERE codigo LIKE 'A%'").fetchall():
+        codigo=str(row["codigo"] or "").strip().upper()
+        if re.fullmatch(r"A\d+",codigo): maior=max(maior,int(codigo[1:]))
+    return f"A{maior+1:03d}"
+
+
+def mapear_treinamento_educacao(row):
+    return {
+        "id": int(row["id"]), "nome": row["nome"] or "", "categoria": row["categoria"] or "",
+        "descricao": row["descricao"] or "", "cargaHoraria": float(row["carga_horaria"] or 0),
+        "valor": float(row["valor"] or 0), "ativo": bool(row["ativo"]),
+        "quantidadeTurmas":int(row["quantidade_turmas"] or 1),"maxAlunosPorTurma":int(row["max_alunos_por_turma"] or 0),
+        "dataInicio":row["data_inicio"] or "","horarioInicio":row["horario_inicio"] or "","periodicidade":row["periodicidade"] or "Semanal",
+        "diasHorarios":json.loads(row["dias_horarios_json"] or "{}"),
+        "criadoEm": row["criado_em"] or "", "atualizadoEm": row["atualizado_em"] or "",
+    }
+
+
+def mapear_turma_educacao(row):
+    return {
+        "id": int(row["id"]), "treinamentoId": int(row["treinamento_id"]),
+        "treinamentoNome": row["treinamento_nome"] or "", "nome": row["nome"] or "",
+        "treinamentoValor": float(row["treinamento_valor"] or 0),
+        "instrutor": row["instrutor"] or "", "dataInicio": row["data_inicio"] or "",
+        "dataFim": row["data_fim"] or "", "horario": row["horario"] or "",
+        "local": row["local"] or "", "vagas": int(row["vagas"] or 0),
+        "matriculados": int(row["matriculados"] or 0), "status": row["status"] or "Turma confirmada",
+    }
+
+
+@app.get("/api/educacao/alunos")
+def listar_alunos_educacao(q: str = ""):
+    conn = conectar()
+    try:
+        termo = f"%{str(q or '').strip()}%"
+        rows = conn.execute(
+            "SELECT * FROM alunos WHERE ativo=1 AND (?='%%' OR nome LIKE ? OR codigo LIKE ? OR cpf LIKE ? OR email LIKE ?) ORDER BY nome",
+            (termo, termo, termo, termo, termo),
+        ).fetchall()
+        return [mapear_aluno_educacao(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/educacao/alunos")
+def criar_aluno_educacao(payload: AlunoPayload, request: Request):
+    nome = payload.nome.strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do aluno.")
+    obrigatorios = {"cpf":payload.cpf,"sexo":payload.sexo,"telefone":payload.telefone,"CEP":payload.cep,"endereço":payload.endereco,"número":payload.numero,"bairro":payload.bairro,"cidade":payload.cidade,"estado":payload.estado}
+    faltantes=[campo for campo,valor in obrigatorios.items() if not str(valor or "").strip()]
+    if faltantes: raise HTTPException(status_code=400,detail=f"Preencha os campos obrigatórios: {', '.join(faltantes)}.")
+    conn = conectar()
+    try:
+        agora = agora_str()
+        campos=",".join(ALUNO_EDUCACAO_CAMPOS); marcadores=",".join("?" for _ in ALUNO_EDUCACAO_CAMPOS)
+        cur = conn.execute(f"INSERT INTO alunos (codigo,{campos},criado_em,atualizado_em) VALUES (?,{marcadores},?,?)",(proximo_codigo_aluno_educacao(conn),*valores_aluno_educacao(payload),agora,agora))
+        conn.commit()
+        row = conn.execute("SELECT * FROM alunos WHERE id=?", (cur.lastrowid,)).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Aluno cadastrado", info=nome, metodo_http="POST", rota="/api/educacao/alunos")
+    return mapear_aluno_educacao(row)
+
+
+@app.put("/api/educacao/alunos/{aluno_id}")
+def atualizar_aluno_educacao(aluno_id: int, payload: AlunoPayload, request: Request):
+    nome = payload.nome.strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do aluno.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT 1 FROM alunos WHERE id=?", (aluno_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Aluno não encontrado.")
+        atribuicoes=",".join(f"{campo}=?" for campo in ALUNO_EDUCACAO_CAMPOS)
+        conn.execute(f"UPDATE alunos SET {atribuicoes},atualizado_em=? WHERE id=?", (*valores_aluno_educacao(payload), agora_str(), aluno_id))
+        conn.commit()
+        row = conn.execute("SELECT * FROM alunos WHERE id=?", (aluno_id,)).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Aluno atualizado", info=nome, metodo_http="PUT", rota=f"/api/educacao/alunos/{aluno_id}")
+    return mapear_aluno_educacao(row)
+
+
+@app.post("/api/educacao/alunos/{aluno_id}/desativar")
+def excluir_aluno_educacao(aluno_id: int, payload: DesativarCadastroPayload, request: Request):
+    motivo=payload.justificativa.strip()
+    if not motivo:
+        raise HTTPException(status_code=400, detail="Informe a justificativa da exclusão.")
+    conn = conectar()
+    try:
+        validar_senha_gerencial_educacao(conn,payload.senha_gerencial)
+        row = conn.execute("SELECT nome FROM alunos WHERE id=? AND ativo=1", (aluno_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Aluno ativo não encontrado.")
+        responsavel=usuario_educacao_request(request,conn); agora=agora_str()
+        conn.execute("UPDATE alunos SET ativo=0,excluido_em=?,excluido_motivo=?,excluido_por=?,atualizado_em=? WHERE id=?", (agora,motivo,responsavel,agora,aluno_id))
+        conn.commit()
+    finally:
+        conn.close()
+    registrar_acao_usuario(responsavel, acao="Educacao", tipo="Aluno desativado", info=f"{row['nome']} — {motivo}", metodo_http="POST", rota=f"/api/educacao/alunos/{aluno_id}/desativar")
+    return {"ok": True}
+
+
+@app.get("/api/educacao/alunos-excluidos")
+def listar_alunos_excluidos_educacao():
+    conn=conectar()
+    try:
+        rows=conn.execute("SELECT * FROM alunos WHERE ativo=0 ORDER BY excluido_em DESC, nome").fetchall()
+        resultado=[]
+        for row in rows:
+            item=mapear_aluno_educacao(row)
+            item["historico"]={
+                "matriculas":[educacao_row(r) for r in conn.execute("""SELECT m.*,t.nome turma_nome,tr.nome treinamento_nome FROM matriculas_treinamento m JOIN turmas_treinamento t ON t.id=m.turma_id JOIN treinamentos tr ON tr.id=t.treinamento_id WHERE m.aluno_id=? ORDER BY m.id DESC""",(row["id"],)).fetchall()],
+                "financeiro":[educacao_row(r) for r in conn.execute("SELECT * FROM financeiro_educacao WHERE aluno_id=? ORDER BY id DESC",(row["id"],)).fetchall()],
+                "pacientesIndicados":[educacao_row(r) for r in conn.execute("SELECT * FROM pacientes_modelo_educacao WHERE indicado_aluno_id=? ORDER BY id DESC",(row["id"],)).fetchall()],
+            }
+            resultado.append(item)
+        return resultado
+    finally:conn.close()
+
+
+@app.get("/api/educacao/treinamentos")
+def listar_treinamentos_educacao():
+    conn = conectar()
+    try:
+        return [mapear_treinamento_educacao(row) for row in conn.execute("SELECT * FROM treinamentos ORDER BY ativo DESC, nome").fetchall()]
+    finally:
+        conn.close()
+
+
+@app.post("/api/educacao/treinamentos")
+def criar_treinamento_educacao(payload: TreinamentoPayload, request: Request):
+    nome = payload.nome.strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do treinamento.")
+    conn = conectar()
+    try:
+        agora = agora_str()
+        dias_json=json.dumps(payload.dias_horarios,ensure_ascii=False)
+        cur = conn.execute("""INSERT INTO treinamentos (nome,categoria,descricao,carga_horaria,valor,ativo,quantidade_turmas,max_alunos_por_turma,data_inicio,horario_inicio,periodicidade,dias_horarios_json,criado_em,atualizado_em)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (nome,payload.categoria.strip(),payload.descricao.strip(),max(0,payload.carga_horaria),max(0,payload.valor),int(payload.ativo),max(1,payload.quantidade_turmas),max(0,payload.max_alunos_por_turma),payload.data_inicio.strip(),payload.horario_inicio.strip(),payload.periodicidade.strip() or "Semanal",dias_json,agora,agora))
+        treinamento_id=int(cur.lastrowid)
+        horarios="; ".join(f"{dia}: {dados.get('inicio','')}–{dados.get('fim','')}" for dia,dados in payload.dias_horarios.items() if isinstance(dados,dict))
+        for indice in range(1,max(1,payload.quantidade_turmas)+1):
+            conn.execute("""INSERT INTO turmas_treinamento (treinamento_id,nome,instrutor,data_inicio,data_fim,horario,local,vagas,status,criado_em,atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",(treinamento_id,f"Turma {indice}","",payload.data_inicio.strip(),"",f"{payload.periodicidade}: {horarios}".strip(": "),"",max(0,payload.max_alunos_por_turma),"Turma confirmada",agora,agora))
+        conn.commit()
+        row = conn.execute("SELECT * FROM treinamentos WHERE id=?", (treinamento_id,)).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Treinamento cadastrado", info=nome, metodo_http="POST", rota="/api/educacao/treinamentos")
+    return mapear_treinamento_educacao(row)
+
+
+@app.put("/api/educacao/treinamentos/{treinamento_id}")
+def atualizar_treinamento_educacao(treinamento_id: int, payload: TreinamentoPayload, request: Request):
+    nome = payload.nome.strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do treinamento.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT 1 FROM treinamentos WHERE id=?", (treinamento_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Treinamento não encontrado.")
+        conn.execute("""UPDATE treinamentos SET nome=?,categoria=?,descricao=?,carga_horaria=?,valor=?,ativo=?,quantidade_turmas=?,max_alunos_por_turma=?,data_inicio=?,horario_inicio=?,periodicidade=?,dias_horarios_json=?,atualizado_em=? WHERE id=?""",(nome,payload.categoria.strip(),payload.descricao.strip(),max(0,payload.carga_horaria),max(0,payload.valor),int(payload.ativo),max(1,payload.quantidade_turmas),max(0,payload.max_alunos_por_turma),payload.data_inicio.strip(),payload.horario_inicio.strip(),payload.periodicidade.strip() or "Semanal",json.dumps(payload.dias_horarios,ensure_ascii=False),agora_str(),treinamento_id))
+        existentes=int(conn.execute("SELECT COUNT(*) FROM turmas_treinamento WHERE treinamento_id=?",(treinamento_id,)).fetchone()[0] or 0)
+        horarios="; ".join(f"{dia}: {dados.get('inicio','')}–{dados.get('fim','')}" for dia,dados in payload.dias_horarios.items() if isinstance(dados,dict))
+        for indice in range(existentes+1,max(1,payload.quantidade_turmas)+1):
+            agora=agora_str()
+            conn.execute("""INSERT INTO turmas_treinamento (treinamento_id,nome,instrutor,data_inicio,data_fim,horario,local,vagas,status,criado_em,atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",(treinamento_id,f"Turma {indice}","",payload.data_inicio.strip(),"",f"{payload.periodicidade}: {horarios}".strip(": "),"",max(0,payload.max_alunos_por_turma),"Turma confirmada",agora,agora))
+        conn.commit()
+        row = conn.execute("SELECT * FROM treinamentos WHERE id=?", (treinamento_id,)).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Treinamento atualizado", info=nome, metodo_http="PUT", rota=f"/api/educacao/treinamentos/{treinamento_id}")
+    return mapear_treinamento_educacao(row)
+
+
+@app.delete("/api/educacao/treinamentos/{treinamento_id}")
+def excluir_treinamento_educacao(treinamento_id: int):
+    conn = conectar()
+    try:
+        if conn.execute("SELECT 1 FROM turmas_treinamento WHERE treinamento_id=?", (treinamento_id,)).fetchone():
+            raise HTTPException(status_code=400, detail="Este treinamento possui turmas. Inative-o em vez de excluir.")
+        conn.execute("DELETE FROM treinamentos WHERE id=?", (treinamento_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/educacao/turmas")
+def listar_turmas_educacao():
+    conn = conectar()
+    try:
+        conn.execute("""UPDATE turmas_treinamento
+            SET status='Turma em andamento', atualizado_em=?
+            WHERE status='Turma confirmada' AND COALESCE(data_inicio,'')<>''
+              AND date(data_inicio)<=date(?)""", (agora_str(), date.today().isoformat()))
+        conn.commit()
+        rows = conn.execute("""SELECT t.*, tr.nome AS treinamento_nome, tr.valor AS treinamento_valor, COUNT(m.id) AS matriculados FROM turmas_treinamento t JOIN treinamentos tr ON tr.id=t.treinamento_id LEFT JOIN matriculas_treinamento m ON m.turma_id=t.id AND m.status!='Cancelado' GROUP BY t.id ORDER BY COALESCE(t.data_inicio,'') DESC, t.nome""").fetchall()
+        return [mapear_turma_educacao(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/educacao/turmas")
+def criar_turma_educacao(payload: TurmaTreinamentoPayload, request: Request):
+    if not payload.nome.strip():
+        raise HTTPException(status_code=400, detail="Informe o nome da turma.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT 1 FROM treinamentos WHERE id=?", (payload.treinamento_id,)).fetchone() is None:
+            raise HTTPException(status_code=400, detail="Selecione um treinamento válido.")
+        agora = agora_str()
+        cur = conn.execute("INSERT INTO turmas_treinamento (treinamento_id,nome,instrutor,data_inicio,data_fim,horario,local,vagas,status,criado_em,atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)", (payload.treinamento_id, payload.nome.strip(), payload.instrutor.strip(), payload.data_inicio.strip(), payload.data_fim.strip(), payload.horario.strip(), payload.local.strip(), max(0, payload.vagas), payload.status.strip() or "Turma confirmada", agora, agora))
+        conn.commit()
+        turma_id = int(cur.lastrowid)
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Turma cadastrada", info=payload.nome.strip(), metodo_http="POST", rota="/api/educacao/turmas")
+    return next(item for item in listar_turmas_educacao() if item["id"] == turma_id)
+
+
+@app.put("/api/educacao/turmas/{turma_id}")
+def atualizar_turma_educacao(turma_id: int, payload: TurmaTreinamentoPayload, request: Request):
+    if not payload.nome.strip():
+        raise HTTPException(status_code=400, detail="Informe o nome da turma.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT 1 FROM turmas_treinamento WHERE id=?", (turma_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Turma não encontrada.")
+        conn.execute("UPDATE turmas_treinamento SET treinamento_id=?,nome=?,instrutor=?,data_inicio=?,data_fim=?,horario=?,local=?,vagas=?,status=?,atualizado_em=? WHERE id=?", (payload.treinamento_id, payload.nome.strip(), payload.instrutor.strip(), payload.data_inicio.strip(), payload.data_fim.strip(), payload.horario.strip(), payload.local.strip(), max(0, payload.vagas), payload.status.strip() or "Turma confirmada", agora_str(), turma_id))
+        conn.commit()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Turma atualizada", info=payload.nome.strip(), metodo_http="PUT", rota=f"/api/educacao/turmas/{turma_id}")
+    return next(item for item in listar_turmas_educacao() if item["id"] == turma_id)
+
+
+@app.put("/api/educacao/turmas/{turma_id}/status")
+def alterar_status_turma_educacao(turma_id: int, payload: dict, request: Request):
+    status = str(payload.get("status") or "").strip()
+    permitidos = {"Turma confirmada", "Turma em andamento", "Turma encerrada", "Turma cancelada"}
+    if status not in permitidos:
+        raise HTTPException(status_code=400, detail="Status de turma inválido.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT 1 FROM turmas_treinamento WHERE id=?", (turma_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Turma não encontrada.")
+        conn.execute("UPDATE turmas_treinamento SET status=?,atualizado_em=? WHERE id=?", (status, agora_str(), turma_id))
+        conn.commit()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Status da turma alterado", info=status, metodo_http="PUT", rota=f"/api/educacao/turmas/{turma_id}/status")
+    return {"ok": True}
+
+
+@app.delete("/api/educacao/turmas/{turma_id}")
+def excluir_turma_educacao(turma_id: int):
+    conn = conectar()
+    try:
+        conn.execute("DELETE FROM matriculas_treinamento WHERE turma_id=?", (turma_id,))
+        conn.execute("DELETE FROM turmas_treinamento WHERE id=?", (turma_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/educacao/matriculas")
+def listar_matriculas_educacao(turma_id: int | None = None, aluno_id: int | None = None):
+    conn = conectar()
+    try:
+        filtros, params = [], []
+        if turma_id is not None: filtros.append("m.turma_id=?"); params.append(turma_id)
+        if aluno_id is not None: filtros.append("m.aluno_id=?"); params.append(aluno_id)
+        where = " WHERE " + " AND ".join(filtros) if filtros else ""
+        rows = conn.execute("SELECT m.*, a.nome AS aluno_nome, t.nome AS turma_nome, tr.nome AS treinamento_nome FROM matriculas_treinamento m JOIN alunos a ON a.id=m.aluno_id JOIN turmas_treinamento t ON t.id=m.turma_id JOIN treinamentos tr ON tr.id=t.treinamento_id" + where + " ORDER BY a.nome", params).fetchall()
+        indicados:dict[int,list[dict]]={}
+        for p in conn.execute("""SELECT DISTINCT p.indicado_aluno_id,p.id,p.prontuario,p.nome FROM pacientes_modelo_educacao p
+            JOIN contratos_educacao c ON c.paciente_modelo_id=p.id AND c.status='APROVADO'
+            WHERE p.indicado_aluno_id IS NOT NULL AND p.ativo=1 ORDER BY p.nome""").fetchall():
+            indicados.setdefault(int(p["indicado_aluno_id"]),[]).append({"id":int(p["id"]),"prontuario":p["prontuario"] or "","nome":p["nome"] or ""})
+        return [{"id": int(r["id"]), "alunoId": int(r["aluno_id"]), "alunoNome": r["aluno_nome"], "turmaId": int(r["turma_id"]), "turmaNome": r["turma_nome"], "treinamentoNome": r["treinamento_nome"], "dataMatricula": r["data_matricula"] or "", "status": r["status"] or "Matriculado", "observacoes": r["observacoes"] or "", "valorCurso":float(r["valor_curso"] or 0), "entrada":float(r["entrada"] or 0), "parcelas":int(r["parcelas"] or 1), "formaPagamento":r["forma_pagamento"] or "", "contratoDisponivel":bool(r["contrato_path"]),"pacienteIndicadoFechou":bool(indicados.get(int(r["aluno_id"]))),"pacientesIndicadosFechados":indicados.get(int(r["aluno_id"]),[])} for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/educacao/matriculas")
+def criar_matricula_educacao(payload: MatriculaTreinamentoPayload, request: Request):
+    conn = conectar()
+    try:
+        aluno = conn.execute("SELECT nome FROM alunos WHERE id=?", (payload.aluno_id,)).fetchone()
+        turma = conn.execute("SELECT t.vagas,tr.valor FROM turmas_treinamento t JOIN treinamentos tr ON tr.id=t.treinamento_id WHERE t.id=?", (payload.turma_id,)).fetchone()
+        if aluno is None or turma is None:
+            raise HTTPException(status_code=400, detail="Selecione um aluno e uma turma válidos.")
+        total = conn.execute("SELECT COUNT(*) AS total FROM matriculas_treinamento WHERE turma_id=? AND status!='Cancelado'", (payload.turma_id,)).fetchone()["total"]
+        if int(turma["vagas"] or 0) > 0 and int(total) >= int(turma["vagas"]):
+            raise HTTPException(status_code=400, detail="Esta turma não possui vagas disponíveis.")
+        agora = agora_str()
+        try:
+            valor_curso=max(0,float(payload.valor_curso or turma["valor"] or 0))
+            cur = conn.execute("""INSERT INTO matriculas_treinamento
+                (aluno_id,turma_id,data_matricula,status,valor_curso,desconto_percentual,desconto_valor,entrada,parcelas,forma_pagamento,plano_pagamento_json,observacoes,criado_em,atualizado_em)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (payload.aluno_id,payload.turma_id,payload.data_matricula.strip() or date.today().isoformat(),payload.status.strip() or "Matriculado",valor_curso,max(0,payload.desconto_percentual),max(0,payload.desconto_valor),max(0,payload.entrada),max(1,payload.parcelas),payload.forma_pagamento.strip(),json.dumps(payload.plano_pagamento,ensure_ascii=False),payload.observacoes.strip(),agora,agora))
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=400, detail="Este aluno já está matriculado nesta turma.")
+        conn.commit()
+        matricula_id = int(cur.lastrowid)
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Educacao", tipo="Matrícula criada", info=aluno["nome"], metodo_http="POST", rota="/api/educacao/matriculas")
+    return next(item for item in listar_matriculas_educacao() if item["id"] == matricula_id)
+
+
+def gerar_contrato_matricula_educacao(conn:sqlite3.Connection, matricula_id:int)->str:
+    row=conn.execute("""SELECT m.*,a.*,t.nome turma_nome,t.instrutor,t.data_inicio,t.data_fim,t.horario,t.local,
+        tr.nome treinamento_nome FROM matriculas_treinamento m JOIN alunos a ON a.id=m.aluno_id
+        JOIN turmas_treinamento t ON t.id=m.turma_id JOIN treinamentos tr ON tr.id=t.treinamento_id WHERE m.id=?""",(matricula_id,)).fetchone()
+    if row is None: raise HTTPException(404,"Matrícula não encontrada.")
+    if Document is None: raise HTTPException(500,"Gerador de documentos indisponível.")
+    doc=Document(); doc.add_heading("CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS",0)
+    doc.add_paragraph(f"ALUNO(A): {row['nome']} — CÓDIGO {row['codigo']}")
+    doc.add_paragraph(f"CPF: {row['cpf'] or ''}    TELEFONE: {row['telefone'] or ''}")
+    endereco=", ".join(x for x in [row['endereco'],row['numero'],row['complemento'],row['bairro'],row['cidade'],row['estado'],row['cep']] if str(x or '').strip())
+    doc.add_paragraph(f"ENDEREÇO: {endereco}")
+    doc.add_heading("OBJETO DO CONTRATO",level=1); doc.add_paragraph(f"Prestação de serviços educacionais referente ao treinamento {row['treinamento_nome']}, turma {row['turma_nome']}, ministrado por {row['instrutor'] or 'profissional designado'}, no período de {formatar_data_br_valor(row['data_inicio'])} a {formatar_data_br_valor(row['data_fim'])}, em {row['local'] or 'local informado pela contratada'}.")
+    valor=float(row['valor_curso'] or 0); desconto=max(float(row['desconto_valor'] or 0),valor*float(row['desconto_percentual'] or 0)/100); total=max(0,valor-desconto)
+    doc.add_heading("VALOR E PAGAMENTO",level=1); doc.add_paragraph(f"Valor do curso: {formatar_moeda_br(valor)}. Desconto: {formatar_moeda_br(desconto)}. Valor final: {formatar_moeda_br(total)}.")
+    try: plano=json.loads(row['plano_pagamento_json'] or '[]')
+    except Exception: plano=[]
+    if plano:
+        tabela=doc.add_table(rows=1,cols=4); tabela.rows[0].cells[0].text="Parcela";tabela.rows[0].cells[1].text="Vencimento";tabela.rows[0].cells[2].text="Forma";tabela.rows[0].cells[3].text="Valor"
+        for item in plano:
+            cells=tabela.add_row().cells;cells[0].text=str(item.get('descricao') or '');cells[1].text=formatar_data_br_valor(item.get('data'));cells[2].text=str(item.get('forma') or '').replace('_',' ');cells[3].text=formatar_moeda_br(item.get('valor'))
+        total_cobrado=sum(max(0,numero_educacao(item.get("valor"))) for item in plano)
+        taxa_cartao=max(0,total_cobrado-total)
+        if taxa_cartao>0:
+            operadora=next((str(item.get("operadora_cartao") or "") for item in plano if item.get("operadora_cartao")),"")
+            doc.add_paragraph(f"Pagamento em cartão: total cobrado de {formatar_moeda_br(total_cobrado)}, incluindo {formatar_moeda_br(taxa_cartao)} de taxa da operadora {operadora or 'selecionada'}.")
+    doc.add_paragraph("\nO(A) aluno(a) declara estar de acordo com as condições do curso, calendário, conteúdo e plano de pagamento acima descritos.")
+    doc.add_paragraph(f"\n{row['cidade'] or 'Campos dos Goytacazes'}, {formatar_data_extenso_local()}.\n\n____________________________________\n{row['nome']}\n\n____________________________________\nSOULSUL EDUCAÇÃO")
+    aplicar_fonte_times_new_roman(doc); pasta=os.path.join(ARQUIVOS_BASE_DIR,'documentos_educacao','matriculas');os.makedirs(pasta,exist_ok=True)
+    caminho=os.path.join(pasta,f"CONTRATO_MATRICULA_{row['codigo']}_{matricula_id}.docx");doc.save(caminho);return caminho
+
+
+@app.get("/api/educacao/matriculas/{matricula_id}/contrato")
+def contrato_matricula_educacao(matricula_id:int):
+    conn=conectar()
+    try:
+        caminho=gerar_contrato_matricula_educacao(conn,matricula_id)
+        conn.execute("UPDATE matriculas_treinamento SET contrato_path=?,atualizado_em=? WHERE id=?",(caminho,agora_str(),matricula_id))
+        matricula=conn.execute("SELECT * FROM matriculas_treinamento WHERE id=?",(matricula_id,)).fetchone()
+        if conn.execute("SELECT COUNT(*) FROM financeiro_educacao WHERE matricula_id=?",(matricula_id,)).fetchone()[0]==0:
+            try: plano=json.loads(matricula["plano_pagamento_json"] or "[]")
+            except Exception: plano=[]
+            agora=agora_str()
+            for item in plano:
+                valor=max(0,numero_educacao(item.get("valor")))
+                if valor<=0: continue
+                conn.execute("""INSERT INTO financeiro_educacao
+                    (aluno_id,matricula_id,descricao,tipo,categoria,valor,valor_bruto,taxa_valor,valor_liquido,data_vencimento,status,forma_pagamento,operadora_cartao,bandeira_cartao,conta_caixa,origem,parcela,criado_em,atualizado_em)
+                    VALUES (?,?,?,'Receita','Curso',?,?,?,?,?,'Em aberto',?,?,?,?,?,?,?,?)""",
+                    (int(matricula["aluno_id"]),matricula_id,f"Matrícula #{matricula_id} — {item.get('descricao') or 'Parcela'}",valor,valor,max(0,valor-numero_educacao(item.get("valor_liquido"),valor)),numero_educacao(item.get("valor_liquido"),valor),str(item.get("data") or ""),str(item.get("forma") or "").replace("_"," "),str(item.get("operadora_cartao") or ""),str(item.get("bandeira_cartao") or ""),str(item.get("operadora_cartao") or ""),"Contrato de matrícula",str(item.get("descricao") or ""),agora,agora))
+        conn.commit()
+        return FileResponse(caminho,filename=os.path.basename(caminho),media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    finally: conn.close()
+
+
+@app.get("/api/educacao/alunos/{aluno_id}/documentos")
+def documentos_aluno_educacao(aluno_id:int):
+    conn=conectar()
+    try:
+        rows=conn.execute("""SELECT m.id,m.contrato_path,m.data_matricula,t.nome turma_nome,tr.nome treinamento_nome
+            FROM matriculas_treinamento m JOIN turmas_treinamento t ON t.id=m.turma_id
+            JOIN treinamentos tr ON tr.id=t.treinamento_id WHERE m.aluno_id=? AND COALESCE(m.contrato_path,'')<>''
+            ORDER BY m.id DESC""",(aluno_id,)).fetchall()
+        return [{"id":int(r["id"]),"nome":f"Contrato — {r['treinamento_nome']} — {r['turma_nome']}","data":r["data_matricula"] or "","arquivo":os.path.basename(r["contrato_path"] or "")} for r in rows]
+    finally: conn.close()
+
+
+@app.delete("/api/educacao/matriculas/{matricula_id}")
+def excluir_matricula_educacao(matricula_id: int):
+    conn = conectar()
+    try:
+        conn.execute("DELETE FROM matriculas_treinamento WHERE id=?", (matricula_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/educacao/matriculas/{matricula_id}/cancelar")
+def cancelar_matricula_educacao(matricula_id:int,payload:CancelarMatriculaPayload):
+    conn=conectar()
+    try:
+        administrador=conn.execute("SELECT * FROM usuarios_educacao WHERE ativo=1 ORDER BY id LIMIT 1").fetchone()
+        if administrador is None or not verificar_senha(payload.senha_admin,administrador["senha_hash"]):
+            raise HTTPException(403,"Senha de administrador inválida.")
+        matricula=conn.execute("SELECT * FROM matriculas_treinamento WHERE id=?",(matricula_id,)).fetchone()
+        if matricula is None: raise HTTPException(404,"Matrícula não encontrada.")
+        if str(matricula["status"] or "").lower()=="cancelado": raise HTTPException(400,"Esta matrícula já foi cancelada.")
+        if payload.reembolso:
+            if payload.valor_reembolso<=0: raise HTTPException(400,"Informe o valor do reembolso.")
+            data_reembolso=normalizar_data_contrato_iso(payload.data_reembolso,"")
+            if not data_reembolso: raise HTTPException(400,"Informe a data do reembolso.")
+            agora=agora_str()
+            conn.execute("""INSERT INTO financeiro_educacao
+                (aluno_id,matricula_id,descricao,tipo,categoria,valor,data_vencimento,data_pagamento,status,forma_pagamento,criado_em,atualizado_em)
+                VALUES (?,?,?,'Despesa','Reembolso',?,?,?,'Pago','Reembolso',?,?)""",
+                (int(matricula["aluno_id"]),matricula_id,f"Reembolso da matrícula #{matricula_id}",float(payload.valor_reembolso),data_reembolso,data_reembolso,agora,agora))
+        conn.execute("UPDATE financeiro_educacao SET status='Cancelado',atualizado_em=? WHERE matricula_id=? AND tipo='Receita' AND status!='Pago'",(agora_str(),matricula_id))
+        conn.execute("UPDATE matriculas_treinamento SET status='Cancelado',atualizado_em=? WHERE id=?",(agora_str(),matricula_id));conn.commit()
+        return {"ok":True}
+    finally: conn.close()
 
 
 def coluna_data_agenda() -> str:
@@ -997,6 +2207,11 @@ class DashboardVendaResumoItemResposta(BaseModel):
     valor: str = ""
     formaPagamento: str = ""
     data: str = ""
+    incluirTotalVendido: bool = True
+
+
+class DashboardVendaInclusaoPayload(BaseModel):
+    incluir: bool = True
 
 
 class DashboardAlertaItemResposta(BaseModel):
@@ -1016,6 +2231,11 @@ class DashboardFunilResposta(BaseModel):
     agendou: int = 0
     compareceu: int = 0
     fechou: int = 0
+    resgates: int = 0
+    resgatesSemOrcamento: int = 0
+    resgatesOrcamentoAntigo: int = 0
+    resgatesAte30Dias: int = 0
+    resgatesMais30Dias: int = 0
 
 
 class DashboardMetasResposta(BaseModel):
@@ -1043,6 +2263,46 @@ class DashboardPainelResposta(BaseModel):
     vendasResumo: list[DashboardVendaResumoItemResposta] = Field(default_factory=list)
     alertas: list[DashboardAlertaItemResposta]
     atividades: list[DashboardAtividadeItemResposta]
+
+
+class ComissaoVendaItemResposta(BaseModel):
+    contratoId: int
+    pacienteId: int | None = None
+    paciente: str
+    dataFechamento: str
+    valorContrato: float
+    formaPagamento: str
+    primeiroAgendamento: str = ""
+    primeiroAgendador: str = ""
+    avaliacaoComparecida: str = ""
+    agendadorAvaliacao: str = ""
+    agendadorFechamento: str = ""
+    pagamentoConfirmado: bool = False
+    comissaoTotal: float = 0
+    comissaoCaptacao: float = 0
+    comissaoResgate: float = 0
+    status: str = ""
+
+
+class ComissaoAvaliacaoItemResposta(BaseModel):
+    agendamentoId: int
+    pacienteId: int | None = None
+    paciente: str
+    data: str
+    hora: str = ""
+    status: str
+    agendadoPor: str = ""
+    agendadoEm: str = ""
+    procedimentos: str = ""
+
+
+class ComissaoRelatorioResposta(BaseModel):
+    inicio: str
+    fim: str
+    vendas: list[ComissaoVendaItemResposta] = Field(default_factory=list)
+    avaliacoes: list[ComissaoAvaliacaoItemResposta] = Field(default_factory=list)
+    totalVendido: float = 0
+    totalComissao: float = 0
 
 
 class FichaPacienteResposta(BaseModel):
@@ -1161,6 +2421,63 @@ class CrmPainelResposta(BaseModel):
     avaliacoes: list[CrmAvaliacaoItemResposta] = Field(default_factory=list)
     avaliacoesPrimeiraConsultaPerdida: list[CrmPrimeiraAvaliacaoPerdidaItemResposta] = Field(default_factory=list)
     resgates: list[CrmResgateItemResposta] = Field(default_factory=list)
+
+
+class CrmConversaMensagemResposta(BaseModel):
+    id: int
+    conversaId: int
+    canal: str = ""
+    direcao: str = ""
+    remetenteTipo: str = ""
+    remetenteExternoId: str = ""
+    tipoMensagem: str = "text"
+    conteudo: str = ""
+    midiaUrl: str = ""
+    statusEnvio: str = ""
+    erroEnvio: str = ""
+    criadoEm: str = ""
+    mensagemExternaId: str = ""
+
+
+class CrmConversaResumoResposta(BaseModel):
+    id: int
+    crmId: int | None = None
+    pacienteId: int | None = None
+    pacienteNome: str = ""
+    prontuario: str = ""
+    canal: str = ""
+    contatoNome: str = ""
+    contatoTelefone: str = ""
+    contatoInstagram: str = ""
+    externoUsuarioId: str = ""
+    externoConversaId: str = ""
+    etapaFunil: str = "Novo lead"
+    responsavel: str = ""
+    ultimaMensagem: str = ""
+    ultimaMensagemEm: str = ""
+    ultimaMensagemSentido: str = ""
+    naoLidas: int = 0
+    status: str = "aberta"
+
+
+class CrmConversaDetalheResposta(CrmConversaResumoResposta):
+    mensagens: list[CrmConversaMensagemResposta] = Field(default_factory=list)
+
+
+class CrmConversaEnvioPayload(BaseModel):
+    conteudo: str
+
+
+class MetaWebhookResposta(BaseModel):
+    ok: bool = True
+    eventosProcessados: int = 0
+
+
+class MetaConfiguracaoResposta(BaseModel):
+    webhookVerifyTokenConfigurado: bool = False
+    appSecretConfigurado: bool = False
+    whatsappPhoneNumberIdConfigurado: bool = False
+    whatsappAccessTokenConfigurado: bool = False
 
 
 class CrmAtualizacaoPayload(BaseModel):
@@ -1379,10 +2696,6 @@ class TrocaSenhaPayload(BaseModel):
     nova_senha: str = ""
 
 
-class RedefinirSenhaPayload(BaseModel):
-    nova_senha: str = ""
-
-
 class UsuarioAtualizacaoPayload(BaseModel):
     nome: str = ""
     nome_agenda: str = ""
@@ -1406,6 +2719,44 @@ class UsuarioCriacaoPayload(BaseModel):
     ativo: bool | None = True
     modulos: dict[str, str] = Field(default_factory=dict)
     pacientes_abas: dict[str, str] = Field(default_factory=dict)
+
+
+class AlunoPayload(BaseModel):
+    nome: str
+    cpf: str = ""
+    telefone: str = ""
+    email: str = ""
+    observacoes: str = ""
+    ativo: bool = True
+
+
+class TreinamentoPayload(BaseModel):
+    nome: str
+    categoria: str = ""
+    descricao: str = ""
+    carga_horaria: float = 0
+    valor: float = 0
+    ativo: bool = True
+
+
+class TurmaTreinamentoPayload(BaseModel):
+    treinamento_id: int
+    nome: str
+    instrutor: str = ""
+    data_inicio: str = ""
+    data_fim: str = ""
+    horario: str = ""
+    local: str = ""
+    vagas: int = 0
+    status: str = "Turma confirmada"
+
+
+class MatriculaTreinamentoPayload(BaseModel):
+    aluno_id: int
+    turma_id: int
+    data_matricula: str = ""
+    status: str = "Matriculado"
+    observacoes: str = ""
 
 
 class UsuarioResumoResposta(BaseModel):
@@ -1443,6 +2794,47 @@ class ChecklistUsuarioItemPayload(BaseModel):
     tipo_meta: str = "manual"
     meta_diaria: int = 1
     ativo: bool = True
+
+
+class PlanoTratamentoPassoPayload(BaseModel):
+    titulo: str = ""
+    status: str = "Pendente"
+    data_prevista: str = ""
+    data_realizacao: str = ""
+    observacao: str = ""
+
+
+class PlanoTratamentoProcedimentoPayload(BaseModel):
+    procedimento_id: int = 0
+    procedimento_nome: str = ""
+    observacao: str = ""
+    incluir_passos_padrao: bool = True
+
+
+class PlanoTratamentoStatusPayload(BaseModel):
+    status: str = ""
+    observacao: str | None = None
+
+
+class PlanoTratamentoPassoResposta(BaseModel):
+    id: int
+    titulo: str
+    ordem: int = 1
+    status: str = "Pendente"
+    dataPrevista: str = ""
+    dataRealizacao: str = ""
+    observacao: str = ""
+
+
+class PlanoTratamentoProcedimentoResposta(BaseModel):
+    id: int
+    procedimentoId: int | None = None
+    nome: str
+    contratoId: int | None = None
+    origem: str = "Manual"
+    status: str = "Planejado"
+    observacao: str = ""
+    passos: list[PlanoTratamentoPassoResposta] = Field(default_factory=list)
 
 
 class ChecklistUsuarioItemAtualizacaoPayload(BaseModel):
@@ -1489,7 +2881,7 @@ class ChecklistUsuarioPainelResposta(BaseModel):
     tiposAutomaticos: list[dict[str, str]] = Field(default_factory=list)
 
 
-app = FastAPI(title="SoulSul Pacientes API", version="0.1.0")
+# `app` foi criado antes das rotas do modulo de Educacao.
 
 app.add_middleware(
     CORSMiddleware,
@@ -1499,6 +2891,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def proteger_portal_educacao(request: Request, call_next):
+    rota = request.url.path
+    if request.method.upper() != "OPTIONS" and rota.startswith("/api/educacao/") and rota != "/api/educacao/auth/login":
+        authorization = str(request.headers.get("authorization") or "")
+        token = str(request.headers.get("x-educacao-token") or "").strip()
+        if not token and authorization.lower().startswith("bearer "):
+            token = authorization[7:].strip()
+        if not token:
+            return Response(content=json.dumps({"detail": "Acesso ao portal de educação não autorizado."}), status_code=401, media_type="application/json")
+        conn = conectar()
+        try:
+            sessao = conn.execute("SELECT s.token,u.perfil,u.permissoes_json,u.precisa_trocar_senha FROM sessoes_educacao s JOIN usuarios_educacao u ON u.id=s.usuario_id WHERE s.token=? AND s.expira_em>? AND u.ativo=1", (token, datetime.now().isoformat())).fetchone()
+        finally:
+            conn.close()
+        if sessao is None:
+            return Response(content=json.dumps({"detail": "Sessão do portal de educação expirada."}), status_code=401, media_type="application/json")
+        if bool(sessao["precisa_trocar_senha"]) and rota!="/api/educacao/auth/trocar-senha":
+            return Response(content=json.dumps({"detail":"Redefina sua senha antes de continuar."}),status_code=403,media_type="application/json")
+        if str(sessao["perfil"] or "").upper()!="ADMINISTRADOR":
+            if rota.startswith("/api/educacao/alunos-excluidos") or rota.startswith("/api/educacao/pacientes-modelo-excluidos"):
+                return Response(content=json.dumps({"detail":"A lista de cadastros excluídos é restrita aos Administradores."}),status_code=403,media_type="application/json")
+            permissoes=json.loads(sessao["permissoes_json"] or "{}")
+            mapa=[("/api/educacao/alunos","Alunos","Cadastro"),("/api/educacao/treinamentos","Treinamentos","Treinamentos"),("/api/educacao/turmas","Treinamentos","Turmas"),("/api/educacao/matriculas","Treinamentos","Matrículas"),("/api/educacao/pacientes-modelo","Pacientes","Cadastro"),("/api/educacao/orcamentos","Orçamentos","Gerenciar orçamentos"),("/api/educacao/guias","Guias","Guias"),("/api/educacao/agenda","Agenda","Agenda"),("/api/educacao/financeiro","Financeiro","Movimentações"),("/api/educacao/procedimentos","Financeiro","Tabela de preços")]
+            negado=rota.startswith("/api/educacao/usuarios")
+            for prefixo,modulo,subfuncao in mapa:
+                if not rota.startswith(prefixo): continue
+                legado=permissoes.get(modulo,True);nivel=permissoes.get(f"{modulo}.{subfuncao}","edit" if legado is not False else "none")
+                if nivel in {False,"none",None} or (request.method.upper() not in {"GET","HEAD"} and nivel!="edit"): negado=True
+                break
+            if negado:return Response(content=json.dumps({"detail":"Você não possui permissão para esta operação."}),status_code=403,media_type="application/json")
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -1511,16 +2937,26 @@ def usuario_request(request: Request) -> str:
     return str(request.headers.get("x-usuario") or "").strip()
 
 
-USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO = {"juliana", "eliane"}
 USUARIOS_AUTORIZADOS_BLOQUEIO_TRATAMENTO = {"juliana", "eliane"}
 
 
-def validar_usuario_aprovacao_orcamento(request: Request) -> str:
+def validar_perfil_administrador(request: Request, *, acao: str) -> str:
     usuario = usuario_request(request)
-    usuario_normalizado = normalizar_texto(usuario).replace(" ", "")
-    if usuario_normalizado not in USUARIOS_AUTORIZADOS_APROVACAO_ORCAMENTO:
-        raise HTTPException(status_code=403, detail="Somente Juliana e Eliane podem aprovar ou reabrir orcamentos.")
-    return usuario
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Usuario nao autenticado.")
+    conn = conectar()
+    try:
+        usuario_row = buscar_usuario_por_identificador(conn, usuario)
+    finally:
+        conn.close()
+    perfil = normalizar_texto(str(usuario_row["perfil"] or "")) if usuario_row is not None else ""
+    if perfil != "administrador":
+        raise HTTPException(status_code=403, detail=f"Somente o perfil Administrador pode {acao}.")
+    return str(usuario_row["usuario"] or usuario).strip()
+
+
+def validar_usuario_aprovacao_orcamento(request: Request) -> str:
+    return validar_perfil_administrador(request, acao="aprovar ou desaprovar orcamentos")
 
 
 def validar_usuario_bloqueio_tratamento(request: Request) -> str:
@@ -1676,9 +3112,17 @@ async def auditoria_middleware(request: Request, call_next):
         except Exception:
             payload_dict = {}
 
+    rota = request.url.path
+    metodo = request.method.upper()
+    rota_financeira_mutavel = (
+        rota.startswith("/api/financeiro/")
+        or (rota.startswith("/api/pacientes/") and "/recebiveis/" in rota)
+    )
+    if metodo in {"POST", "PUT", "PATCH", "DELETE"} and rota_financeira_mutavel:
+        validar_perfil_administrador(request, acao="realizar movimentacoes financeiras")
+
     response = await call_next(Request(request.scope, receive))
 
-    rota = request.url.path
     deve_pular_agenda = rota.startswith("/api/agenda/agendamentos")
     if rota.startswith("/api/") and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 500 and not deve_pular_agenda:
         usuario = usuario_request(request)
@@ -1713,7 +3157,7 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
     )
 
 
-MODULOS_USUARIOS = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Tabelas", "Usuarios"]
+MODULOS_USUARIOS = ["Dashboard", "Pacientes", "Guias", "Agenda", "CRM", "Financeiro", "Educacao", "Tabelas", "Usuarios"]
 ABAS_PACIENTES_USUARIOS = ["Cadastro", "Orcamentos", "Financeiro", "Documentos", "Plano e Ficha Clinica", "Odontograma", "Agendamentos"]
 CHECKLIST_TIPOS_AUTOMATICOS = {
     "crm_contatos": "Contatos salvos no CRM",
@@ -1927,6 +3371,16 @@ def json_dict_seguro(texto: object, padrao: dict[str, str]) -> dict[str, str]:
     except Exception:
         pass
     return dict(padrao)
+
+
+def lista_json_segura(texto: object) -> list[str]:
+    try:
+        valor = json.loads(str(texto or "[]"))
+        if isinstance(valor, list):
+            return [str(item).strip() for item in valor if str(item).strip()]
+    except Exception:
+        pass
+    return []
 
 
 def normalizar_payload_permissoes(
@@ -2262,11 +3716,7 @@ def arquivar_item_checklist(checklist_id: int, request: Request):
 
 
 @app.post("/api/usuarios/{usuario_id}/redefinir-senha", response_model=LoginResposta)
-def redefinir_senha_usuario(usuario_id: int, payload: RedefinirSenhaPayload, request: Request):
-    nova_senha = str(payload.nova_senha or "").strip()
-    if len(nova_senha) < 4:
-        raise HTTPException(status_code=400, detail="A nova senha precisa ter pelo menos 4 caracteres.")
-
+def redefinir_senha_usuario(usuario_id: int, request: Request):
     conn = conectar()
     try:
         usuario_row = conn.execute(
@@ -2281,11 +3731,11 @@ def redefinir_senha_usuario(usuario_id: int, payload: RedefinirSenhaPayload, req
         if usuario_row is None:
             raise HTTPException(status_code=404, detail="Usuario nao encontrado.")
 
-        novo_hash = gerar_hash_senha(nova_senha)
+        novo_hash = gerar_hash_senha(SENHA_PADRAO_USUARIOS)
         conn.execute(
             """
             UPDATE usuarios
-            SET senha_hash=?, senha_temporaria=0, precisa_trocar_senha=0
+            SET senha_hash=?, senha_temporaria=1, precisa_trocar_senha=1
             WHERE id=?
             """,
             (novo_hash, int(usuario_id)),
@@ -2297,7 +3747,7 @@ def redefinir_senha_usuario(usuario_id: int, payload: RedefinirSenhaPayload, req
 
     registrar_acao_usuario(
         usuario_request(request) or str(usuario_row["usuario"] or usuario_row["nome"] or ""),
-        acao="Redefinicao de senha",
+        acao="Reset de senha para o padrao",
         tipo="Usuario",
         info=str(usuario_row["nome"] or ""),
         metodo_http="POST",
@@ -2525,6 +3975,171 @@ def exportar_acoes_usuarios_xlsx(data: str = Query(default="")):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers,
     )
+
+
+STATUS_PLANO_PROCEDIMENTO = {"Planejado", "Em andamento", "Concluido", "Suspenso", "Cancelado"}
+STATUS_PLANO_PASSO = {"Pendente", "Agendado", "Concluido", "Cancelado"}
+
+
+def sincronizar_procedimentos_contratados_plano(conn: sqlite3.Connection, paciente_id: int) -> None:
+    rows = conn.execute(
+        """
+        SELECT pc.id, pc.contrato_id, pc.procedimento
+        FROM procedimentos_contrato pc
+        JOIN contratos c ON c.id=pc.contrato_id
+        WHERE c.paciente_id=? AND upper(COALESCE(c.status, ''))='APROVADO'
+        ORDER BY pc.id
+        """,
+        (int(paciente_id),),
+    ).fetchall()
+    agora = agora_str()
+    for row in rows:
+        existente = conn.execute(
+            "SELECT id FROM plano_tratamento_procedimentos WHERE procedimento_contrato_id=?",
+            (int(row["id"]),),
+        ).fetchone()
+        if existente:
+            continue
+        catalogo = conn.execute(
+            "SELECT id, etapas_json FROM procedimentos WHERE lower(trim(nome))=lower(trim(?)) LIMIT 1",
+            (str(row["procedimento"] or ""),),
+        ).fetchone()
+        cursor = conn.execute(
+            """
+            INSERT INTO plano_tratamento_procedimentos
+              (paciente_id, contrato_id, procedimento_contrato_id, procedimento_id, procedimento_nome, status, criado_em, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, 'Planejado', ?, ?)
+            """,
+            (int(paciente_id), int(row["contrato_id"]), int(row["id"]), int(catalogo["id"]) if catalogo else None,
+             corrigir_texto_importado(str(row["procedimento"] or "").strip()), agora, agora),
+        )
+        etapas = lista_json_segura(catalogo["etapas_json"]) if catalogo else []
+        for ordem, titulo in enumerate(etapas, start=1):
+            if str(titulo).strip():
+                conn.execute(
+                    "INSERT INTO plano_tratamento_passos (plano_procedimento_id, titulo, ordem, status, criado_em, atualizado_em) VALUES (?, ?, ?, 'Pendente', ?, ?)",
+                    (int(cursor.lastrowid), corrigir_texto_importado(str(titulo).strip()), ordem, agora, agora),
+                )
+
+
+def carregar_plano_tratamento(conn: sqlite3.Connection, paciente_id: int) -> list[PlanoTratamentoProcedimentoResposta]:
+    procedimentos = conn.execute(
+        "SELECT * FROM plano_tratamento_procedimentos WHERE paciente_id=? ORDER BY id",
+        (int(paciente_id),),
+    ).fetchall()
+    resposta = []
+    for procedimento in procedimentos:
+        passos = conn.execute(
+            "SELECT * FROM plano_tratamento_passos WHERE plano_procedimento_id=? ORDER BY ordem, id",
+            (int(procedimento["id"]),),
+        ).fetchall()
+        resposta.append(PlanoTratamentoProcedimentoResposta(
+            id=int(procedimento["id"]),
+            procedimentoId=int(procedimento["procedimento_id"]) if procedimento["procedimento_id"] is not None else None,
+            nome=str(procedimento["procedimento_nome"] or ""),
+            contratoId=int(procedimento["contrato_id"]) if procedimento["contrato_id"] is not None else None,
+            origem="Contrato" if procedimento["procedimento_contrato_id"] is not None else "Manual",
+            status=str(procedimento["status"] or "Planejado"),
+            observacao=str(procedimento["observacao"] or ""),
+            passos=[PlanoTratamentoPassoResposta(
+                id=int(passo["id"]), titulo=str(passo["titulo"] or ""), ordem=int(passo["ordem"] or 1),
+                status=str(passo["status"] or "Pendente"), dataPrevista=str(passo["data_prevista"] or ""),
+                dataRealizacao=str(passo["data_realizacao"] or ""), observacao=str(passo["observacao"] or "")
+            ) for passo in passos],
+        ))
+    return resposta
+
+
+@app.get("/api/pacientes/{paciente_id}/plano-tratamento", response_model=list[PlanoTratamentoProcedimentoResposta])
+def listar_plano_tratamento(paciente_id: int):
+    conn = conectar()
+    try:
+        if not conn.execute("SELECT id FROM pacientes WHERE id=?", (int(paciente_id),)).fetchone():
+            raise HTTPException(status_code=404, detail="Paciente nao encontrado.")
+        sincronizar_procedimentos_contratados_plano(conn, paciente_id)
+        conn.commit()
+        return carregar_plano_tratamento(conn, paciente_id)
+    finally:
+        conn.close()
+
+
+@app.post("/api/pacientes/{paciente_id}/plano-tratamento", response_model=PlanoTratamentoProcedimentoResposta)
+def adicionar_procedimento_plano(paciente_id: int, payload: PlanoTratamentoProcedimentoPayload, request: Request):
+    conn = conectar()
+    try:
+        catalogo = conn.execute("SELECT * FROM procedimentos WHERE id=? AND COALESCE(ativo,1)=1", (int(payload.procedimento_id),)).fetchone() if payload.procedimento_id else None
+        nome = str(catalogo["nome"] if catalogo else payload.procedimento_nome or "").strip()
+        if not nome:
+            raise HTTPException(status_code=400, detail="Informe o procedimento.")
+        agora = agora_str()
+        cursor = conn.execute(
+            "INSERT INTO plano_tratamento_procedimentos (paciente_id, procedimento_id, procedimento_nome, status, observacao, criado_por, criado_em, atualizado_em) VALUES (?, ?, ?, 'Planejado', ?, ?, ?, ?)",
+            (int(paciente_id), int(catalogo["id"]) if catalogo else None, corrigir_texto_importado(nome), str(payload.observacao or "").strip(), usuario_request(request), agora, agora),
+        )
+        if catalogo and payload.incluir_passos_padrao:
+            for ordem, titulo in enumerate(lista_json_segura(catalogo["etapas_json"]), start=1):
+                if str(titulo).strip():
+                    conn.execute("INSERT INTO plano_tratamento_passos (plano_procedimento_id, titulo, ordem, status, criado_por, criado_em, atualizado_em) VALUES (?, ?, ?, 'Pendente', ?, ?, ?)", (int(cursor.lastrowid), str(titulo).strip(), ordem, usuario_request(request), agora, agora))
+        conn.commit()
+        return next(item for item in carregar_plano_tratamento(conn, paciente_id) if item.id == int(cursor.lastrowid))
+    finally:
+        conn.close()
+
+
+@app.post("/api/plano-tratamento/{plano_id}/passos", response_model=PlanoTratamentoPassoResposta)
+def adicionar_passo_plano(plano_id: int, payload: PlanoTratamentoPassoPayload, request: Request):
+    titulo = corrigir_texto_importado(str(payload.titulo or "").strip())
+    if not titulo:
+        raise HTTPException(status_code=400, detail="Informe o nome do passo.")
+    conn = conectar()
+    try:
+        if not conn.execute("SELECT id FROM plano_tratamento_procedimentos WHERE id=?", (int(plano_id),)).fetchone():
+            raise HTTPException(status_code=404, detail="Procedimento do plano nao encontrado.")
+        ordem = int(conn.execute("SELECT COALESCE(MAX(ordem),0)+1 AS proxima FROM plano_tratamento_passos WHERE plano_procedimento_id=?", (int(plano_id),)).fetchone()["proxima"])
+        agora = agora_str()
+        cursor = conn.execute("INSERT INTO plano_tratamento_passos (plano_procedimento_id, titulo, ordem, status, data_prevista, observacao, criado_por, criado_em, atualizado_em) VALUES (?, ?, ?, 'Pendente', ?, ?, ?, ?, ?)", (int(plano_id), titulo, ordem, str(payload.data_prevista or ""), str(payload.observacao or ""), usuario_request(request), agora, agora))
+        conn.commit()
+        return PlanoTratamentoPassoResposta(id=int(cursor.lastrowid), titulo=titulo, ordem=ordem, status="Pendente", dataPrevista=str(payload.data_prevista or ""), observacao=str(payload.observacao or ""))
+    finally:
+        conn.close()
+
+
+@app.patch("/api/plano-tratamento/procedimentos/{plano_id}")
+def atualizar_procedimento_plano(plano_id: int, payload: PlanoTratamentoStatusPayload):
+    if payload.status not in STATUS_PLANO_PROCEDIMENTO:
+        raise HTTPException(status_code=400, detail="Status do procedimento invalido.")
+    conn = conectar()
+    try:
+        cursor = conn.execute("UPDATE plano_tratamento_procedimentos SET status=?, observacao=COALESCE(?, observacao), atualizado_em=? WHERE id=?", (payload.status, payload.observacao, agora_str(), int(plano_id)))
+        if not cursor.rowcount: raise HTTPException(status_code=404, detail="Procedimento do plano nao encontrado.")
+        conn.commit()
+        return {"ok": True}
+    finally: conn.close()
+
+
+@app.patch("/api/plano-tratamento/passos/{passo_id}")
+def atualizar_passo_plano(passo_id: int, payload: PlanoTratamentoPassoPayload):
+    if payload.status not in STATUS_PLANO_PASSO:
+        raise HTTPException(status_code=400, detail="Status do passo invalido.")
+    conn = conectar()
+    try:
+        realizacao = payload.data_realizacao or (date.today().isoformat() if payload.status == "Concluido" else "")
+        cursor = conn.execute("UPDATE plano_tratamento_passos SET titulo=COALESCE(NULLIF(?,''),titulo), status=?, data_prevista=?, data_realizacao=?, observacao=?, atualizado_em=? WHERE id=?", (str(payload.titulo or ""), payload.status, str(payload.data_prevista or ""), realizacao, str(payload.observacao or ""), agora_str(), int(passo_id)))
+        if not cursor.rowcount: raise HTTPException(status_code=404, detail="Passo nao encontrado.")
+        conn.commit()
+        return {"ok": True}
+    finally: conn.close()
+
+
+@app.delete("/api/plano-tratamento/passos/{passo_id}")
+def excluir_passo_plano(passo_id: int):
+    conn = conectar()
+    try:
+        cursor = conn.execute("DELETE FROM plano_tratamento_passos WHERE id=?", (int(passo_id),))
+        if not cursor.rowcount: raise HTTPException(status_code=404, detail="Passo nao encontrado.")
+        conn.commit()
+        return {"ok": True}
+    finally: conn.close()
 
 
 @app.get("/api/procedimentos", response_model=list[ProcedimentoResumoResposta])
@@ -3424,12 +5039,17 @@ def assinatura_orcamento_atual(conn: sqlite3.Connection, contrato_id: int) -> st
 
 
 FORMAS_PAGAMENTO_ORCAMENTO = {
+    "PERMUTA",
     "PIX",
     "BOLETO",
     "CARTAO_CREDITO",
     "CARTAO_DEBITO",
     "DINHEIRO",
 }
+
+
+def contrato_eh_permuta(contrato: sqlite3.Row | dict) -> bool:
+    return "permuta" in normalizar_texto(str(contrato["forma_pagamento"] or ""))
 
 
 def validar_plano_pagamento_orcamento(
@@ -3752,7 +5372,8 @@ def salvar_orcamento_paciente_com_pagamento(
         sincronizar_recebiveis_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
         sincronizar_financeiro_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
         try:
-            limpar_documento_contrato(paciente_row, contrato_id)
+            # Um contrato aprovado passa a manter cada documento gerado como
+            # uma versão independente, sem apagar a versão anterior.
             gerar_documento_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
         except Exception as exc:
             print(f"[orcamento] falha ao regenerar documento do contrato {contrato_id}: {exc}", flush=True)
@@ -4599,28 +6220,40 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     caixa_rows = carregar_caixa_financeiro(conn)
     contratos_rows = conn.execute(
         """
-        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status, forma_pagamento
+        SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status, forma_pagamento,
+               COALESCE(incluir_total_vendido, 1) AS incluir_total_vendido
         FROM contratos
         """
     ).fetchall()
-    pacientes_nome_rows = conn.execute("SELECT id, nome, prontuario FROM pacientes").fetchall()
+    # Permutas preservam o valor clínico no contrato, mas não representam receita/venda.
+    contratos_rows = [row for row in contratos_rows if not contrato_eh_permuta(row)]
+    pacientes_nome_rows = conn.execute("SELECT id, nome, prontuario, COALESCE(criado_em, '') AS criado_em FROM pacientes").fetchall()
     pacientes_nome_map = {
         crm_int(row["id"]): {
             "nome": str(row["nome"] or "").strip(),
             "prontuario": str(row["prontuario"] or "").strip(),
+            "criado_em": str(row["criado_em"] or "").strip(),
         }
         for row in pacientes_nome_rows
         if crm_int(row["id"]) > 0
     }
-    agendamentos_mes_rows = conn.execute(
+    agendamentos_rows = conn.execute(
         """
-        SELECT paciente_id, status, data
+        SELECT paciente_id, status, COALESCE(data_agendamento, data) AS data,
+               tipo_atendimento_nome_snapshot, procedimento_nome_snapshot,
+               procedimento, observacoes, observacao
         FROM agendamentos
-        WHERE substr(COALESCE(data, ''), 1, 7)=?
         """
-        ,
-        (f"{ano_atual}-{str(mes_atual).zfill(2)}",)
     ).fetchall()
+    agendamentos_mes_rows = [
+        row
+        for row in agendamentos_rows
+        if (
+            (data_agendamento := parse_data_contrato(row["data"])) is not None
+            and data_agendamento.year == ano_atual
+            and data_agendamento.month == mes_atual
+        )
+    ]
 
     total_em_aberto = sum(
         float(row["valor"] or 0)
@@ -4682,6 +6315,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 valor=formatar_moeda_br(float(row["valor_total"] or 0)),
                 formaPagamento=forma_pagamento,
                 data=formatar_data_br(data_ref),
+                incluirTotalVendido=bool(int(row["incluir_total_vendido"] or 0)),
             )
         )
 
@@ -4713,11 +6347,16 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 valor=formatar_moeda_br(float(row["valor_total"] or 0)),
                 formaPagamento=forma_pagamento,
                 data=formatar_data_br(data_ref),
+                incluirTotalVendido=bool(int(row["incluir_total_vendido"] or 0)),
             )
         )
 
     vendas_mes_qtd = len(vendas_mes_rows)
-    vendas_mes_valor = sum(float(row["valor_total"] or 0) for row in vendas_mes_rows)
+    vendas_mes_valor = sum(
+        float(row["valor_total"] or 0)
+        for row in vendas_mes_rows
+        if bool(int(row["incluir_total_vendido"] or 0))
+    )
 
     recebiveis_hoje_rows = [
         row
@@ -4819,39 +6458,153 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         )
     ]
 
-    ids_leads = {
-        crm_int(row["paciente_id"])
-        for row in agendamentos_mes_rows
+    primeiro_evento_rows = conn.execute(
+        """
+        SELECT paciente_id, MIN(data_evento) AS primeiro_evento
+        FROM (
+            SELECT paciente_id,
+                   COALESCE(NULLIF(criado_em, ''), NULLIF(data_criacao, ''), NULLIF(data_agendamento, ''), NULLIF(data, '')) AS data_evento
+            FROM agendamentos
+            WHERE paciente_id IS NOT NULL
+            UNION ALL
+            SELECT paciente_id, NULLIF(data_criacao, '') AS data_evento
+            FROM contratos
+            WHERE paciente_id IS NOT NULL
+        ) eventos
+        WHERE COALESCE(data_evento, '') <> ''
+        GROUP BY paciente_id
+        """
+    ).fetchall()
+    primeiro_evento_por_paciente = {
+        crm_int(row["paciente_id"]): parse_data_contrato(row["primeiro_evento"])
+        for row in primeiro_evento_rows
         if crm_int(row["paciente_id"]) > 0
     }
+    inicio_mes = date(ano_atual, mes_atual, 1)
+    ids_leads = set()
+    data_cadastro_por_paciente: dict[int, date | None] = {}
+    for paciente_id, paciente_info in pacientes_nome_map.items():
+        data_cadastro = parse_data_contrato(paciente_info.get("criado_em")) or primeiro_evento_por_paciente.get(paciente_id)
+        data_cadastro_por_paciente[paciente_id] = data_cadastro
+        if data_cadastro and data_cadastro.year == ano_atual and data_cadastro.month == mes_atual:
+            ids_leads.add(paciente_id)
+    leads_auditoria_row = conn.execute(
+        """
+        SELECT COUNT(DISTINCT lower(trim(info))) AS total
+        FROM acoes_usuario
+        WHERE upper(COALESCE(metodo_http, ''))='POST'
+          AND COALESCE(rota, '')='/api/pacientes'
+          AND substr(COALESCE(data_hora, ''), 1, 7)=?
+          AND trim(COALESCE(info, '')) <> ''
+        """,
+        (f"{ano_atual}-{str(mes_atual).zfill(2)}",),
+    ).fetchone()
+    quantidade_leads = max(len(ids_leads), crm_int(leads_auditoria_row["total"] if leads_auditoria_row else 0))
+    avaliacoes_mes_rows = [row for row in agendamentos_mes_rows if agendamento_eh_avaliacao(row)]
     ids_agendou = {
         crm_int(row["paciente_id"])
-        for row in agendamentos_mes_rows
-        if crm_int(row["paciente_id"]) > 0 and normalizar_texto(row["status"]) not in {"cancelado", "faltou"}
+        for row in avaliacoes_mes_rows
+        if crm_int(row["paciente_id"]) > 0
+        and normalizar_texto(row["status"]) not in {"cancelado", "desmarcado", "faltou"}
     }
     ids_compareceu = {
         crm_int(row["paciente_id"])
-        for row in agendamentos_mes_rows
+        for row in avaliacoes_mes_rows
         if crm_int(row["paciente_id"]) > 0 and normalizar_texto(row["status"]) in {"atendido", "em atendimento"}
     }
+
+    avaliacoes_comparecidas_por_paciente: dict[int, list[date]] = {}
+    for row in agendamentos_rows:
+        paciente_id = crm_int(row["paciente_id"])
+        data_avaliacao = parse_data_contrato(row["data"])
+        if (
+            paciente_id <= 0
+            or data_avaliacao is None
+            or not agendamento_eh_avaliacao(row)
+            or normalizar_texto(row["status"]) not in {"atendido", "em atendimento"}
+        ):
+            continue
+        avaliacoes_comparecidas_por_paciente.setdefault(paciente_id, []).append(data_avaliacao)
+
     ids_fechou = set()
+    primeiro_fechamento_por_paciente: dict[int, date] = {}
     for row in contratos_rows:
-        if normalizar_texto(row["status"]).upper() != "APROVADO":
+        if normalizar_texto(row["status"]) not in {"aprovado", "aprovada", "convertido"}:
             continue
         data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
-        if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_atual:
-            continue
         paciente_id = crm_int(row["paciente_id"])
-        if paciente_id > 0:
+        if not data_ref or paciente_id <= 0:
+            continue
+        atual = primeiro_fechamento_por_paciente.get(paciente_id)
+        if atual is None or data_ref < atual:
+            primeiro_fechamento_por_paciente[paciente_id] = data_ref
+
+    # Fechamento do funil: paciente que compareceu a uma avaliação neste mês e
+    # teve o primeiro contrato aprovado nessa avaliação ou depois dela.
+    for paciente_id in ids_compareceu:
+        fechamento = primeiro_fechamento_por_paciente.get(paciente_id)
+        datas_mes = [
+            data_avaliacao
+            for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
+            if data_avaliacao.year == ano_atual and data_avaliacao.month == mes_atual
+        ]
+        if fechamento and any(fechamento >= data_avaliacao for data_avaliacao in datas_mes):
             ids_fechou.add(paciente_id)
+
+    # Resgate: o primeiro fechamento ocorreu neste mês, em data posterior a
+    # uma avaliação comparecida. Fechamento no mesmo dia pertence ao funil
+    # normal e não é classificado como retorno/resgate.
+    ids_resgate_ate_30_dias = set()
+    ids_resgate_mais_30_dias = set()
+    for paciente_id, fechamento in primeiro_fechamento_por_paciente.items():
+        if fechamento.year != ano_atual or fechamento.month != mes_atual:
+            continue
+        avaliacoes_anteriores = [
+            data_avaliacao
+            for data_avaliacao in avaliacoes_comparecidas_por_paciente.get(paciente_id, [])
+            if data_avaliacao < fechamento
+        ]
+        if not avaliacoes_anteriores:
+            continue
+        dias_para_fechar = (fechamento - max(avaliacoes_anteriores)).days
+        if dias_para_fechar <= 30:
+            ids_resgate_ate_30_dias.add(paciente_id)
+        else:
+            ids_resgate_mais_30_dias.add(paciente_id)
 
     meta_atual = obter_meta_mensal(conn, ano_atual, mes_atual)
     meta_mes = float(meta_atual.meta or 0)
     supermeta_mes = float(meta_atual.supermeta or 0)
     hipermeta_mes = float(meta_atual.hipermeta or 0)
 
+    vendas_historicas_rows = conn.execute(
+        """
+        SELECT data_venda, valor_total
+        FROM vendas
+        WHERE data_venda LIKE ?
+        """,
+        (f"{ano_atual:04d}-%",),
+    ).fetchall()
+    vendas_historicas_por_mes: dict[int, float] = {}
+    meses_com_historico: set[int] = set()
+    for venda_historica in vendas_historicas_rows:
+        data_historica = parse_data_contrato(str(venda_historica["data_venda"] or ""))
+        if not data_historica or data_historica.year != ano_atual:
+            continue
+        meses_com_historico.add(data_historica.month)
+        vendas_historicas_por_mes[data_historica.month] = (
+            vendas_historicas_por_mes.get(data_historica.month, 0.0)
+            + float(venda_historica["valor_total"] or 0)
+        )
+
     serie_vendas: list[float] = []
     for mes_indice in range(1, 13):
+        # A tabela `vendas` guarda o fechamento oficial dos meses anteriores à
+        # implantação. Quando houver histórico para o mês, ele prevalece sobre
+        # contratos importados, cujas datas de aprovação podem não ser confiáveis.
+        if mes_indice in meses_com_historico:
+            serie_vendas.append(vendas_historicas_por_mes.get(mes_indice, 0.0))
+            continue
         total_mes = 0.0
         for row in contratos_rows:
             status = normalizar_texto(row["status"])
@@ -4859,6 +6612,8 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 continue
             data_ref = parse_data_contrato(str(row["data_aprovacao"] or "")) or parse_data_contrato(str(row["data_criacao"] or ""))
             if not data_ref or data_ref.year != ano_atual or data_ref.month != mes_indice:
+                continue
+            if not bool(int(row["incluir_total_vendido"] or 0)):
                 continue
             total_mes += float(row["valor_total"] or 0)
         serie_vendas.append(total_mes)
@@ -4940,10 +6695,13 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             percentualMetaAno=percentual_meta_ano,
         ),
         funilReal=DashboardFunilResposta(
-            leads=len(ids_leads),
+            leads=quantidade_leads,
             agendou=len(ids_agendou),
             compareceu=len(ids_compareceu),
             fechou=len(ids_fechou),
+            resgates=len(ids_resgate_ate_30_dias | ids_resgate_mais_30_dias),
+            resgatesAte30Dias=len(ids_resgate_ate_30_dias),
+            resgatesMais30Dias=len(ids_resgate_mais_30_dias),
         ),
         agendaHoje=[],
         vendasResumo=vendas_resumo,
@@ -5461,7 +7219,6 @@ def resolver_documento_contrato_atual(
     if contrato is None:
         return None
     contrato_id = int(contrato["id"])
-    limpar_documentos_contrato_variantes(paciente_row, contrato_id)
     return gerar_documento_contrato(conn, paciente_row, contrato, contrato_id)
 
 
@@ -5576,6 +7333,29 @@ def montar_texto_recebimento_boletos(paciente_row: sqlite3.Row) -> str:
     )
 
 
+def remover_imagens_corpo_documento(doc) -> None:
+    """Remove imagens antigas do corpo do modelo, preservando cabecalho e rodape."""
+    for paragrafo in list(doc.paragraphs):
+        desenhos = paragrafo._p.xpath(".//w:drawing | .//w:pict")
+        if not desenhos:
+            continue
+        for desenho in desenhos:
+            pai = desenho.getparent()
+            if pai is not None:
+                pai.remove(desenho)
+        if not paragrafo.text.strip() and not paragrafo._p.xpath(".//w:drawing | .//w:pict"):
+            pai_paragrafo = paragrafo._p.getparent()
+            if pai_paragrafo is not None:
+                pai_paragrafo.remove(paragrafo._p)
+
+    for paragrafo in list(doc.paragraphs):
+        if paragrafo.text.strip() or paragrafo._p.xpath(".//w:drawing | .//w:pict"):
+            continue
+        pai_paragrafo = paragrafo._p.getparent()
+        if pai_paragrafo is not None:
+            pai_paragrafo.remove(paragrafo._p)
+
+
 def gerar_documento_recebimento_boletos(
     paciente_row: sqlite3.Row,
     imagens: list[ImagemDocumentoPayload],
@@ -5588,6 +7368,7 @@ def gerar_documento_recebimento_boletos(
         raise HTTPException(status_code=400, detail="Anexe ao menos um print do boleto.")
 
     doc = Document(TEMPLATE_RECEBIMENTO_BOLETOS_PATH)
+    remover_imagens_corpo_documento(doc)
     paragrafo_principal = next((p for p in doc.paragraphs if p.text.strip()), None)
     if paragrafo_principal is None:
         paragrafo_principal = doc.add_paragraph("")
@@ -5629,6 +7410,9 @@ def gerar_documento_recebimento_boletos(
 
     for indice, caminho_imagem in enumerate(caminhos_imagens, start=1):
         legenda = doc.add_paragraph(f"Boleto {indice}")
+        legenda.paragraph_format.keep_with_next = True
+        if indice > 1:
+            legenda.paragraph_format.page_break_before = True
         if legenda.runs and Pt is not None:
             legenda.runs[0].bold = True
             legenda.runs[0].font.size = Pt(9)
@@ -5639,7 +7423,12 @@ def gerar_documento_recebimento_boletos(
         paragrafo_imagem.alignment = 1
         run = paragrafo_imagem.add_run()
         if Inches is not None:
-            run.add_picture(caminho_imagem, width=Inches(6.0))
+            figura = run.add_picture(caminho_imagem, width=Inches(6.0))
+            altura_maxima = Inches(6.7)
+            if figura.height > altura_maxima:
+                proporcao = altura_maxima / figura.height
+                figura.width = int(figura.width * proporcao)
+                figura.height = altura_maxima
         else:
             run.add_picture(caminho_imagem)
         inserir_bloco_apos_docx(ancora_xml, paragrafo_imagem._p)
@@ -5807,12 +7596,22 @@ def gerar_documento_ordem_servico(
     etapas: list[tuple[str, str]],
     observacao: str,
     criado_por: str,
+    logo_path: str | None = None,
 ) -> str:
     template_ordem_servico_path = caminho_template_ordem_servico()
     if Document is None or not os.path.isfile(template_ordem_servico_path):
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico nao encontrado.")
 
     doc = Document(template_ordem_servico_path)
+    if logo_path and os.path.isfile(logo_path):
+        try:
+            with open(logo_path, "rb") as arquivo_logo:
+                conteudo_logo = arquivo_logo.read()
+            for parte in doc.part.related_parts.values():
+                if str(getattr(parte, "content_type", "")).startswith("image/"):
+                    parte._blob = conteudo_logo
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Falha ao carregar a logo da guia: {exc}") from exc
     tabelas = doc.tables
     if not tabelas:
         raise HTTPException(status_code=500, detail="Modelo da ordem de servico invalido.")
@@ -7169,12 +8968,16 @@ def gerar_documento_contrato(
     paciente_row: sqlite3.Row,
     contrato: sqlite3.Row,
     contrato_id: int,
+    *,
+    procedimentos_override: list[dict] | None = None,
+    caminho_override: str = "",
 ) -> str:
-    os.makedirs(DOCS_DIR, exist_ok=True)
-    procedimentos = carregar_procedimentos_documento_contrato(conn, contrato_id)
+    pasta_documentos = os.path.dirname(caminho_override) if caminho_override else DOCS_DIR
+    os.makedirs(pasta_documentos, exist_ok=True)
+    procedimentos = procedimentos_override if procedimentos_override is not None else carregar_procedimentos_documento_contrato(conn, contrato_id)
     plano = carregar_plano_pagamento_contrato(contrato)
     nome_arquivo = nome_arquivo_contrato(paciente_row, contrato_id)
-    caminho = os.path.join(DOCS_DIR, nome_arquivo)
+    caminho = caminho_override or os.path.join(DOCS_DIR, nome_arquivo)
 
     if Document is None or (not os.path.isfile(TEMPLATE_PATH) and not os.path.isfile(TEMPLATE_B64_PATH)):
         return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
@@ -7285,11 +9088,64 @@ def gerar_documento_contrato(
         return gerar_docx_contrato_fallback(paciente_row, contrato_id, procedimentos, plano)
 
 
+def gerar_documento_contrato_educacao(
+    conn: sqlite3.Connection,
+    paciente_row: sqlite3.Row,
+    contrato_row: sqlite3.Row,
+    contrato_id: int,
+) -> str:
+    rows = conn.execute(
+        "SELECT * FROM procedimentos_contrato_educacao WHERE contrato_id=? AND COALESCE(ativo,1)=1 ORDER BY id",
+        (contrato_id,),
+    ).fetchall()
+    procedimentos: list[dict] = []
+    for row in rows:
+        try:
+            regioes_brutas = json.loads(str(row["regioes_json"] or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            regioes_brutas = []
+        regioes = []
+        regioes_texto = []
+        for regiao in regioes_brutas if isinstance(regioes_brutas, list) else []:
+            if isinstance(regiao, dict):
+                valor_regiao = regiao.get("dente") or regiao.get("regiao") or ""
+            else:
+                valor_regiao = regiao
+            if str(valor_regiao).strip():
+                regioes.append(str(valor_regiao))
+                regioes_texto.append(rotulo_regiao_contrato_docx(str(valor_regiao)))
+        procedimentos.append({
+            "procedimento": str(row["procedimento"] or ""),
+            "valor": float(row["valor"] or 0),
+            "profissional_snapshot": str(row["profissional_snapshot"] or ""),
+            "denticao_snapshot": str(row["denticao_snapshot"] or ""),
+            "regioes": regioes,
+            "regioes_texto": regioes_texto,
+        })
+    contrato = educacao_row(contrato_row)
+    contrato["data_criacao"] = contrato.get("data_contrato") or contrato.get("criado_em") or agora_str()
+    contrato["primeiro_vencimento"] = contrato.get("data_contrato") or agora_local().date().isoformat()
+    contrato["data_pagamento_entrada"] = contrato.get("data_contrato") or agora_local().date().isoformat()
+    contrato["observacoes"] = contrato.get("descricao") or ""
+    pasta = os.path.join(ARQUIVOS_BASE_DIR, "documentos_educacao")
+    nome_limpo = re.sub(r"[^A-Za-z0-9]+", "_", str(paciente_row["nome"] or "").strip()).strip("_").upper()
+    caminho = os.path.join(pasta, f"CONTRATO_EDUCACAO_{nome_limpo}_{contrato_id}.docx")
+    return gerar_documento_contrato(
+        conn, paciente_row, contrato, contrato_id,
+        procedimentos_override=procedimentos,
+        caminho_override=caminho,
+    )
+
+
 def limpar_documento_contrato(paciente_row: sqlite3.Row, contrato_id: int) -> None:
     limpar_documentos_contrato_variantes(paciente_row, contrato_id)
 
 
 def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqlite3.Row, contrato: sqlite3.Row, contrato_id: int) -> None:
+    if contrato_eh_permuta(contrato):
+        conn.execute("DELETE FROM recebiveis WHERE contrato_id=? AND lower(COALESCE(status, ''))<>'pago'", (contrato_id,))
+        conn.execute("DELETE FROM financeiro WHERE contrato_id=?", (contrato_id,))
+        return
     plano = carregar_plano_pagamento_contrato(contrato)
     prontuario = formatar_prontuario_valor(paciente_row["prontuario"])
     existentes = conn.execute(
@@ -7508,6 +9364,13 @@ CRM_STATUS_RESGATE_PADRAO = {
     "CONVERTIDO": "Convertido",
 }
 
+CRM_CANAIS_SUPORTADOS = {"whatsapp", "instagram"}
+
+
+def whatsapp_service() -> WhatsAppService:
+    # Lê o ambiente por chamada para facilitar deploy, testes e rotação de credenciais.
+    return WhatsAppService()
+
 
 def crm_int(valor: object, padrao: int = 0) -> int:
     try:
@@ -7533,6 +9396,183 @@ def crm_row_val(row: sqlite3.Row, chave: str, padrao: object = "") -> object:
         return row[chave]
     except Exception:
         return padrao
+
+
+def normalizar_telefone_crm(valor: object) -> str:
+    return WhatsAppService.normalize_phone(valor)
+
+
+def resumir_conteudo_mensagem(tipo: str, payload: dict) -> str:
+    tipo_limpo = str(tipo or "").strip().lower() or "text"
+    if tipo_limpo == "text":
+        return str(((payload.get("text") or {}) if isinstance(payload, dict) else {}).get("body") or "").strip()
+    if tipo_limpo == "button":
+        return str(((payload.get("button") or {}) if isinstance(payload, dict) else {}).get("text") or "").strip()
+    if tipo_limpo == "interactive":
+        interactive = (payload.get("interactive") or {}) if isinstance(payload, dict) else {}
+        button_reply = interactive.get("button_reply") or {}
+        list_reply = interactive.get("list_reply") or {}
+        return str(button_reply.get("title") or list_reply.get("title") or tipo_limpo).strip()
+    legenda = str(((payload.get(tipo_limpo) or {}) if isinstance(payload, dict) else {}).get("caption") or "").strip()
+    return legenda or f"[{tipo_limpo}]"
+
+
+def buscar_paciente_por_telefone(conn: sqlite3.Connection, telefone: str) -> sqlite3.Row | None:
+    telefone_limpo = normalizar_telefone_crm(telefone)
+    if not telefone_limpo:
+        return None
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM pacientes
+        WHERE COALESCE(telefone, '') <> ''
+        ORDER BY id DESC
+        """
+    ).fetchall()
+    for row in rows:
+        telefone_row = normalizar_telefone_crm(row["telefone"])
+        if not telefone_row:
+            continue
+        if telefone_row == telefone_limpo or telefone_row.endswith(telefone_limpo[-8:]) or telefone_limpo.endswith(telefone_row[-8:]):
+            return row
+    return None
+
+
+def conversa_crm_por_externo(
+    conn: sqlite3.Connection,
+    *,
+    canal: str,
+    externo_usuario_id: str = "",
+    externo_conversa_id: str = "",
+) -> sqlite3.Row | None:
+    canal_limpo = str(canal or "").strip().lower()
+    externo_usuario_limpo = str(externo_usuario_id or "").strip()
+    externo_conversa_limpo = str(externo_conversa_id or "").strip()
+    if externo_conversa_limpo:
+        row = conn.execute(
+            "SELECT * FROM crm_conversas WHERE canal=? AND externo_conversa_id=? LIMIT 1",
+            (canal_limpo, externo_conversa_limpo),
+        ).fetchone()
+        if row is not None:
+            return row
+    if externo_usuario_limpo:
+        return conn.execute(
+            "SELECT * FROM crm_conversas WHERE canal=? AND externo_usuario_id=? LIMIT 1",
+            (canal_limpo, externo_usuario_limpo),
+        ).fetchone()
+    return None
+
+
+def mapear_crm_conversa_resumo(row: sqlite3.Row) -> CrmConversaResumoResposta:
+    return CrmConversaResumoResposta(
+        id=crm_int(row["id"]),
+        crmId=crm_int(row["crm_id"], 0) or None,
+        pacienteId=crm_int(row["paciente_id"], 0) or None,
+        pacienteNome=str(row["paciente_nome"] or ""),
+        prontuario=formatar_prontuario_valor(row["prontuario"]),
+        canal=str(row["canal"] or ""),
+        contatoNome=str(row["contato_nome"] or ""),
+        contatoTelefone=str(row["contato_telefone"] or ""),
+        contatoInstagram=str(row["contato_instagram"] or ""),
+        externoUsuarioId=str(row["externo_usuario_id"] or ""),
+        externoConversaId=str(row["externo_conversa_id"] or ""),
+        etapaFunil=str(row["etapa_funil"] or "Novo lead"),
+        responsavel=str(row["responsavel"] or ""),
+        ultimaMensagem=str(row["ultima_mensagem"] or ""),
+        ultimaMensagemEm=formatar_data_hora_relatorio(row["ultima_mensagem_em"]),
+        ultimaMensagemSentido=str(row["ultima_mensagem_sentido"] or ""),
+        naoLidas=crm_int(row["nao_lidas"], 0),
+        status=str(row["status"] or "aberta"),
+    )
+
+
+def mapear_crm_mensagem(row: sqlite3.Row) -> CrmConversaMensagemResposta:
+    return CrmConversaMensagemResposta(
+        id=crm_int(row["id"]),
+        conversaId=crm_int(row["conversa_id"]),
+        canal=str(row["canal"] or ""),
+        direcao=str(row["direcao"] or ""),
+        remetenteTipo=str(row["remetente_tipo"] or ""),
+        remetenteExternoId=str(row["remetente_externo_id"] or ""),
+        tipoMensagem=str(row["tipo_mensagem"] or "text"),
+        conteudo=str(row["conteudo"] or ""),
+        midiaUrl=str(row["midia_url"] or ""),
+        statusEnvio=str(row["status_envio"] or ""),
+        erroEnvio=str(row["erro_envio"] or ""),
+        criadoEm=formatar_data_hora_relatorio(row["criado_em"]),
+        mensagemExternaId=str(row["mensagem_externa_id"] or ""),
+    )
+
+
+def listar_mensagens_conversa(conn: sqlite3.Connection, conversa_id: int) -> list[CrmConversaMensagemResposta]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM crm_mensagens
+        WHERE conversa_id=?
+        ORDER BY COALESCE(criado_em, '') ASC, id ASC
+        """,
+        (int(conversa_id),),
+    ).fetchall()
+    return [mapear_crm_mensagem(row) for row in rows]
+
+
+def detalhar_conversa_crm(conn: sqlite3.Connection, conversa_id: int) -> CrmConversaDetalheResposta:
+    row = conn.execute(
+        """
+        SELECT c.*, p.nome AS paciente_nome, p.prontuario
+        FROM crm_conversas c
+        LEFT JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.id=?
+        LIMIT 1
+        """,
+        (int(conversa_id),),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    resumo = mapear_crm_conversa_resumo(row)
+    return CrmConversaDetalheResposta(**resumo.model_dump(), mensagens=listar_mensagens_conversa(conn, int(conversa_id)))
+
+
+def carregar_config_meta() -> MetaConfiguracaoResposta:
+    config = whatsapp_service().config
+    return MetaConfiguracaoResposta(
+        webhookVerifyTokenConfigurado=bool(config.verify_token),
+        appSecretConfigurado=bool(config.app_secret),
+        whatsappPhoneNumberIdConfigurado=bool(config.phone_number_id),
+        whatsappAccessTokenConfigurado=bool(config.access_token),
+    )
+
+
+def validar_assinatura_meta(body: bytes, assinatura: str) -> bool:
+    return whatsapp_service().validate_signature(body, assinatura)
+
+
+def garantir_evento_webhook_unico(
+    conn: sqlite3.Connection,
+    *,
+    canal: str,
+    evento_externo_id: str,
+    tipo_evento: str,
+    payload_json: str,
+) -> bool:
+    evento_id = str(evento_externo_id or "").strip()
+    if not evento_id:
+        return True
+    existente = conn.execute(
+        "SELECT id FROM crm_webhook_eventos WHERE canal=? AND evento_externo_id=? LIMIT 1",
+        (str(canal or "").strip().lower(), evento_id),
+    ).fetchone()
+    if existente is not None:
+        return False
+    conn.execute(
+        """
+        INSERT INTO crm_webhook_eventos (canal, evento_externo_id, tipo_evento, payload_json, processado_em)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (str(canal or "").strip().lower(), evento_id, str(tipo_evento or "").strip(), payload_json, agora_str()),
+    )
+    return True
 
 
 def mapear_crm_paciente_resumo(row: sqlite3.Row | None) -> CrmPacienteResumoResposta | None:
@@ -7739,10 +9779,10 @@ def garantir_paciente_minimo_crm(
 
     cursor = conn.execute(
         """
-        INSERT INTO pacientes (nome, telefone)
-        VALUES (?, ?)
+        INSERT INTO pacientes (nome, telefone, criado_em)
+        VALUES (?, ?, ?)
         """,
-        (nome_limpo, telefone_limpo),
+        (nome_limpo, telefone_limpo, agora_str()),
     )
     paciente_id = int(cursor.lastrowid or 0)
     conn.execute(
@@ -8097,6 +10137,7 @@ def upsert_crm_origem(
     marcar_avaliacao: bool = False,
     usuario: str = "",
     ultima_avaliacao_em: str = "",
+    canal_novo: str = "Facebook",
 ) -> sqlite3.Row:
     existente = crm_entry_por_paciente(conn, paciente_id)
     agora = agora_str()
@@ -8108,13 +10149,14 @@ def upsert_crm_origem(
                 paciente_id, origem_finalizado, origem_cancelado, origem_avaliacao, etapa_funil, canal,
                 ultima_avaliacao_em, finalizado_em, cancelado_em, criado_por, atualizado_por, criado_em, atualizado_em
             )
-            VALUES (?, ?, ?, ?, 'Novo lead', 'Facebook', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 'Novo lead', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(paciente_id),
                 1 if marcar_finalizado else 0,
                 1 if marcar_cancelado else 0,
                 1 if marcar_avaliacao else 0,
+                str(canal_novo or "Facebook").strip() or "Facebook",
                 ultima_avaliacao_em or "",
                 agora if marcar_finalizado else "",
                 agora if marcar_cancelado else "",
@@ -8152,6 +10194,310 @@ def upsert_crm_origem(
             ),
         )
     return crm_entry_por_paciente(conn, paciente_id)
+
+
+def garantir_conversa_crm_canal(
+    conn: sqlite3.Connection,
+    *,
+    canal: str,
+    externo_usuario_id: str,
+    externo_conversa_id: str = "",
+    contato_nome: str = "",
+    contato_telefone: str = "",
+    contato_instagram: str = "",
+) -> sqlite3.Row:
+    canal_limpo = str(canal or "").strip().lower()
+    if canal_limpo not in CRM_CANAIS_SUPORTADOS:
+        raise HTTPException(status_code=400, detail="Canal de conversa não suportado.")
+
+    conversa = conversa_crm_por_externo(
+        conn,
+        canal=canal_limpo,
+        externo_usuario_id=externo_usuario_id,
+        externo_conversa_id=externo_conversa_id,
+    )
+    paciente = buscar_paciente_por_telefone(conn, contato_telefone) if canal_limpo == "whatsapp" else None
+    if paciente is None and contato_nome.strip():
+        paciente_id = garantir_paciente_minimo_crm(conn, contato_nome.strip(), contato_telefone.strip())
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+    crm = None
+    if paciente is not None:
+        crm = upsert_crm_origem(
+            conn,
+            int(paciente["id"]),
+            usuario="META",
+            canal_novo="WhatsApp" if canal_limpo == "whatsapp" else canal_limpo.title(),
+        )
+    agora = agora_str()
+
+    if conversa is None:
+        conn.execute(
+            """
+            INSERT INTO crm_conversas (
+                crm_id, paciente_id, canal, contato_nome, contato_telefone, contato_instagram,
+                externo_usuario_id, externo_conversa_id, etapa_funil, responsavel, ultima_mensagem,
+                ultima_mensagem_em, ultima_mensagem_sentido, nao_lidas, status, criado_em, atualizado_em
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', 0, 'aberta', ?, ?)
+            """,
+            (
+                crm_int(crm["id"], 0) if crm is not None else None,
+                int(paciente["id"]) if paciente is not None else None,
+                canal_limpo,
+                contato_nome.strip(),
+                contato_telefone.strip(),
+                contato_instagram.strip(),
+                str(externo_usuario_id or "").strip(),
+                str(externo_conversa_id or "").strip(),
+                str(crm["etapa_funil"] or "Novo lead") if crm is not None else "Novo lead",
+                str(crm["responsavel"] or "") if crm is not None else "",
+                agora,
+                agora,
+            ),
+        )
+        conversa_id = crm_int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    else:
+        conversa_id = crm_int(conversa["id"])
+        conn.execute(
+            """
+            UPDATE crm_conversas
+            SET crm_id=?,
+                paciente_id=?,
+                contato_nome=?,
+                contato_telefone=?,
+                contato_instagram=?,
+                externo_usuario_id=CASE WHEN trim(COALESCE(externo_usuario_id, ''))='' THEN ? ELSE externo_usuario_id END,
+                externo_conversa_id=CASE WHEN trim(COALESCE(externo_conversa_id, ''))='' THEN ? ELSE externo_conversa_id END,
+                atualizado_em=?
+            WHERE id=?
+            """,
+            (
+                crm_int(crm["id"], 0) if crm is not None else crm_int(conversa["crm_id"], 0) or None,
+                int(paciente["id"]) if paciente is not None else crm_int(conversa["paciente_id"], 0) or None,
+                contato_nome.strip() or str(conversa["contato_nome"] or ""),
+                contato_telefone.strip() or str(conversa["contato_telefone"] or ""),
+                contato_instagram.strip() or str(conversa["contato_instagram"] or ""),
+                str(externo_usuario_id or "").strip(),
+                str(externo_conversa_id or "").strip(),
+                agora,
+                conversa_id,
+            ),
+        )
+    return conn.execute(
+        """
+        SELECT c.*, p.nome AS paciente_nome, p.prontuario
+        FROM crm_conversas c
+        LEFT JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.id=?
+        LIMIT 1
+        """,
+        (conversa_id,),
+    ).fetchone()
+
+
+def registrar_mensagem_conversa(
+    conn: sqlite3.Connection,
+    *,
+    conversa_id: int,
+    crm_id: int | None,
+    paciente_id: int | None,
+    canal: str,
+    mensagem_externa_id: str,
+    remetente_externo_id: str,
+    direcao: str,
+    remetente_tipo: str,
+    tipo_mensagem: str,
+    conteudo: str,
+    midia_url: str = "",
+    status_envio: str = "",
+    erro_envio: str = "",
+    metadata: dict | None = None,
+    criado_em: str = "",
+) -> sqlite3.Row:
+    mensagem_id = str(mensagem_externa_id or "").strip()
+    if mensagem_id:
+        existente = conn.execute(
+            "SELECT * FROM crm_mensagens WHERE canal=? AND mensagem_externa_id=? LIMIT 1",
+            (str(canal or "").strip().lower(), mensagem_id),
+        ).fetchone()
+        if existente is not None:
+            return existente
+    agora = str(criado_em or "").strip() or agora_str()
+    conn.execute(
+        """
+        INSERT INTO crm_mensagens (
+            conversa_id, crm_id, paciente_id, canal, mensagem_externa_id, remetente_externo_id,
+            direcao, remetente_tipo, tipo_mensagem, conteudo, midia_url, status_envio, erro_envio,
+            metadata_json, criado_em, atualizado_em
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(conversa_id),
+            int(crm_id) if crm_id else None,
+            int(paciente_id) if paciente_id else None,
+            str(canal or "").strip().lower(),
+            mensagem_id,
+            str(remetente_externo_id or "").strip(),
+            str(direcao or "").strip(),
+            str(remetente_tipo or "").strip(),
+            str(tipo_mensagem or "text").strip(),
+            str(conteudo or "").strip(),
+            str(midia_url or "").strip(),
+            str(status_envio or "").strip() or ("received" if direcao == "entrada" else "sent"),
+            str(erro_envio or "").strip(),
+            json.dumps(metadata or {}, ensure_ascii=False),
+            agora,
+            agora,
+        ),
+    )
+    novo_id = crm_int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    incremento_nao_lidas = 1 if direcao == "entrada" else 0
+    conn.execute(
+        """
+        UPDATE crm_conversas
+        SET ultima_mensagem=?,
+            ultima_mensagem_em=?,
+            ultima_mensagem_sentido=?,
+            nao_lidas=CASE WHEN ?=1 THEN COALESCE(nao_lidas, 0) + 1 ELSE COALESCE(nao_lidas, 0) END,
+            atualizado_em=?
+        WHERE id=?
+        """,
+        (str(conteudo or "").strip(), agora, str(direcao or "").strip(), incremento_nao_lidas, agora, int(conversa_id)),
+    )
+    return conn.execute("SELECT * FROM crm_mensagens WHERE id=? LIMIT 1", (novo_id,)).fetchone()
+
+
+def atualizar_status_mensagem_externa(
+    conn: sqlite3.Connection,
+    *,
+    canal: str,
+    mensagem_externa_id: str,
+    status_envio: str,
+) -> None:
+    if not str(mensagem_externa_id or "").strip():
+        return
+    conn.execute(
+        """
+        UPDATE crm_mensagens
+        SET status_envio=?, atualizado_em=?
+        WHERE canal=? AND mensagem_externa_id=?
+        """,
+        (str(status_envio or "").strip(), agora_str(), str(canal or "").strip().lower(), str(mensagem_externa_id or "").strip()),
+    )
+
+
+def enviar_texto_meta_whatsapp(destino: str, conteudo: str) -> dict:
+    try:
+        return whatsapp_service().send_text(destino, conteudo)
+    except WhatsAppConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (WhatsAppAPIError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def timestamp_meta_para_banco(valor: object) -> str:
+    try:
+        return datetime.fromtimestamp(int(str(valor)), tz=TIMEZONE_LOCAL).replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
+    except (TypeError, ValueError, OSError):
+        return agora_str()
+
+
+def processar_mensagem_meta_whatsapp(conn: sqlite3.Connection, mensagem: dict, metadata: dict) -> bool:
+    mensagem_id = str(mensagem.get("id") or "").strip()
+    if not garantir_evento_webhook_unico(
+        conn,
+        canal="whatsapp",
+        evento_externo_id=mensagem_id,
+        tipo_evento="message",
+        payload_json=json.dumps({"message": mensagem, "metadata": metadata}, ensure_ascii=False),
+    ):
+        return False
+    perfil = (mensagem.get("profile") or {}) if isinstance(mensagem.get("profile"), dict) else {}
+    nome = str(perfil.get("name") or "").strip()
+    telefone = str(mensagem.get("from") or "").strip()
+    conversa = garantir_conversa_crm_canal(
+        conn,
+        canal="whatsapp",
+        externo_usuario_id=telefone,
+        externo_conversa_id="",
+        contato_nome=nome or telefone,
+        contato_telefone=telefone,
+    )
+    conteudo = resumir_conteudo_mensagem(str(mensagem.get("type") or "text"), mensagem)
+    tipo = str(mensagem.get("type") or "text").strip().lower()
+    midia = mensagem.get(tipo) if isinstance(mensagem.get(tipo), dict) else {}
+    midia_id = str(midia.get("id") or "").strip()
+    registrar_mensagem_conversa(
+        conn,
+        conversa_id=crm_int(conversa["id"]),
+        crm_id=crm_int(conversa["crm_id"], 0) or None,
+        paciente_id=crm_int(conversa["paciente_id"], 0) or None,
+        canal="whatsapp",
+        mensagem_externa_id=mensagem_id,
+        remetente_externo_id=telefone,
+        direcao="entrada",
+        remetente_tipo="contato",
+        tipo_mensagem=tipo,
+        conteudo=conteudo,
+        midia_url=f"meta-media://{midia_id}" if midia_id else "",
+        metadata={"message": mensagem, "metadata": metadata},
+        criado_em=timestamp_meta_para_banco(mensagem.get("timestamp")),
+    )
+    return True
+
+
+def processar_status_meta_whatsapp(conn: sqlite3.Connection, status_item: dict, metadata: dict) -> bool:
+    status_id = str(status_item.get("id") or "").strip()
+    if not garantir_evento_webhook_unico(
+        conn,
+        canal="whatsapp",
+        evento_externo_id=f"status:{status_id}:{status_item.get('status') or ''}",
+        tipo_evento="status",
+        payload_json=json.dumps({"status": status_item, "metadata": metadata}, ensure_ascii=False),
+    ):
+        return False
+    atualizar_status_mensagem_externa(
+        conn,
+        canal="whatsapp",
+        mensagem_externa_id=status_id,
+        status_envio=str(status_item.get("status") or "").strip() or "sent",
+    )
+    if str(status_item.get("status") or "").strip().lower() == "failed":
+        erros = status_item.get("errors") if isinstance(status_item.get("errors"), list) else []
+        erro = str((erros[0] or {}).get("title") or (erros[0] or {}).get("message") or "Falha informada pela Meta") if erros else "Falha informada pela Meta"
+        conn.execute(
+            "UPDATE crm_mensagens SET erro_envio=?, atualizado_em=? WHERE canal='whatsapp' AND mensagem_externa_id=?",
+            (erro[:500], agora_str(), status_id),
+        )
+    return True
+
+
+def processar_webhook_meta(payload: dict) -> int:
+    processados = 0
+    conn = conectar()
+    try:
+        for entry in payload.get("entry") or []:
+            for change in entry.get("changes") or []:
+                value = change.get("value") or {}
+                metadata = value.get("metadata") or {}
+                contatos = value.get("contacts") if isinstance(value.get("contacts"), list) else []
+                perfis = {
+                    str(contato.get("wa_id") or ""): (contato.get("profile") or {})
+                    for contato in contatos if isinstance(contato, dict)
+                }
+                for mensagem in value.get("messages") or []:
+                    mensagem_com_perfil = dict(mensagem)
+                    mensagem_com_perfil["profile"] = perfis.get(str(mensagem.get("from") or ""), {})
+                    if processar_mensagem_meta_whatsapp(conn, mensagem_com_perfil, metadata):
+                        processados += 1
+                for status_item in value.get("statuses") or []:
+                    if processar_status_meta_whatsapp(conn, status_item, metadata):
+                        processados += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return processados
 
 
 def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -> FichaPacienteResposta:
@@ -8321,6 +10667,181 @@ def listar_crm():
         )
     finally:
         conn.close()
+
+
+@app.get("/api/meta/config", response_model=MetaConfiguracaoResposta)
+def buscar_configuracao_meta():
+    return carregar_config_meta()
+
+
+@app.get("/api/meta/webhook")
+def verificar_webhook_meta(
+    hub_mode: str = Query(default="", alias="hub.mode"),
+    hub_verify_token: str = Query(default="", alias="hub.verify_token"),
+    hub_challenge: str = Query(default="", alias="hub.challenge"),
+):
+    try:
+        challenge = whatsapp_service().verify_challenge(hub_mode, hub_verify_token, hub_challenge)
+    except WhatsAppConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(content=challenge, media_type="text/plain")
+
+
+@app.post("/api/meta/webhook", response_model=MetaWebhookResposta)
+async def receber_webhook_meta(request: Request):
+    body = await request.body()
+    assinatura = request.headers.get("x-hub-signature-256", "")
+    if not validar_assinatura_meta(body, assinatura):
+        raise HTTPException(status_code=403, detail="Assinatura do webhook Meta inválida.")
+    try:
+        payload = json.loads(body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Payload inválido para webhook Meta.")
+    eventos_processados = processar_webhook_meta(payload if isinstance(payload, dict) else {})
+    return MetaWebhookResposta(ok=True, eventosProcessados=eventos_processados)
+
+
+@app.post("/api/dev/whatsapp/simular", response_model=MetaWebhookResposta)
+def simular_webhook_whatsapp(payload: CrmConversaEnvioPayload, request: Request):
+    if normalizar_texto(os.getenv("APP_ENV", "development")) in {"production", "producao", "prod"}:
+        raise HTTPException(status_code=404, detail="Rota não encontrada.")
+    if not usuario_request(request):
+        raise HTTPException(status_code=401, detail="Usuário não autenticado.")
+    telefone = str(request.query_params.get("telefone") or "5511999999999").strip()
+    nome = str(request.query_params.get("nome") or "Contato WhatsApp Teste").strip()
+    evento = {
+        "object": "whatsapp_business_account",
+        "entry": [{"changes": [{"value": {
+            "messaging_product": "whatsapp",
+            "contacts": [{"profile": {"name": nome}, "wa_id": telefone}],
+            "messages": [{
+                "from": telefone,
+                "id": f"dev-{int(datetime.now().timestamp() * 1000000)}",
+                "timestamp": str(int(datetime.now().timestamp())),
+                "type": "text",
+                "text": {"body": str(payload.conteudo or "Olá, teste do WhatsApp").strip()},
+            }],
+        }, "field": "messages"}]}],
+    }
+    return MetaWebhookResposta(ok=True, eventosProcessados=processar_webhook_meta(evento))
+
+
+@app.get("/api/crm/conversas", response_model=list[CrmConversaResumoResposta])
+def listar_conversas_crm(
+    canal: str = Query(default=""),
+    abertas_apenas: bool = Query(default=False),
+    busca: str = Query(default=""),
+):
+    conn = conectar()
+    try:
+        rows = conn.execute(
+            """
+            SELECT c.*, p.nome AS paciente_nome, p.prontuario
+            FROM crm_conversas c
+            LEFT JOIN pacientes p ON p.id = c.paciente_id
+            ORDER BY COALESCE(c.ultima_mensagem_em, c.atualizado_em, c.criado_em, '') DESC, c.id DESC
+            """
+        ).fetchall()
+        itens: list[CrmConversaResumoResposta] = []
+        canal_filtro = str(canal or "").strip().lower()
+        busca_filtro = normalizar_texto(busca)
+        for row in rows:
+            if canal_filtro and str(row["canal"] or "").strip().lower() != canal_filtro:
+                continue
+            if abertas_apenas and str(row["status"] or "aberta").strip().lower() != "aberta":
+                continue
+            if busca_filtro:
+                texto_base = " ".join(
+                    [
+                        str(row["paciente_nome"] or ""),
+                        str(row["contato_nome"] or ""),
+                        str(row["contato_telefone"] or ""),
+                        str(row["contato_instagram"] or ""),
+                        str(row["ultima_mensagem"] or ""),
+                    ]
+                )
+                if busca_filtro not in normalizar_texto(texto_base):
+                    continue
+            itens.append(mapear_crm_conversa_resumo(row))
+        return itens
+    finally:
+        conn.close()
+
+
+@app.get("/api/crm/conversas/{conversa_id}", response_model=CrmConversaDetalheResposta)
+def buscar_conversa_crm(conversa_id: int):
+    conn = conectar()
+    try:
+        detalhe = detalhar_conversa_crm(conn, conversa_id)
+        conn.execute(
+            "UPDATE crm_conversas SET nao_lidas=0, atualizado_em=? WHERE id=?",
+            (agora_str(), int(conversa_id)),
+        )
+        conn.commit()
+        return detalhar_conversa_crm(conn, conversa_id)
+    finally:
+        conn.close()
+
+
+@app.post("/api/crm/conversas/{conversa_id}/mensagens", response_model=CrmConversaMensagemResposta)
+def enviar_mensagem_conversa_crm(conversa_id: int, payload: CrmConversaEnvioPayload, request: Request):
+    conteudo = str(payload.conteudo or "").strip()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="Informe o conteúdo da mensagem.")
+    conn = conectar()
+    try:
+        conversa = conn.execute("SELECT * FROM crm_conversas WHERE id=? LIMIT 1", (int(conversa_id),)).fetchone()
+        if conversa is None:
+            raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+        canal = str(conversa["canal"] or "").strip().lower()
+        mensagem_externa_id = ""
+        status_envio = "queued"
+        metadata_resposta: dict = {}
+        if canal == "whatsapp":
+            destino = str(conversa["contato_telefone"] or conversa["externo_usuario_id"] or "").strip()
+            if not destino:
+                raise HTTPException(status_code=400, detail="Conversa sem telefone para envio pelo WhatsApp.")
+            metadata_resposta = enviar_texto_meta_whatsapp(destino, conteudo)
+            mensagens_meta = metadata_resposta.get("messages") if isinstance(metadata_resposta, dict) else None
+            if isinstance(mensagens_meta, list) and mensagens_meta:
+                mensagem_externa_id = str((mensagens_meta[0] or {}).get("id") or "").strip()
+            status_envio = "sent"
+        elif canal == "instagram":
+            raise HTTPException(status_code=501, detail="Envio pelo Instagram ainda será habilitado na próxima etapa.")
+        else:
+            raise HTTPException(status_code=400, detail="Canal da conversa não suportado.")
+
+        row = registrar_mensagem_conversa(
+            conn,
+            conversa_id=int(conversa_id),
+            crm_id=crm_int(conversa["crm_id"], 0) or None,
+            paciente_id=crm_int(conversa["paciente_id"], 0) or None,
+            canal=canal,
+            mensagem_externa_id=mensagem_externa_id,
+            remetente_externo_id="",
+            direcao="saida",
+            remetente_tipo="usuario",
+            tipo_mensagem="text",
+            conteudo=conteudo,
+            status_envio=status_envio,
+            metadata=metadata_resposta,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="CRM",
+        tipo="Mensagem enviada",
+        info=f"Conversa {conversa_id}",
+        metodo_http="POST",
+        rota=f"/api/crm/conversas/{conversa_id}/mensagens",
+    )
+    return mapear_crm_mensagem(row)
 
 
 @app.post("/api/crm/pacientes/{paciente_id}/finalizado", response_model=CrmPacienteItemResposta)
@@ -8891,6 +11412,167 @@ def painel_financeiro():
         conn.close()
 
 
+def _comissao_forma(forma: str) -> float:
+    texto = normalizar_texto(forma).replace("_", " ")
+    if "pix" in texto or "dinheiro" in texto:
+        return 0.01
+    if "cartao" in texto or "credito" in texto or "debito" in texto:
+        return 0.006
+    if "boleto" in texto:
+        return 0.004
+    return 0.0
+
+
+def _calcular_comissao_contrato(row: sqlite3.Row) -> float:
+    valor_total = float(row["valor_total"] or 0)
+    try:
+        plano = json.loads(str(row["plano_pagamento_json"] or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        plano = []
+    partes = [(float(item.get("valor", 0) or 0), str(item.get("forma", "") or "")) for item in plano if isinstance(item, dict)]
+    soma = sum(valor for valor, _ in partes)
+    if partes and soma > 0:
+        fator = valor_total / soma
+        return round(sum(valor * fator * _comissao_forma(forma) for valor, forma in partes), 2)
+    return round(valor_total * _comissao_forma(str(row["forma_pagamento"] or "")), 2)
+
+
+def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: date) -> ComissaoRelatorioResposta:
+    contratos = conn.execute(
+        """
+        SELECT c.*, p.nome AS paciente_nome
+        FROM contratos c LEFT JOIN pacientes p ON p.id=c.paciente_id
+        WHERE lower(COALESCE(c.status, '')) IN ('aprovado', 'aprovada', 'convertido')
+        """
+    ).fetchall()
+    agenda = conn.execute(
+        """
+        SELECT a.*, COALESCE(GROUP_CONCAT(ap.procedimento_nome_snapshot, ', '), a.procedimento, '') AS procedimentos_lista
+        FROM agendamentos a
+        LEFT JOIN agendamento_procedimentos ap ON ap.agendamento_id=a.id
+        GROUP BY a.id ORDER BY a.data, a.hora_inicio, a.id
+        """
+    ).fetchall()
+    por_paciente: dict[int, list[sqlite3.Row]] = {}
+    for agendamento in agenda:
+        paciente_id = crm_int(agendamento["paciente_id"])
+        if paciente_id > 0:
+            por_paciente.setdefault(paciente_id, []).append(agendamento)
+
+    def compareceu(item: sqlite3.Row) -> bool:
+        return normalizar_texto(item["status"]) in {"atendido", "em atendimento"}
+
+    def avaliacao(item: sqlite3.Row) -> bool:
+        return normalizar_texto(item["profissional"]) == "avaliacao"
+
+    def agendador(item: sqlite3.Row | None) -> str:
+        if item is None:
+            return "Não localizado"
+        return str(item["criado_por"] or item["status_usuario"] or "Não registrado").strip()
+
+    vendas: list[ComissaoVendaItemResposta] = []
+    for contrato in contratos:
+        if contrato_eh_permuta(contrato):
+            continue
+        fechamento = parse_data_contrato(str(contrato["data_aprovacao"] or "")) or parse_data_contrato(str(contrato["data_criacao"] or ""))
+        if not fechamento or fechamento < inicio or fechamento > fim:
+            continue
+        paciente_id = crm_int(contrato["paciente_id"])
+        registros = por_paciente.get(paciente_id, [])
+        primeiro = registros[0] if registros else None
+        avaliacoes_paciente = [item for item in registros if avaliacao(item) and compareceu(item)]
+        avaliacao_comparecida = avaliacoes_paciente[0] if avaliacoes_paciente else None
+        no_fechamento = [item for item in registros if parse_data_contrato(str(item["data"] or "")) == fechamento and normalizar_texto(item["status"]) not in {"cancelado", "desmarcado"}]
+        preferidos = [item for item in no_fechamento if avaliacao(item) and compareceu(item)] or [item for item in no_fechamento if compareceu(item)] or no_fechamento
+        fechamento_agenda = preferidos[0] if preferidos else None
+        captacao = agendador(avaliacao_comparecida)
+        resgate = agendador(fechamento_agenda)
+        pago = bool(str(contrato["data_pagamento_entrada"] or "").strip()) or bool(conn.execute(
+            "SELECT 1 FROM recebiveis WHERE contrato_id=? AND lower(COALESCE(status,''))='pago' LIMIT 1", (contrato["id"],)
+        ).fetchone())
+        total = _calcular_comissao_contrato(contrato) if pago else 0.0
+        dados_ausentes = primeiro is None or avaliacao_comparecida is None or fechamento_agenda is None
+        mesma_pessoa = normalizar_texto(captacao) == normalizar_texto(resgate) and captacao not in {"Não localizado", "Não registrado"}
+        vendas.append(ComissaoVendaItemResposta(
+            contratoId=crm_int(contrato["id"]), pacienteId=paciente_id or None,
+            paciente=str(contrato["paciente_nome"] or f"Paciente #{paciente_id}"), dataFechamento=formatar_data_br(fechamento),
+            valorContrato=round(float(contrato["valor_total"] or 0), 2), formaPagamento=str(contrato["forma_pagamento"] or ""),
+            primeiroAgendamento=formatar_data_br(parse_data_contrato(str(primeiro["data"] or ""))) if primeiro else "",
+            primeiroAgendador=agendador(primeiro),
+            avaliacaoComparecida=formatar_data_br(parse_data_contrato(str(avaliacao_comparecida["data"] or ""))) if avaliacao_comparecida else "",
+            agendadorAvaliacao=captacao, agendadorFechamento=resgate, pagamentoConfirmado=pago,
+            comissaoTotal=total, comissaoCaptacao=total if mesma_pessoa else round(total * .30, 2),
+            comissaoResgate=0 if mesma_pessoa else round(total * .70, 2),
+            status="Revisar dados ausentes" if dados_ausentes else ("Aguardando confirmação do pagamento" if not pago else "Completo"),
+        ))
+
+    avaliacoes_periodo = []
+    for item in agenda:
+        data_item = parse_data_contrato(str(item["data"] or ""))
+        if not data_item or data_item < inicio or data_item > fim or not avaliacao(item) or not compareceu(item):
+            continue
+        avaliacoes_periodo.append(ComissaoAvaliacaoItemResposta(
+            agendamentoId=crm_int(item["id"]), pacienteId=crm_int(item["paciente_id"]) or None,
+            paciente=str(item["paciente_nome"] or item["nome_paciente_snapshot"] or ""), data=formatar_data_br(data_item),
+            hora=str(item["hora_inicio"] or ""), status=str(item["status"] or ""), agendadoPor=agendador(item),
+            agendadoEm=str(item["data_agendamento"] or item["data_criacao"] or item["criado_em"] or ""),
+            procedimentos=str(item["procedimentos_lista"] or ""),
+        ))
+    return ComissaoRelatorioResposta(
+        inicio=inicio.isoformat(), fim=fim.isoformat(), vendas=vendas, avaliacoes=avaliacoes_periodo,
+        totalVendido=round(sum(item.valorContrato for item in vendas), 2), totalComissao=round(sum(item.comissaoTotal for item in vendas), 2),
+    )
+
+
+@app.get("/api/relatorios/comissoes", response_model=ComissaoRelatorioResposta)
+def relatorio_comissoes(inicio: date = Query(...), fim: date = Query(...)):
+    if fim < inicio:
+        raise HTTPException(status_code=400, detail="Período inválido.")
+    conn = conectar()
+    try:
+        return carregar_relatorio_comissoes(conn, inicio, fim)
+    finally:
+        conn.close()
+
+
+@app.get("/api/relatorios/comissoes/export.xlsx")
+def exportar_relatorio_comissoes(inicio: date = Query(...), fim: date = Query(...)):
+    if Workbook is None:
+        raise HTTPException(status_code=503, detail="Exportação Excel indisponível.")
+    conn = conectar()
+    try:
+        relatorio = carregar_relatorio_comissoes(conn, inicio, fim)
+    finally:
+        conn.close()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Vendas e comissões"
+    cabecalho = ["Contrato", "Paciente", "Fechamento", "Valor", "Pagamento", "Primeiro agendamento", "Quem agendou primeiro", "Avaliação comparecida", "Quem agendou a avaliação", "Quem agendou no fechamento", "Pagamento confirmado", "Comissão total", "Captação 30%", "Resgate 70%", "Status"]
+    ws.append(cabecalho)
+    for item in relatorio.vendas:
+        ws.append([str(item.contratoId), item.paciente, item.dataFechamento, item.valorContrato, item.formaPagamento, item.primeiroAgendamento, item.primeiroAgendador, item.avaliacaoComparecida, item.agendadorAvaliacao, item.agendadorFechamento, "Sim" if item.pagamentoConfirmado else "Não", item.comissaoTotal, item.comissaoCaptacao, item.comissaoResgate, item.status])
+    av = wb.create_sheet("Avaliações comparecidas")
+    av.append(["Agendamento", "Paciente", "Data", "Hora", "Status", "Quem agendou esta avaliação", "Agendado em", "Procedimentos"])
+    for item in relatorio.avaliacoes:
+        av.append([str(item.agendamentoId), item.paciente, item.data, item.hora, item.status, item.agendadoPor, item.agendadoEm, item.procedimentos])
+    for planilha in (ws, av):
+        for cell in planilha[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="183B56")
+        planilha.freeze_panes = "A2"
+        planilha.auto_filter.ref = planilha.dimensions
+        for coluna in planilha.columns:
+            letra = coluna[0].column_letter
+            planilha.column_dimensions[letra].width = min(38, max(12, max(len(str(c.value or "")) for c in coluna) + 2))
+    for linha in range(2, ws.max_row + 1):
+        for coluna in (4, 12, 13, 14):
+            ws.cell(linha, coluna).number_format = 'R$ #,##0.00'
+    buffer = BytesIO()
+    wb.save(buffer)
+    nome = f"relatorio-comissoes-{inicio.isoformat()}-a-{fim.isoformat()}.xlsx"
+    return Response(buffer.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @app.get("/api/dashboard", response_model=DashboardPainelResposta)
 def painel_dashboard():
     conn = conectar()
@@ -9342,7 +12024,16 @@ def abrir_documento_paciente(paciente_id: int, nome_arquivo: str, download: int 
     conn = conectar()
     try:
         paciente_row = carregar_paciente_por_id(conn, paciente_id)
-        caminho = resolver_documento_contrato_atual(conn, paciente_row, nome_arquivo) or buscar_documento_paciente(paciente_row, nome_arquivo)
+        try:
+            # Entrega exatamente a versão escolhida. Só gera a versão atual
+            # quando o arquivo solicitado ainda não existe.
+            caminho = buscar_documento_paciente(paciente_row, nome_arquivo)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            caminho = resolver_documento_contrato_atual(conn, paciente_row, nome_arquivo)
+            if not caminho:
+                raise
         media_type = None
         extensao = os.path.splitext(caminho)[1].lower()
         if extensao == ".html":
@@ -9475,9 +12166,9 @@ def criar_paciente(payload: PacientePayload):
             INSERT INTO pacientes (
                 nome, apelido, sexo, prontuario, cpf, rg, data_nascimento, telefone, email, cep,
                 endereco, complemento, numero, bairro, cidade, estado, estado_civil, profissao, origem, observacoes,
-                menor_idade, responsavel, cpf_responsavel
+                menor_idade, responsavel, cpf_responsavel, criado_em
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.nome.strip(),
@@ -9503,6 +12194,7 @@ def criar_paciente(payload: PacientePayload):
                 int(bool(payload.menor_idade)),
                 payload.responsavel.strip(),
                 limpar_cpf(payload.cpf_responsavel),
+                agora_str(),
             ),
         )
         conn.commit()
@@ -9584,6 +12276,25 @@ def atualizar_paciente(paciente_id: int, payload: PacientePayload):
         conn.commit()
         row = carregar_paciente_por_id(conn, paciente_id)
         return mapear_paciente_detalhe(row)
+    finally:
+        conn.close()
+
+
+@app.put("/api/dashboard/vendas/{contrato_id}/inclusao-total")
+def atualizar_inclusao_venda_total(contrato_id: int, payload: DashboardVendaInclusaoPayload, request: Request):
+    conn = conectar()
+    try:
+        contrato = conn.execute("SELECT id, status FROM contratos WHERE id=? LIMIT 1", (contrato_id,)).fetchone()
+        if contrato is None:
+            raise HTTPException(status_code=404, detail="Contrato nao encontrado.")
+        if normalizar_texto(contrato["status"]) not in {"aprovado", "aprovada", "convertido"}:
+            raise HTTPException(status_code=400, detail="Somente vendas aprovadas podem ser ajustadas no dashboard.")
+        conn.execute(
+            "UPDATE contratos SET incluir_total_vendido=? WHERE id=?",
+            (1 if payload.incluir else 0, contrato_id),
+        )
+        conn.commit()
+        return {"ok": True, "contratoId": contrato_id, "incluirTotalVendido": bool(payload.incluir)}
     finally:
         conn.close()
 
