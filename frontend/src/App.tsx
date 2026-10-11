@@ -160,6 +160,11 @@ function mesclarPermissoes(
 }
 
 function App() {
+  useEffect(() => {
+    const emEducacao = window.location.pathname === "/educacao" || window.location.pathname.startsWith("/educacao/");
+    document.title = emEducacao ? "Soul Sul Educação" : "Soul Sul Clínica";
+  }, []);
+
   const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Agenda");
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [sidebarOverlayAberta, setSidebarOverlayAberta] = useState(false);
