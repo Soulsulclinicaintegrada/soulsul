@@ -9073,6 +9073,11 @@ textarea::placeholder {
 .education-budget-preview .budget-preview-header small { color:rgba(255,255,255,.7); }
 .education-budget-preview .budget-preview-header > span { padding:5px 9px; border-radius:999px; background:rgba(255,255,255,.14); font-size:.74rem; }
 .education-treatment-editor { display:grid; gap:14px; padding:18px; border:1px solid #ded5ca; border-radius:16px; background:#faf8f5; }
+.education-treatment-editor .education-module-fields { min-width:0; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.education-treatment-editor .education-module-fields > label { min-width:0; }
+.education-treatment-editor input,
+.education-treatment-editor select,
+.education-treatment-editor textarea { width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
 .education-treatment-editor-head { display:flex; width:100%; box-sizing:border-box; min-width:0; justify-content:space-between; align-items:center; gap:12px; padding-right:12px; margin-bottom:10px; overflow:hidden; }
 .education-treatment-editor-head button { flex:0 1 auto; max-width:100%; white-space:nowrap; }
 .education-treatment-editor-head > div { display:grid; gap:4px; }
