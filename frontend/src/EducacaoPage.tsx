@@ -72,6 +72,16 @@ function DentalHandpieceIcon({ size = 20, strokeWidth = 1.8 }: { size?: number; 
   );
 }
 
+const dashboardEducacaoVazio: Record<string, unknown> = {
+  alunos: 0,
+  pacientesModelo: 0,
+  turmasAtivas: 0,
+  agendaHoje: 0,
+  receitas: 0,
+  despesas: 0,
+  aReceber: 0,
+};
+
 type Aba = "Alunos" | "Treinamentos" | "Matrículas" | "Turmas";
 const alunoVazio = {
   nome: "",
@@ -508,7 +518,7 @@ function EducacaoUsuarios() {
 function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cadastro",onPacienteAberto,onEditarOrcamento }: { modulo: string; pacienteInicialId?:number|null; pacienteAbaInicial?:AbaFichaPaciente; onPacienteAberto?:(id:number|null)=>void; onEditarOrcamento?:(id:number)=>void }) {
   const [dados, setDados] = useState<
     Record<string, unknown> | Record<string, unknown>[]
-  >([]);
+  >(() => modulo === "Dashboard" ? dashboardEducacaoVazio : []);
   const [erro, setErro] = useState("");
   const [formAberto, setFormAberto] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
@@ -556,9 +566,14 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
       Record<string, unknown> | Record<string, unknown>[]
     >(recurso[modulo])
       .then(setDados)
-      .catch((e) =>
-        setErro(e instanceof Error ? e.message : "Falha ao carregar"),
-      );
+      .catch((e) => {
+        if (modulo === "Dashboard") {
+          setDados(dashboardEducacaoVazio);
+          setErro("Os indicadores estão temporariamente sem sincronização.");
+          return;
+        }
+        setErro(e instanceof Error ? e.message : "Falha ao carregar");
+      });
   const carregarPacientesExcluidos = async () => {
     try {
       setPacientesExcluidos(await listarPacientesModeloExcluidosApi());
@@ -595,7 +610,7 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
   }, [modulo]);
   useEffect(()=>{if(modulo==="Pacientes"&&pacienteInicialId)setPacienteFichaId(pacienteInicialId)},[modulo,pacienteInicialId]);
   if(modulo==="Pacientes"&&pacienteFichaId)return <EducacaoFichaPaciente pacienteId={pacienteFichaId} abaInicial={pacienteAbaInicial} onVoltar={()=>{setPacienteFichaId(null);onPacienteAberto?.(null)}} onEditarOrcamento={onEditarOrcamento}/>;
-  if (erro && !formAberto) return <div className="education-error">{erro}</div>;
+  if (erro && !formAberto && modulo !== "Dashboard") return <div className="education-error">{erro}</div>;
   if (modulo === "Dashboard" && !Array.isArray(dados)) {
     const d = dados as Record<string, unknown>;
     const moeda = (valor: unknown) => Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -610,6 +625,7 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
     const dataHoje = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" }).format(new Date());
     return (
       <section className="education-page education-dashboard">
+        {erro && <div className="education-dashboard-sync-note">{erro}</div>}
         <div className="education-dashboard-intro">
           <div>
             <span className="page-eyebrow">VISÃO GERAL</span>
