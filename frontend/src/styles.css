@@ -9447,33 +9447,34 @@ textarea::placeholder {
   --edu-ivory: #f6f4ef;
   --edu-paper: #fff;
   --edu-line: #e4ded4;
-  background: #f6f4ef;
+  --edu-sage: #718777;
+  background: #f8f6f1;
 }
 .education-sidebar {
   gap: 18px;
-  color: #2d271f;
+  color: #302b25;
   background:
-    radial-gradient(circle at 8% 2%, rgba(199, 157, 82, .12), transparent 15rem),
-    linear-gradient(180deg, #f0eadf 0%, #e7dfd2 100%);
-  border-right-color: #d8cdbd;
-  box-shadow: 12px 0 32px rgba(67, 51, 29, .05);
+    radial-gradient(circle at 8% 2%, rgba(199, 157, 82, .10), transparent 15rem),
+    #fbfaf7;
+  border-right-color: #e6dfd4;
+  box-shadow: 8px 0 28px rgba(67, 51, 29, .035);
 }
 .education-sidebar::after { background: linear-gradient(90deg, transparent, rgba(151, 111, 49, .28), transparent); }
-.education-sidebar-toggle { color: #755a2e; background: rgba(255,255,255,.45); border-color: #d0bea2; }
+.education-sidebar-toggle { color: #755a2e; background: #fffdf9; border-color: #d7c9b6; }
 .education-sidebar-toggle:hover { background: rgba(255,255,255,.78); }
 .education-sidebar-label { color: #8b7d6c; }
-.education-main-nav button { min-height: 44px; border-radius: 10px; color: #665d51; }
+.education-main-nav button { min-height: 44px; border-radius: 10px; color: #756d63; }
 .education-main-nav button svg { color: #9a773d; }
 .education-main-nav button:hover { color: #2d271f; transform: none; background: rgba(255,255,255,.58); border-color: rgba(176, 151, 111, .22); }
 .education-main-nav button.active {
   color: #2d2417;
-  background: #fffaf0;
-  border-color: #d8c3a0;
-  box-shadow: inset 3px 0 0 #b88c43, 0 4px 12px rgba(83, 59, 25, .05);
+  background: #f1f5ef;
+  border-color: #d5dfd5;
+  box-shadow: inset 3px 0 0 var(--edu-sage), 0 4px 12px rgba(83, 59, 25, .035);
 }
-.education-main-nav button.active svg { color: #9a6d28; }
+.education-main-nav button.active svg { color: var(--edu-sage); }
 .education-sidebar-footer { border-top-color: #d4c9b9; }
-.education-user-avatar { color: #fffaf0; background: #3a332a; }
+.education-user-avatar { color: #fffdf9; background: var(--edu-sage); }
 .education-user-card small { color: #8a7d6c; }
 .education-logout { color: #776b5d; }
 .education-logout:hover { color: #2d271f; background: rgba(255,255,255,.55); }
@@ -9490,14 +9491,14 @@ textarea::placeholder {
   border-radius: 18px;
   color: #2b251d;
   background:
-    radial-gradient(circle at 92% 18%, rgba(201, 164, 91, .18), transparent 16rem),
+    radial-gradient(circle at 92% 18%, rgba(113, 135, 119, .15), transparent 16rem),
     #fffdf8;
-  border-color: #ded2c0;
+  border-color: #dfe5dc;
   box-shadow: none;
 }
 .education-hero::after { display: none; }
 .education-hero h1 { color: #2b251d; font-size: clamp(1.65rem, 2.4vw, 2.15rem); }
-.education-hero .page-eyebrow { color: #9b7334; }
+.education-hero .page-eyebrow { color: #718777; }
 .education-hero p { color: #74695b; }
 .education-hero .education-metrics span { color: #74695b; background: #f5efe4; border-color: #e3d5bf; }
 .education-hero .education-metrics b { color: #2b251d; }
