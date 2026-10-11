@@ -695,7 +695,7 @@ function App() {
   }
 
   return (
-    <div className={`shell${agendaEmFoco ? " agenda-focus" : ""}${menuExpandido ? "" : " sidebar-collapsed"}`}>
+    <div className={`shell${agendaEmFoco ? " agenda-focus" : ""}${!agendaEmFoco && !menuExpandido ? " sidebar-collapsed" : ""}`}>
       <div className="app-ambient app-ambient-one" />
       <div className="app-ambient app-ambient-two" />
 
