@@ -9107,7 +9107,7 @@ textarea::placeholder {
 .education-arch-buttons button.active,.education-teeth-grid button.active { background:#332d27; border-color:#332d27; color:#fff; }
 .education-teeth-grid { display:grid; grid-template-columns:repeat(16,minmax(34px,1fr)); gap:5px; }
 @media (max-width:1280px) { .education-budget-workspace { grid-template-columns:minmax(0,1fr) minmax(300px,36vw); gap:14px; } }
-@media (max-width:1180px) { .education-budget-workspace { grid-template-columns:1fr; } .education-budget-preview { position:static; height:auto; min-height:440px; } }
+@media (max-width:760px) { .education-budget-workspace { grid-template-columns:1fr; } .education-budget-preview { position:static; height:auto; min-height:440px; } }
 @media (max-width:720px) { .education-budget-editor { padding:18px; } .education-teeth-grid { grid-template-columns:repeat(8,minmax(34px,1fr)); } .budget-preview-item-row { grid-template-columns:1fr; } .budget-preview-value { min-width:0; justify-items:stretch; text-align:left; } .budget-preview-value-actions { justify-content:flex-start; } }
 .education-users-layout { display:grid; grid-template-columns:minmax(300px,420px) minmax(0,1fr); gap:18px; align-items:start; }
 .education-access-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; padding:14px; border:1px solid #e2d8cc; border-radius:14px; }
