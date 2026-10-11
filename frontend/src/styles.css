@@ -10311,3 +10311,9 @@ input::placeholder, textarea::placeholder { text-transform: none; }
 .finance-rate-list th,.finance-rate-list td{padding:12px;border-bottom:1px solid #eee4d8;text-align:left}
 .finance-manual-extra{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0;padding:12px;background:#f8f3ec;border-radius:12px}.finance-manual-extra label{display:flex;flex-direction:column;gap:5px;font-size:12px}.finance-manual-extra select,.finance-manual-extra input{min-height:38px;border:1px solid #ddcfbf;border-radius:8px;padding:0 10px;background:#fff}
 @media(max-width:900px){.finance-rate-add{grid-template-columns:1fr 1fr}.finance-rate-add button{grid-column:1/-1}}
+
+/* Padronização: todos os campos exibem o texto em letras maiúsculas. */
+input, select, textarea, option,
+input::placeholder, textarea::placeholder {
+  text-transform: uppercase !important;
+}
