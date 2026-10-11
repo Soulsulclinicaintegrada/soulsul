@@ -9628,3 +9628,19 @@ textarea::placeholder {
   .education-dashboard-kpi { padding: 15px; }
 }
 
+
+/* Opção 3 — tipografia humanista e acolhedora. */
+.education-portal-shell,
+.education-portal-shell button,
+.education-portal-shell input,
+.education-portal-shell select,
+.education-portal-shell textarea { font-family: "Trebuchet MS", Arial, sans-serif; }
+.education-portal-shell .education-page-title strong,
+.education-portal-shell .education-hero h1,
+.education-portal-shell .education-dashboard-intro h1,
+.education-portal-shell .education-dashboard-kpi strong,
+.education-portal-shell .education-metric-card strong,
+.education-portal-shell .education-login-card h1 {
+  font-family: "Trebuchet MS", Arial, sans-serif;
+  letter-spacing: -.025em;
+}
