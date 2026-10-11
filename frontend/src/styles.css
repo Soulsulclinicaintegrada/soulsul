@@ -9268,3 +9268,28 @@ textarea::placeholder {
   .education-row-actions button { flex: 1; }
   .education-form-row, .education-payment-summary { grid-template-columns: 1fr; }
 }
+
+/* Alinhamento da assinatura SoulSul no menu clínico. */
+.shell:not(.education-portal-shell) .brand-card {
+  align-items: center;
+  gap: 10px;
+  padding: 18px;
+  text-align: center;
+}
+
+.shell:not(.education-portal-shell) .brand-logo-wrap {
+  width: 100%;
+  min-height: 88px;
+}
+
+.shell:not(.education-portal-shell) .brand-logo {
+  width: min(156px, 100%);
+}
+
+.shell:not(.education-portal-shell) .brand-title {
+  width: 100%;
+  margin: 0;
+  font-size: 1.48rem;
+  line-height: 1;
+  text-align: center;
+}
