@@ -9056,9 +9056,13 @@ textarea::placeholder {
 .education-grid { display: grid; grid-template-columns: minmax(290px,370px) minmax(0,1fr); gap: 18px; align-items: start; }
 .education-budget-full { display:block; width:100%; }
 .education-budget-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(390px,520px); gap:22px; align-items:start; width:100%; }
-.education-budget-editor { width:100%; max-width:none; padding:28px; min-width:0; }
+.education-budget-workspace > * { min-width:0; }
+.education-budget-editor { width:100%; max-width:none; padding:28px; min-width:0; overflow:hidden; }
 .education-budget-full .education-row > div:first-child { width:100%; }
 .education-budget-preview { position:sticky; top:18px; height:min(760px,calc(100vh - 120px)); min-height:560px; }
+.education-budget-preview { max-width:100%; }
+.education-budget-preview .budget-preview-header { background: #718777; }
+.education-budget-preview .budget-preview-header strong { font-family: "Trebuchet MS", Arial, sans-serif; letter-spacing: -.01em; }
 .education-budget-preview .budget-preview-header div { display:grid; gap:3px; }
 .education-budget-preview .budget-preview-header small { color:rgba(255,255,255,.7); }
 .education-budget-preview .budget-preview-header > span { padding:5px 9px; border-radius:999px; background:rgba(255,255,255,.14); font-size:.74rem; }
@@ -9096,6 +9100,7 @@ textarea::placeholder {
 .education-arch-buttons button,.education-teeth-grid button { border:1px solid #d9d0c5; border-radius:9px; background:#faf8f5; padding:8px 10px; cursor:pointer; }
 .education-arch-buttons button.active,.education-teeth-grid button.active { background:#332d27; border-color:#332d27; color:#fff; }
 .education-teeth-grid { display:grid; grid-template-columns:repeat(16,minmax(34px,1fr)); gap:5px; }
+@media (max-width:1280px) { .education-budget-workspace { grid-template-columns:minmax(0,1fr) minmax(340px,440px); gap:16px; } }
 @media (max-width:1180px) { .education-budget-workspace { grid-template-columns:1fr; } .education-budget-preview { position:static; height:auto; min-height:440px; } }
 @media (max-width:720px) { .education-budget-editor { padding:18px; } .education-teeth-grid { grid-template-columns:repeat(8,minmax(34px,1fr)); } .budget-preview-item-row { grid-template-columns:1fr; } .budget-preview-value { min-width:0; justify-items:stretch; text-align:left; } .budget-preview-value-actions { justify-content:flex-start; } }
 .education-users-layout { display:grid; grid-template-columns:minmax(300px,420px) minmax(0,1fr); gap:18px; align-items:start; }
@@ -9129,6 +9134,12 @@ textarea::placeholder {
 .education-selected-class-summary select { border:1px solid #d6cabb; border-radius:10px; padding:10px 12px; background:#fff; }
 .education-class-students { padding-top:4px; }
 .education-class-students h3 { margin:0 0 4px; font-size:1rem; }
+.education-attendance-head { display:grid; grid-template-columns:1fr 42px; align-items:center; padding:0 12px; }
+.education-attendance-head > span { text-align:center; font-weight:800; color:#6d6257; }
+.education-attendance-row { display:grid; grid-template-columns:minmax(0,1fr) auto 42px; }
+.education-patient-referral-mark { display:grid; place-items:center; min-width:34px; min-height:34px; border-radius:9px; color:#9a9188; background:#eee9e3; font-weight:850; }
+.education-patient-referral-mark.checked { color:#245f45; background:#dff1e7; }
+@media (max-width:720px) { .education-attendance-row { grid-template-columns:1fr 42px; } .education-attendance-row .education-row-actions { grid-column:1/-1; } }
 .education-card { background: #fff; border: 1px solid #e8e1d8; border-radius: 20px; padding: 20px; }
 .education-card h2 { margin: 0 0 16px; font-size: 1.08rem; }
 .education-form, .education-form label { display: grid; gap: 7px; }
@@ -9439,6 +9450,26 @@ textarea::placeholder {
   .education-row-actions button { flex: 1; }
   .education-form-row, .education-payment-summary { grid-template-columns: 1fr; }
 }
+/* Agenda exclusiva do portal de Educação, mantendo o padrão visual operacional da clínica. */
+.education-agenda-page{min-width:0}.education-agenda-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;background:#fff;border:1px solid #e7ddd1;border-radius:18px;margin-bottom:14px}.education-agenda-nav,.education-agenda-views{display:flex;align-items:center;gap:8px}.education-agenda-nav button,.education-agenda-views button{border:1px solid #dfd2c3;background:#fff;border-radius:10px;min-height:38px;padding:0 14px}.education-agenda-nav strong{margin-left:10px;text-transform:capitalize}.education-agenda-views button.active{background:#2e2925;color:#fff;border-color:#2e2925}.education-agenda-calendar{display:grid;gap:10px;min-height:560px}.education-agenda-calendar.view-dia{grid-template-columns:1fr}.education-agenda-calendar.view-semana{grid-template-columns:repeat(7,minmax(145px,1fr));overflow-x:auto}.education-agenda-calendar.view-mes{grid-template-columns:repeat(7,minmax(130px,1fr));overflow-x:auto}.education-agenda-day{background:#fff;border:1px solid #e7ddd1;border-radius:15px;min-width:0;overflow:hidden}.education-agenda-day.today{border-color:#b89857;box-shadow:0 0 0 1px #b89857}.education-agenda-day>header{display:flex;justify-content:space-between;gap:8px;padding:12px 13px;background:#f8f4ee;border-bottom:1px solid #e7ddd1;text-transform:uppercase;font-size:12px}.education-agenda-day-body{padding:9px;display:flex;flex-direction:column;gap:8px;min-height:110px}.view-dia .education-agenda-day-body{min-height:520px}.education-agenda-event{display:flex;flex-direction:column;text-align:left;border:0;border-left:4px solid #b89857;border-radius:10px;padding:10px 11px;background:#f6f0e6;color:#2e2925;gap:3px}.education-agenda-event span{font-size:11px;font-weight:700}.education-agenda-event strong{font-size:13px}.education-agenda-event small,.education-agenda-event em{font-size:11px;font-style:normal;color:#776b60}.education-agenda-event.status-atendido{border-color:#397a61;background:#eaf5ef}.education-agenda-event.status-cancelado,.education-agenda-event.status-desmarcado{border-color:#a63d32;background:#faece9}.education-agenda-event.status-em-atendimento{border-color:#27688a;background:#e8f4fa}.education-agenda-empty-slot{border:1px dashed #d9c9b7;background:transparent;color:#8b7866;border-radius:10px;padding:12px}.education-agenda-modal{width:min(900px,calc(100vw - 30px));max-height:92vh;overflow:auto}.education-field-wide{grid-column:1/-1}.education-hero>.primary-button{display:inline-flex;align-items:center;gap:7px}
+@media(max-width:900px){.education-agenda-toolbar{align-items:flex-start;flex-direction:column}.education-agenda-calendar.view-semana,.education-agenda-calendar.view-mes{grid-template-columns:repeat(7,minmax(220px,1fr))}.education-agenda-nav{flex-wrap:wrap}.education-agenda-nav strong{width:100%;margin:6px 0 0}}
+.education-agenda-user-config{display:grid;gap:10px;padding:14px;border:1px solid #e2d6c8;border-radius:14px;background:#faf7f2}.education-agenda-user-config>small{color:#75695e}.education-agenda-user-config .education-check{margin:0}
+
+/* Ajustes do formulário da Agenda Clínica quando usado no portal Educação. */
+.education-portal-shell .agenda-modal-shell.agenda-modal-shell-compact{width:min(1280px,calc(100vw - 32px))!important}
+.education-portal-shell .agenda-consulta-main-grid{grid-template-columns:minmax(620px,1.45fr) minmax(380px,.8fr);gap:16px}
+.education-portal-shell .agenda-procedimentos-stack{gap:16px}
+.education-portal-shell .agenda-procedimentos-box.compact{padding:16px 18px}
+.education-portal-shell .agenda-manual-row{grid-template-columns:minmax(280px,1fr) 120px 140px;gap:12px;padding:14px}
+.education-portal-shell .agenda-manual-row label.small{max-width:none}
+.education-portal-shell .agenda-manual-row input,.education-portal-shell .agenda-manual-row select{width:100%;min-width:0}
+.education-portal-shell .agenda-work-row{grid-template-columns:minmax(360px,1.4fr) minmax(220px,.8fr)}
+.education-portal-shell .agenda-work-row>label:first-child{grid-column:1}.education-portal-shell .agenda-work-row>label:nth-child(2){grid-column:2}.education-portal-shell .agenda-work-row>label:last-of-type{grid-column:1/-1}
+.education-portal-shell .agenda-inline-hint{display:block;width:100%;margin-top:10px;line-height:1.45}
+.education-portal-shell .agenda-selected-procedures{min-height:54px}
+.education-portal-shell .agenda-observacao-field textarea{min-height:90px}
+@media(max-width:1100px){.education-portal-shell .agenda-consulta-main-grid{grid-template-columns:1fr}.education-portal-shell .agenda-manual-row{grid-template-columns:minmax(0,1fr) 110px 130px}}
+@media(max-width:720px){.education-portal-shell .agenda-manual-row,.education-portal-shell .agenda-work-row{grid-template-columns:1fr}.education-portal-shell .agenda-manual-row>*{grid-column:1!important}}
 
 /* Educação — refinamento visual mais leve e operacional. */
 .education-portal-shell {
@@ -9464,6 +9495,8 @@ textarea::placeholder {
 .education-sidebar-toggle:hover { background: rgba(255,255,255,.78); }
 .education-sidebar-label { color: #8b7d6c; }
 .education-main-nav button { min-height: 44px; border-radius: 10px; color: #756d63; }
+.education-main-nav button { min-height: 48px; font-size: .92rem; line-height: 1.25; letter-spacing: .005em; }
+.education-main-nav button svg { width: 21px; height: 21px; }
 .education-main-nav button svg { color: #9a773d; }
 .education-main-nav button:hover { color: #2d271f; transform: none; background: rgba(255,255,255,.58); border-color: rgba(176, 151, 111, .22); }
 .education-main-nav button.active {
@@ -9628,6 +9661,10 @@ textarea::placeholder {
   .education-dashboard-kpi { padding: 15px; }
 }
 
+/* Financeiro da Educação: mesma leitura operacional do caixa da clínica. */
+.finance-settings{padding:22px}.finance-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:18px 0}.finance-settings-grid label{display:grid;gap:7px;text-transform:uppercase;font-size:11px;color:#786d62}.finance-settings-grid textarea,.finance-settings-grid input{width:100%;box-sizing:border-box;border:1px solid #dfd2c3;border-radius:10px;padding:10px;background:#fff;font:inherit;text-transform:none}@media(max-width:800px){.finance-settings-grid{grid-template-columns:1fr}}
+.finance-head-actions{display:flex;align-items:center;gap:12px}.finance-filters{display:flex;gap:12px;align-items:end;padding:14px 24px;border-bottom:1px solid #eadfd2;background:#fcfaf7}.finance-filters label,.finance-manual-form label{display:grid;gap:5px;color:#786d62;font-size:11px;text-transform:uppercase}.finance-filters input,.finance-filters select,.finance-manual-form input,.finance-manual-form select{border:1px solid #dfd2c3;border-radius:9px;padding:9px;background:#fff}.finance-manual-form{display:flex;flex-wrap:wrap;align-items:end;gap:12px;padding:16px 24px;background:#f8f3ec;border-bottom:1px solid #eadfd2}.finance-manual-form label:first-child{min-width:260px;flex:1}.finance-manual-form button{height:38px}
+.education-finance-shell{display:grid;gap:18px}.finance-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.finance-kpi-grid article{background:#fff;border:1px solid #e8ddd0;border-radius:22px;padding:20px;display:grid;gap:6px}.finance-kpi-grid span,.finance-kpi-grid small{color:#786d62;text-transform:uppercase;font-size:11px;letter-spacing:.06em}.finance-kpi-grid strong{font-size:24px}.finance-ledger{overflow:hidden;padding:0}.finance-ledger-head{padding:22px 24px;border-bottom:1px solid #eadfd2;display:flex;justify-content:space-between;align-items:center}.finance-ledger-head h2{margin:4px 0 0}.finance-table-scroll{overflow:auto}.finance-table-scroll table{width:100%;border-collapse:collapse;min-width:1100px}.finance-table-scroll th,.finance-table-scroll td{padding:14px 12px;text-align:left;border-bottom:1px solid #eee4d8;vertical-align:middle}.finance-table-scroll th{font-size:11px;text-transform:uppercase;color:#786d62;background:#fbf8f3}.finance-table-scroll td small{display:block;margin-top:4px;color:#7a7067}.finance-status{display:inline-flex;padding:5px 9px;border-radius:999px;font-size:11px;text-transform:uppercase}.finance-status.paid{background:#e4f5eb;color:#176440}.finance-status.open{background:#fff1d8;color:#8b5b00}.primary-action.compact{padding:9px 12px}.finance-receive-modal{max-width:760px}.finance-fee-preview{margin:18px 0;padding:16px;border-radius:16px;background:#f4eee5;display:flex;justify-content:space-between}.finance-fee-preview strong{color:#a23a2a}@media(max-width:900px){.finance-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Opção 3 — tipografia humanista e acolhedora. */
 .education-portal-shell,
@@ -9643,6 +9680,301 @@ textarea::placeholder {
 .education-portal-shell .education-login-card h1 {
   font-family: "Trebuchet MS", Arial, sans-serif;
   letter-spacing: -.025em;
+}
+
+/* Sistema clínico — mesma linguagem visual e tipográfica do portal Educação. */
+:root {
+  --bg: #f8f6f1;
+  --bg-deep: #f1ede6;
+  --card: #fff;
+  --card-soft: #fbfaf7;
+  --sidebar: #fbfaf7;
+  --sidebar-top: #fffdf9;
+  --line: #e4ded4;
+  --line-strong: #d7c9b6;
+  --text: #2d2822;
+  --muted: #756d64;
+  --champagne: #b9914f;
+  --champagne-soft: #f1e7d5;
+  --green-accent: #718777;
+  --accent: #718777;
+  --accent-strong: #5f7465;
+  --accent-soft: #f1f5ef;
+  --accent-line: #d5dfd5;
+  --shadow: 0 8px 28px rgba(67, 51, 29, .05);
+  --shadow-soft: 0 5px 18px rgba(46, 38, 26, .035);
+}
+
+html,
+body,
+#root,
+button,
+input,
+select,
+textarea,
+option {
+  font-family: "Trebuchet MS", Arial, sans-serif;
+}
+
+html,
+body,
+#root {
+  background: #f8f6f1;
+  color: var(--text);
+  text-transform: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  text-transform: none;
+}
+
+.shell:not(.education-portal-shell) .sidebar {
+  color: #302b25;
+  background:
+    radial-gradient(circle at 8% 2%, rgba(199, 157, 82, .10), transparent 15rem),
+    #fbfaf7;
+  border-right: 1px solid #e6dfd4;
+  box-shadow: 8px 0 28px rgba(67, 51, 29, .035);
+}
+
+.shell:not(.education-portal-shell) .sidebar-toggle {
+  color: #755a2e;
+  background: #fffdf9;
+  border-color: #d7c9b6;
+}
+
+.shell:not(.education-portal-shell) .sidebar-toggle:hover,
+.shell:not(.education-portal-shell) .sidebar-toggle:focus-visible {
+  color: #4f432f;
+  background: #fff;
+  border-color: #bda77f;
+}
+
+.shell:not(.education-portal-shell) .brand-card {
+  background: #fff;
+  border-color: #e6dfd4;
+  box-shadow: 0 5px 18px rgba(46, 38, 26, .04);
+}
+
+.shell:not(.education-portal-shell) .brand-logo-wrap {
+  background: #fffdf9;
+  box-shadow: inset 0 0 0 1px #eadfce;
+}
+
+.shell:not(.education-portal-shell) .brand-title,
+.shell:not(.education-portal-shell) .sidebar-section-title,
+.shell:not(.education-portal-shell) .sidebar-user-info strong {
+  color: #302b25;
+}
+
+.shell:not(.education-portal-shell) .sidebar-section-title,
+.shell:not(.education-portal-shell) .page-eyebrow,
+.shell:not(.education-portal-shell) .panel-kicker,
+.shell:not(.education-portal-shell) label > span,
+.shell:not(.education-portal-shell) th {
+  text-transform: uppercase;
+  letter-spacing: .075em;
+}
+
+.shell:not(.education-portal-shell) .menu-item {
+  color: #756d63;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.shell:not(.education-portal-shell) .menu-item .menu-icon {
+  color: #9a773d;
+}
+
+.shell:not(.education-portal-shell) .menu-item:hover {
+  color: #2d271f;
+  background: rgba(255, 255, 255, .68);
+  border-color: rgba(176, 151, 111, .22);
+  transform: none;
+}
+
+.shell:not(.education-portal-shell) .menu-item.active {
+  color: #2d2417;
+  background: #f1f5ef;
+  border-color: #d5dfd5;
+  box-shadow: inset 3px 0 0 #718777, 0 4px 12px rgba(83, 59, 25, .035);
+}
+
+.shell:not(.education-portal-shell) .menu-item.active .menu-icon {
+  color: #718777;
+}
+
+.shell:not(.education-portal-shell) .sidebar-user-card {
+  background: rgba(255, 255, 255, .58);
+  border-color: #e3d9cc;
+}
+
+.shell:not(.education-portal-shell) .sidebar-user-avatar,
+.shell:not(.education-portal-shell) .header-avatar {
+  color: #fffdf9;
+  background: #718777;
+}
+
+.shell:not(.education-portal-shell) .sidebar-user-info span {
+  color: #8a7d6c;
+}
+
+.shell:not(.education-portal-shell) .sidebar-logout {
+  color: #776b5d;
+  background: transparent;
+  border-color: #e3d9cc;
+}
+
+.shell:not(.education-portal-shell) .main-area {
+  background: #f8f6f1;
+}
+
+.shell:not(.education-portal-shell) .topbar {
+  background: rgba(255, 255, 255, .90);
+  border: 1px solid #e6e0d7;
+  border-radius: 14px;
+  box-shadow: 0 5px 18px rgba(46, 38, 26, .035);
+}
+
+.shell:not(.education-portal-shell) .page-title,
+.shell:not(.education-portal-shell) .patient-hero-copy h2,
+.shell:not(.education-portal-shell) .modal-header h2,
+.shell:not(.education-portal-shell) .drawer-header h2,
+.shell:not(.education-portal-shell) .section-title-row h2,
+.login-card h1 {
+  color: #201c17;
+  font-family: "Trebuchet MS", Arial, sans-serif;
+  letter-spacing: -.035em;
+}
+
+.shell:not(.education-portal-shell) .page-eyebrow,
+.shell:not(.education-portal-shell) .panel-kicker {
+  color: #9a7840;
+  font-weight: 800;
+}
+
+.shell:not(.education-portal-shell) .panel,
+.shell:not(.education-portal-shell) .kpi-card,
+.shell:not(.education-portal-shell) .summary-card,
+.shell:not(.education-portal-shell) .patient-tabs-panel,
+.shell:not(.education-portal-shell) .budget-card,
+.shell:not(.education-portal-shell) .doc-card,
+.shell:not(.education-portal-shell) .exam-card,
+.shell:not(.education-portal-shell) .finance-card,
+.shell:not(.education-portal-shell) .schedule-item,
+.shell:not(.education-portal-shell) .placeholder-card,
+.shell:not(.education-portal-shell) .placeholder-hero {
+  background: #fff;
+  border: 1px solid #e4ded4;
+  border-radius: 15px;
+  box-shadow: 0 5px 18px rgba(46, 38, 26, .035);
+}
+
+.shell:not(.education-portal-shell) .kpi-card::before,
+.shell:not(.education-portal-shell) .module-kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: #b9914f;
+}
+
+.shell:not(.education-portal-shell) .kpi-icon {
+  color: #765a29;
+  background: #f1e7d5;
+}
+
+.shell:not(.education-portal-shell) .kpi-value,
+.shell:not(.education-portal-shell) .module-kpi-card strong {
+  color: #211c17;
+  letter-spacing: -.025em;
+}
+
+.shell:not(.education-portal-shell) .primary-action {
+  color: #fffdf9;
+  background: #718777;
+  border: 1px solid #657a6b;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell) .primary-action:hover {
+  background: #5f7465;
+  box-shadow: 0 6px 16px rgba(71, 94, 78, .15);
+}
+
+.shell:not(.education-portal-shell) .ghost-action,
+.shell:not(.education-portal-shell) .icon-action,
+.shell:not(.education-portal-shell) .icon-only,
+.shell:not(.education-portal-shell) .topbar-menu-toggle {
+  color: #2d2822;
+  background: #fff;
+  border: 1px solid #ded4c6;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell) input,
+.shell:not(.education-portal-shell) select,
+.shell:not(.education-portal-shell) textarea,
+.login-card input,
+.login-card select,
+.login-card textarea {
+  border-color: #ded4c6;
+  background: #fffefa;
+  border-radius: 10px;
+  text-transform: none;
+}
+
+.shell:not(.education-portal-shell) input:focus,
+.shell:not(.education-portal-shell) select:focus,
+.shell:not(.education-portal-shell) textarea:focus,
+.login-card input:focus,
+.login-card select:focus,
+.login-card textarea:focus {
+  outline: none;
+  border-color: #bd9650;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(201, 164, 91, .13);
+}
+
+.shell:not(.education-portal-shell) .search-box,
+.shell:not(.education-portal-shell) .year-select {
+  background: #fffefa;
+  border-color: #ded4c6;
+  border-radius: 10px;
+}
+
+.shell:not(.education-portal-shell) .module-subitem,
+.shell:not(.education-portal-shell) .patient-list-row,
+.shell:not(.education-portal-shell) .patient-chip-card,
+.shell:not(.education-portal-shell) .patient-result-card {
+  background: #fbfaf7;
+  border-color: #eee9e1;
+  border-radius: 12px;
+}
+
+.shell:not(.education-portal-shell) .module-subitem:hover,
+.shell:not(.education-portal-shell) .patient-list-row:hover,
+.shell:not(.education-portal-shell) .patient-chip-card:hover,
+.shell:not(.education-portal-shell) .patient-result-card:hover {
+  background: #fffdf9;
+  border-color: #dfd2be;
+  transform: translateY(-1px);
+}
+
+.login-shell {
+  background:
+    radial-gradient(circle at 16% 14%, rgba(185, 145, 79, .12), transparent 23rem),
+    #f8f6f1;
+}
+
+.login-card {
+  border: 1px solid #e4ded4;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 24px 70px rgba(46, 38, 26, .12);
 }
 
 /* Sistema clínico — mesma linguagem visual e tipográfica do portal Educação. */
