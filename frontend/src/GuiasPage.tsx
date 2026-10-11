@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { GuiasControle } from "./GuiasControle";
 import {
   criarOrdemServicoPacienteApi,
   fichaPacienteApi,
@@ -87,6 +88,7 @@ function abrirArquivo(url: string) {
 }
 
 export function GuiasPage() {
+  const [modo, setModo] = useState<"controle" | "emitir">("controle");
   const [buscaPaciente, setBuscaPaciente] = useState("");
   const [pacientes, setPacientes] = useState<PacienteResumoApi[]>([]);
   const [pacienteSelecionadoId, setPacienteSelecionadoId] = useState<number | null>(null);
@@ -284,7 +286,12 @@ export function GuiasPage() {
   const procedimentoManualPreenchido = ordemServicoForm.procedimentoNomeManual.trim().length > 0;
 
   return (
-    <section className="guides-shell">
+    <section className="guides-page">
+      <div className="guides-page-tabs">
+        <button type="button" className={modo === "controle" ? "active" : ""} onClick={() => setModo("controle")}>Controle de guias</button>
+        <button type="button" className={modo === "emitir" ? "active" : ""} onClick={() => setModo("emitir")}>Emitir nova guia</button>
+      </div>
+      {modo === "controle" ? <GuiasControle /> : <section className="guides-shell">
       <aside className="panel guides-sidebar">
         <div className="section-title-row">
           <div>
@@ -512,6 +519,7 @@ export function GuiasPage() {
           </>
         ) : null}
       </section>
+    </section>}
     </section>
   );
 }
