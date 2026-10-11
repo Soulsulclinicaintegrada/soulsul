@@ -647,6 +647,10 @@ def inicializar_banco():
             retorno_solicitado TEXT,
             documento_nome TEXT,
             observacao TEXT,
+            status TEXT DEFAULT 'Emitida',
+            laboratorio_id INTEGER,
+            status_atualizado_por TEXT,
+            status_atualizado_em TEXT,
             criado_por TEXT,
             criado_em TEXT,
             atualizado_em TEXT
@@ -654,6 +658,38 @@ def inicializar_banco():
         """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS guia_laboratorios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            ativo INTEGER DEFAULT 1,
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ordem_servico_movimentacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ordem_servico_id INTEGER NOT NULL,
+            status_anterior TEXT,
+            status_novo TEXT NOT NULL,
+            laboratorio_id INTEGER,
+            laboratorio_nome_snapshot TEXT,
+            observacao TEXT,
+            criado_por TEXT,
+            criado_em TEXT
+        )
+        """
+    )
+    for laboratorio_nome in ("Armação Metálica", "Labsul", "Jeferson", "Zlab"):
+        conn.execute(
+            "INSERT OR IGNORE INTO guia_laboratorios (nome, ativo, criado_em, atualizado_em) VALUES (?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            (laboratorio_nome,),
+        )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS ordem_servico_protetico_etapas (
@@ -1219,6 +1255,11 @@ def inicializar_banco():
     garantir_coluna(conn, "ordens_servico_protetico", "retorno_solicitado TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "documento_nome TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "observacao TEXT")
+    garantir_coluna(conn, "ordens_servico_protetico", "status TEXT DEFAULT 'Emitida'")
+    garantir_coluna(conn, "ordens_servico_protetico", "laboratorio_id INTEGER")
+    garantir_coluna(conn, "ordens_servico_protetico", "status_atualizado_por TEXT")
+    garantir_coluna(conn, "ordens_servico_protetico", "status_atualizado_em TEXT")
+    conn.execute("UPDATE ordens_servico_protetico SET status='Emitida' WHERE COALESCE(status, '')=''")
     garantir_coluna(conn, "ordens_servico_protetico", "criado_por TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "criado_em TEXT")
     garantir_coluna(conn, "ordens_servico_protetico", "atualizado_em TEXT")
@@ -1326,6 +1367,9 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_usuario_registros_dia ON checklist_usuario_registros(checklist_id, data_referencia)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_paciente_id ON ordens_servico_protetico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_etapas_ordem_id ON ordem_servico_protetico_etapas(ordem_servico_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_status ON ordens_servico_protetico(status)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_laboratorio ON ordens_servico_protetico(laboratorio_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_movimentacoes_ordem ON ordem_servico_movimentacoes(ordem_servico_id)")
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pacientes_paciente_id ON crm_pacientes(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_retorno_crm ON contratos(data_retorno_crm)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")

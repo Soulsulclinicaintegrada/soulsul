@@ -333,6 +333,44 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "crm_pacientes", "cancelado_em TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "profissional_snapshot TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "denticao_snapshot TEXT")
+        garantir_coluna(conn, "ordens_servico_protetico", "status TEXT DEFAULT 'Emitida'")
+        garantir_coluna(conn, "ordens_servico_protetico", "laboratorio_id INTEGER")
+        garantir_coluna(conn, "ordens_servico_protetico", "status_atualizado_por TEXT")
+        garantir_coluna(conn, "ordens_servico_protetico", "status_atualizado_em TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS guia_laboratorios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE,
+                ativo INTEGER DEFAULT 1,
+                criado_em TEXT,
+                atualizado_em TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ordem_servico_movimentacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ordem_servico_id INTEGER NOT NULL,
+                status_anterior TEXT,
+                status_novo TEXT NOT NULL,
+                laboratorio_id INTEGER,
+                laboratorio_nome_snapshot TEXT,
+                observacao TEXT,
+                criado_por TEXT,
+                criado_em TEXT
+            )
+            """
+        )
+        for laboratorio_nome in ("Armação Metálica", "Labsul", "Jeferson", "Zlab"):
+            conn.execute(
+                "INSERT OR IGNORE INTO guia_laboratorios (nome, ativo, criado_em, atualizado_em) VALUES (?, 1, ?, ?)",
+                (laboratorio_nome, agora_str(), agora_str()),
+            )
+        conn.execute("UPDATE ordens_servico_protetico SET status='Emitida' WHERE COALESCE(status, '')=''")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ordens_servico_status ON ordens_servico_protetico(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ordem_servico_movimentacoes_ordem ON ordem_servico_movimentacoes(ordem_servico_id)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS crm_contatos_historico (
@@ -1302,6 +1340,32 @@ class OrdemServicoResumoResposta(BaseModel):
     criadoPor: str = ""
     criadoEm: str = ""
     etapas: list[OrdemServicoEtapaPayload] = Field(default_factory=list)
+    pacienteId: int | None = None
+    pacienteNome: str = ""
+    prontuario: str = ""
+    status: str = "Emitida"
+    laboratorioId: int | None = None
+    laboratorioNome: str = ""
+    statusAtualizadoPor: str = ""
+    statusAtualizadoEm: str = ""
+    movimentacoes: list[dict] = Field(default_factory=list)
+
+
+class GuiaMovimentacaoPayload(BaseModel):
+    status: str = ""
+    laboratorio_id: int = 0
+    observacao: str = ""
+
+
+class GuiaLaboratorioPayload(BaseModel):
+    nome: str = ""
+    ativo: bool = True
+
+
+class GuiaLaboratorioResposta(BaseModel):
+    id: int
+    nome: str
+    ativo: bool
 
 
 class LoginPayload(BaseModel):
@@ -2611,6 +2675,157 @@ def excluir_procedimento(procedimento_id: int, request: Request):
     return {"ok": True}
 
 
+STATUS_GUIA_VALIDOS = ("Emitida", "Escaneado", "Enviado ao laboratório", "Pronto e na clínica")
+
+
+def mapear_ordem_servico_controle(conn: sqlite3.Connection, ordem: sqlite3.Row) -> OrdemServicoResumoResposta:
+    etapas_rows = conn.execute(
+        "SELECT etapa, descricao_outro FROM ordem_servico_protetico_etapas WHERE ordem_servico_id=? ORDER BY id",
+        (int(ordem["id"]),),
+    ).fetchall()
+    movimentos = conn.execute(
+        """
+        SELECT id, status_anterior, status_novo, laboratorio_id, laboratorio_nome_snapshot,
+               observacao, criado_por, criado_em
+        FROM ordem_servico_movimentacoes
+        WHERE ordem_servico_id=? ORDER BY id DESC
+        """,
+        (int(ordem["id"]),),
+    ).fetchall()
+    paciente = conn.execute(
+        "SELECT id, nome, prontuario FROM pacientes WHERE id=?",
+        (int(ordem["paciente_id"] or 0),),
+    ).fetchone()
+    laboratorio = None
+    if ordem["laboratorio_id"] is not None:
+        laboratorio = conn.execute("SELECT nome FROM guia_laboratorios WHERE id=?", (int(ordem["laboratorio_id"]),)).fetchone()
+    return OrdemServicoResumoResposta(
+        id=int(ordem["id"]),
+        procedimentoId=int(ordem["procedimento_id"]) if ordem["procedimento_id"] is not None else None,
+        procedimentoNome=corrigir_texto_importado(str(ordem["procedimento_nome_snapshot"] or "")),
+        material=corrigir_texto_importado(str(ordem["material"] or "")),
+        materialOutro=corrigir_texto_importado(str(ordem["material_outro"] or "")),
+        cor=corrigir_texto_importado(str(ordem["cor"] or "")),
+        escala=corrigir_texto_importado(str(ordem["escala"] or "")),
+        elementoArcada=corrigir_texto_importado(str(ordem["elemento_arcada"] or "")),
+        cargaImediata=bool(ordem["carga_imediata"] or 0),
+        retornoSolicitado=str(ordem["retorno_solicitado"] or ""),
+        documentoNome=str(ordem["documento_nome"] or ""),
+        observacao=corrigir_texto_importado(str(ordem["observacao"] or "")),
+        criadoPor=corrigir_texto_importado(str(ordem["criado_por"] or "")),
+        criadoEm=str(ordem["criado_em"] or ""),
+        etapas=[OrdemServicoEtapaPayload(etapa=str(item["etapa"] or ""), descricao_outro=str(item["descricao_outro"] or "")) for item in etapas_rows],
+        pacienteId=int(paciente["id"]) if paciente else None,
+        pacienteNome=corrigir_texto_importado(str(paciente["nome"] or "")) if paciente else "",
+        prontuario=formatar_prontuario_valor(paciente["prontuario"]) if paciente else "",
+        status=str(ordem["status"] or "Emitida"),
+        laboratorioId=int(ordem["laboratorio_id"]) if ordem["laboratorio_id"] is not None else None,
+        laboratorioNome=corrigir_texto_importado(str(laboratorio["nome"] or "")) if laboratorio else "",
+        statusAtualizadoPor=corrigir_texto_importado(str(ordem["status_atualizado_por"] or "")),
+        statusAtualizadoEm=str(ordem["status_atualizado_em"] or ordem["criado_em"] or ""),
+        movimentacoes=[{
+            "id": int(item["id"]), "statusAnterior": str(item["status_anterior"] or ""),
+            "statusNovo": str(item["status_novo"] or ""), "laboratorioId": item["laboratorio_id"],
+            "laboratorioNome": str(item["laboratorio_nome_snapshot"] or ""),
+            "observacao": str(item["observacao"] or ""), "criadoPor": str(item["criado_por"] or ""),
+            "criadoEm": str(item["criado_em"] or ""),
+        } for item in movimentos],
+    )
+
+
+@app.get("/api/guias/controle", response_model=list[OrdemServicoResumoResposta])
+def listar_controle_guias():
+    conn = conectar()
+    try:
+        ordens = conn.execute("SELECT * FROM ordens_servico_protetico ORDER BY COALESCE(status_atualizado_em, criado_em, '') DESC, id DESC").fetchall()
+        return [mapear_ordem_servico_controle(conn, ordem) for ordem in ordens]
+    finally:
+        conn.close()
+
+
+@app.get("/api/guias/laboratorios", response_model=list[GuiaLaboratorioResposta])
+def listar_laboratorios_guias():
+    conn = conectar()
+    try:
+        rows = conn.execute("SELECT id, nome, ativo FROM guia_laboratorios ORDER BY ativo DESC, nome COLLATE NOCASE").fetchall()
+        return [GuiaLaboratorioResposta(id=int(row["id"]), nome=str(row["nome"]), ativo=bool(row["ativo"])) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/guias/laboratorios", response_model=GuiaLaboratorioResposta)
+def criar_laboratorio_guia(payload: GuiaLaboratorioPayload, request: Request):
+    nome = corrigir_texto_importado(str(payload.nome or "").strip())
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do laboratório.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT id FROM guia_laboratorios WHERE lower(nome)=lower(?)", (nome,)).fetchone():
+            raise HTTPException(status_code=409, detail="Este laboratório já está cadastrado.")
+        cursor = conn.execute("INSERT INTO guia_laboratorios (nome, ativo, criado_em, atualizado_em) VALUES (?, ?, ?, ?)", (nome, 1 if payload.ativo else 0, agora_str(), agora_str()))
+        conn.commit()
+        laboratorio_id = int(cursor.lastrowid)
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Criação", tipo="Laboratório de guia", info=nome, metodo_http="POST", rota="/api/guias/laboratorios")
+    return GuiaLaboratorioResposta(id=laboratorio_id, nome=nome, ativo=payload.ativo)
+
+
+@app.put("/api/guias/laboratorios/{laboratorio_id}", response_model=GuiaLaboratorioResposta)
+def atualizar_laboratorio_guia(laboratorio_id: int, payload: GuiaLaboratorioPayload, request: Request):
+    nome = corrigir_texto_importado(str(payload.nome or "").strip())
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do laboratório.")
+    conn = conectar()
+    try:
+        if conn.execute("SELECT id FROM guia_laboratorios WHERE id=?", (laboratorio_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Laboratório não encontrado.")
+        if conn.execute("SELECT id FROM guia_laboratorios WHERE lower(nome)=lower(?) AND id<>?", (nome, laboratorio_id)).fetchone():
+            raise HTTPException(status_code=409, detail="Este laboratório já está cadastrado.")
+        conn.execute("UPDATE guia_laboratorios SET nome=?, ativo=?, atualizado_em=? WHERE id=?", (nome, 1 if payload.ativo else 0, agora_str(), laboratorio_id))
+        conn.commit()
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Edição", tipo="Laboratório de guia", info=nome, metodo_http="PUT", rota=f"/api/guias/laboratorios/{laboratorio_id}")
+    return GuiaLaboratorioResposta(id=laboratorio_id, nome=nome, ativo=payload.ativo)
+
+
+@app.put("/api/guias/{guia_id}/movimentar", response_model=OrdemServicoResumoResposta)
+def movimentar_guia(guia_id: int, payload: GuiaMovimentacaoPayload, request: Request):
+    status_novo = corrigir_texto_importado(str(payload.status or "").strip())
+    if status_novo not in STATUS_GUIA_VALIDOS:
+        raise HTTPException(status_code=400, detail="Status de guia inválido.")
+    conn = conectar()
+    try:
+        ordem = conn.execute("SELECT * FROM ordens_servico_protetico WHERE id=?", (guia_id,)).fetchone()
+        if ordem is None:
+            raise HTTPException(status_code=404, detail="Guia não encontrada.")
+        laboratorio = None
+        laboratorio_id = int(payload.laboratorio_id or 0)
+        if laboratorio_id:
+            laboratorio = conn.execute("SELECT * FROM guia_laboratorios WHERE id=? AND ativo=1", (laboratorio_id,)).fetchone()
+            if laboratorio is None:
+                raise HTTPException(status_code=400, detail="Selecione um laboratório ativo.")
+        if status_novo in ("Escaneado", "Enviado ao laboratório") and laboratorio is None:
+            raise HTTPException(status_code=400, detail="Informe o destino da guia.")
+        if laboratorio is None and ordem["laboratorio_id"] is not None and status_novo == "Pronto e na clínica":
+            laboratorio_id = int(ordem["laboratorio_id"])
+            laboratorio = conn.execute("SELECT * FROM guia_laboratorios WHERE id=?", (laboratorio_id,)).fetchone()
+        if status_novo == "Emitida":
+            laboratorio_id, laboratorio = 0, None
+        usuario = corrigir_texto_importado(usuario_request(request) or "").strip()
+        momento = agora_str()
+        conn.execute("UPDATE ordens_servico_protetico SET status=?, laboratorio_id=?, status_atualizado_por=?, status_atualizado_em=?, atualizado_em=? WHERE id=?", (status_novo, laboratorio_id or None, usuario, momento, momento, guia_id))
+        conn.execute("INSERT INTO ordem_servico_movimentacoes (ordem_servico_id, status_anterior, status_novo, laboratorio_id, laboratorio_nome_snapshot, observacao, criado_por, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (guia_id, str(ordem["status"] or "Emitida"), status_novo, laboratorio_id or None, str(laboratorio["nome"] or "") if laboratorio else "", corrigir_texto_importado(str(payload.observacao or "").strip()), usuario, momento))
+        conn.commit()
+        atualizada = conn.execute("SELECT * FROM ordens_servico_protetico WHERE id=?", (guia_id,)).fetchone()
+        resposta = mapear_ordem_servico_controle(conn, atualizada)
+    finally:
+        conn.close()
+    registrar_acao_usuario(usuario_request(request), acao="Movimentação", tipo="Guia", info=f"#{guia_id} · {status_novo}", metodo_http="PUT", rota=f"/api/guias/{guia_id}/movimentar")
+    return resposta
+
+
 @app.get("/api/pacientes/{paciente_id}/ordens-servico", response_model=list[OrdemServicoResumoResposta])
 def listar_ordens_servico_paciente(paciente_id: int):
     conn = conectar()
@@ -2624,42 +2839,7 @@ def listar_ordens_servico_paciente(paciente_id: int):
             """,
             (int(paciente_id),),
         ).fetchall()
-        respostas: list[OrdemServicoResumoResposta] = []
-        for ordem in ordens:
-            etapas_rows = conn.execute(
-                """
-                SELECT etapa, descricao_outro
-                FROM ordem_servico_protetico_etapas
-                WHERE ordem_servico_id=?
-                ORDER BY id
-                """,
-                (int(ordem["id"]),),
-            ).fetchall()
-            respostas.append(
-                OrdemServicoResumoResposta(
-                    id=int(ordem["id"]),
-                    procedimentoId=int(ordem["procedimento_id"]) if ordem["procedimento_id"] is not None else None,
-                    procedimentoNome=corrigir_texto_importado(str(ordem["procedimento_nome_snapshot"] or "")),
-                    material=corrigir_texto_importado(str(ordem["material"] or "")),
-                    materialOutro=corrigir_texto_importado(str(ordem["material_outro"] or "")),
-                    cor=corrigir_texto_importado(str(ordem["cor"] or "")),
-                    escala=corrigir_texto_importado(str(ordem["escala"] or "")),
-                    elementoArcada=corrigir_texto_importado(str(ordem["elemento_arcada"] or "")),
-                    cargaImediata=bool(ordem["carga_imediata"] or 0),
-                    retornoSolicitado=str(ordem["retorno_solicitado"] or ""),
-                    documentoNome=str(ordem["documento_nome"] or ""),
-                    observacao=corrigir_texto_importado(str(ordem["observacao"] or "")),
-                    criadoPor=corrigir_texto_importado(str(ordem["criado_por"] or "")),
-                    criadoEm=str(ordem["criado_em"] or ""),
-                    etapas=[
-                        OrdemServicoEtapaPayload(
-                            etapa=corrigir_texto_importado(str(item["etapa"] or "")),
-                            descricao_outro=corrigir_texto_importado(str(item["descricao_outro"] or "")),
-                        )
-                        for item in etapas_rows
-                    ],
-                )
-            )
+        respostas = [mapear_ordem_servico_controle(conn, ordem) for ordem in ordens]
     finally:
         conn.close()
     return respostas
@@ -2735,8 +2915,8 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         cursor = conn.execute(
             """
             INSERT INTO ordens_servico_protetico
-            (paciente_id, procedimento_id, procedimento_nome_snapshot, material, material_outro, cor, escala, elemento_arcada, carga_imediata, retorno_solicitado, observacao, criado_por, criado_em, atualizado_em)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (paciente_id, procedimento_id, procedimento_nome_snapshot, material, material_outro, cor, escala, elemento_arcada, carga_imediata, retorno_solicitado, observacao, status, status_atualizado_por, status_atualizado_em, criado_por, criado_em, atualizado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Emitida', ?, ?, ?, ?, ?)
             """,
             (
                 int(paciente_id),
@@ -2750,6 +2930,8 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
                 1 if carga_imediata else 0,
                 retorno_solicitado,
                 corrigir_texto_importado(str(payload.observacao or "").strip()),
+                usuario_criacao,
+                agora_str(),
                 usuario_criacao,
                 agora_str(),
                 agora_str(),
@@ -2781,8 +2963,13 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
             criado_por=usuario_criacao,
         )
         conn.execute("UPDATE ordens_servico_protetico SET documento_nome=?, atualizado_em=? WHERE id=?", (documento_nome, agora_str(), ordem_id))
+        conn.execute(
+            "INSERT INTO ordem_servico_movimentacoes (ordem_servico_id, status_anterior, status_novo, observacao, criado_por, criado_em) VALUES (?, '', 'Emitida', 'Guia emitida', ?, ?)",
+            (ordem_id, usuario_criacao, agora_str()),
+        )
         conn.commit()
         ordem = conn.execute("SELECT * FROM ordens_servico_protetico WHERE id=?", (ordem_id,)).fetchone()
+        resposta_ordem = mapear_ordem_servico_controle(conn, ordem)
     finally:
         conn.close()
 
@@ -2795,23 +2982,7 @@ def criar_ordem_servico_paciente(paciente_id: int, payload: OrdemServicoPayload,
         rota=f"/api/pacientes/{paciente_id}/ordens-servico",
     )
 
-    return OrdemServicoResumoResposta(
-        id=int(ordem["id"]),
-        procedimentoId=int(ordem["procedimento_id"]) if ordem["procedimento_id"] is not None else None,
-        procedimentoNome=corrigir_texto_importado(str(ordem["procedimento_nome_snapshot"] or "")),
-        material=corrigir_texto_importado(str(ordem["material"] or "")),
-        materialOutro=corrigir_texto_importado(str(ordem["material_outro"] or "")),
-        cor=corrigir_texto_importado(str(ordem["cor"] or "")),
-        escala=corrigir_texto_importado(str(ordem["escala"] or "")),
-        elementoArcada=corrigir_texto_importado(str(ordem["elemento_arcada"] or "")),
-        cargaImediata=bool(ordem["carga_imediata"] or 0),
-        retornoSolicitado=str(ordem["retorno_solicitado"] or ""),
-        documentoNome=str(ordem["documento_nome"] or ""),
-        observacao=corrigir_texto_importado(str(ordem["observacao"] or "")),
-        criadoPor=corrigir_texto_importado(str(ordem["criado_por"] or "")),
-        criadoEm=str(ordem["criado_em"] or ""),
-        etapas=[OrdemServicoEtapaPayload(etapa=etapa, descricao_outro=descricao_outro) for etapa, descricao_outro in etapas_limpas],
-    )
+    return resposta_ordem
 
 
 def mapear_paciente_resumo(row: sqlite3.Row) -> PacienteResumo:

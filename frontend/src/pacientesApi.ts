@@ -195,7 +195,29 @@ export type OrdemServicoResumoApi = {
   criadoPor?: string;
   criadoEm?: string;
   etapas: OrdemServicoEtapaApi[];
+  pacienteId?: number | null;
+  pacienteNome?: string;
+  prontuario?: string;
+  status?: string;
+  laboratorioId?: number | null;
+  laboratorioNome?: string;
+  statusAtualizadoPor?: string;
+  statusAtualizadoEm?: string;
+  movimentacoes?: GuiaMovimentacaoApi[];
 };
+
+export type GuiaMovimentacaoApi = {
+  id: number;
+  statusAnterior?: string;
+  statusNovo: string;
+  laboratorioId?: number | null;
+  laboratorioNome?: string;
+  observacao?: string;
+  criadoPor?: string;
+  criadoEm?: string;
+};
+
+export type GuiaLaboratorioApi = { id: number; nome: string; ativo: boolean };
 
 export type OrdemServicoPayload = {
   procedimento_id: number;
@@ -1147,6 +1169,26 @@ export async function criarOrdemServicoPacienteApi(pacienteId: number, payload: 
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export async function listarControleGuiasApi() {
+  return fetchJson<OrdemServicoResumoApi[]>(`${API_BASE_URL}/api/guias/controle`);
+}
+
+export async function listarLaboratoriosGuiasApi() {
+  return fetchJson<GuiaLaboratorioApi[]>(`${API_BASE_URL}/api/guias/laboratorios`);
+}
+
+export async function criarLaboratorioGuiasApi(nome: string) {
+  return fetchJson<GuiaLaboratorioApi>(`${API_BASE_URL}/api/guias/laboratorios`, { method: "POST", body: JSON.stringify({ nome, ativo: true }) });
+}
+
+export async function atualizarLaboratorioGuiasApi(id: number, nome: string, ativo: boolean) {
+  return fetchJson<GuiaLaboratorioApi>(`${API_BASE_URL}/api/guias/laboratorios/${id}`, { method: "PUT", body: JSON.stringify({ nome, ativo }) });
+}
+
+export async function movimentarGuiaApi(id: number, payload: { status: string; laboratorio_id: number; observacao: string }) {
+  return fetchJson<OrdemServicoResumoApi>(`${API_BASE_URL}/api/guias/${id}/movimentar`, { method: "PUT", body: JSON.stringify(payload) });
 }
 
 export async function listarPacientesRecentesApi() {
