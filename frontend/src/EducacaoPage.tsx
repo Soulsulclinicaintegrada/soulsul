@@ -60,14 +60,11 @@ import {
   type TurmaTreinamentoApi,
 } from "./pacientesApi";
 
-function DentalHandpieceIcon({ size = 20, strokeWidth = 1.8 }: { size?: number; strokeWidth?: number }) {
+function ToothIcon({ size = 20, strokeWidth = 1.8 }: { size?: number; strokeWidth?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m5 19 7.8-7.8" />
-      <path d="m8 21-5-5 2.1-2.1 5 5z" />
-      <path d="m11.4 12.6 3-3 2.2 2.2-3 3" />
-      <path d="m14.4 9.6 2.5-4.2 3.7-1.2-.9 3.8-3.1 3.8" />
-      <path d="m18.6 4.9 1.8 1.8" />
+      <path d="M12 5.2c-1.8 0-2.7-1.2-4.5-1.2C4.7 4 3 6.2 3 9c0 2.2 1 3.8 1.7 5.4.8 1.9 1.1 5.6 3 5.6 1.7 0 1.8-4.4 4.3-4.4s2.6 4.4 4.3 4.4c1.9 0 2.2-3.7 3-5.6C20 12.8 21 11.2 21 9c0-2.8-1.7-5-4.5-5-1.8 0-2.7 1.2-4.5 1.2Z" />
+      <path d="M9.1 7.3c1.8.8 4 .8 5.8 0" />
     </svg>
   );
 }
@@ -201,7 +198,7 @@ export function EducacaoPortal() {
     Dashboard: LayoutDashboard,
     Alunos: GraduationCap,
     Treinamentos: BookOpen,
-    Pacientes: DentalHandpieceIcon,
+    Pacientes: ToothIcon,
     Orçamentos: ReceiptText,
     CRM: HeartHandshake,
     Guias: ClipboardList,
@@ -618,7 +615,7 @@ function EducacaoModulo({ modulo,pacienteInicialId=null,pacienteAbaInicial="Cada
     const despesas = Number(d.despesas || 0);
     const operacao = [
       { rotulo: "Alunos", valor: d.alunos, detalhe: "cadastrados", Icone: GraduationCap },
-      { rotulo: "Pacientes-modelo", valor: d.pacientesModelo, detalhe: "em acompanhamento", Icone: DentalHandpieceIcon },
+      { rotulo: "Pacientes-modelo", valor: d.pacientesModelo, detalhe: "em acompanhamento", Icone: ToothIcon },
       { rotulo: "Turmas ativas", valor: d.turmasAtivas, detalhe: "em andamento", Icone: BookOpen },
       { rotulo: "Agenda hoje", valor: d.agendaHoje, detalhe: "atendimentos", Icone: CalendarDays },
     ];
