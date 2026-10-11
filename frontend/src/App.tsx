@@ -1074,7 +1074,7 @@ function App() {
         <div className="sidebar-section-title">Menu</div>
         <nav className="menu-list">
           {menuDisponivel.map((item) => (
-            <button key={item.key} className={`menu-item${menuAtivo === item.key ? " active" : ""}`} type="button" onClick={() => selecionarMenu(item.key)}>
+            <button key={item.key} className={`menu-item${menuAtivo === item.key ? " active" : ""}`} type="button" aria-label={item.label} title={!menuExpandido ? item.label : undefined} onClick={() => selecionarMenu(item.key)}>
               <span className="menu-icon">{item.icon}</span>
               <span className="menu-label">{item.label}</span>
             </button>
