@@ -2578,10 +2578,11 @@ textarea::placeholder {
 
 .budget-finance-calculator { display: grid; gap: 18px; padding: 22px; border: 1px solid rgba(198,176,139,.28); border-radius: 20px; background: linear-gradient(145deg,rgba(255,255,255,.98),rgba(247,241,232,.9)); }
 .budget-finance-calculator-head,.budget-finance-card-table-head,.budget-finance-boleto { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; min-width: 0; }
-.budget-finance-calculator-head > div { min-width: 0; flex: 1 1 auto; }
+.budget-finance-calculator-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 360px); align-items: end; }
+.budget-finance-calculator-head > div { min-width: 0; }
 .budget-finance-calculator h4 { margin: 3px 0 5px; font-size: 1.18rem; }
 .budget-finance-calculator p { margin: 0; color: #746557; }
-.budget-finance-value-field { display: grid; gap: 6px; width: min(100%, 360px); min-width: 260px; flex: 0 1 360px; }
+.budget-finance-value-field { display: grid; gap: 6px; width: 100%; min-width: 0; }
 .budget-finance-value-field span,.budget-finance-card-table-head label span { color: #756658; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .budget-finance-value-field input { display: block; width: 100%; min-width: 0; min-height: 50px; padding-inline: 14px; font-size: 1.35rem; font-weight: 800; text-align: right; overflow: visible; }
 .budget-finance-results { display: grid; gap: 18px; }
@@ -2604,6 +2605,7 @@ textarea::placeholder {
 
 @media (max-width: 900px) {
   .budget-finance-calculator-head,.budget-finance-card-table-head,.budget-finance-boleto { flex-direction: column; }
+  .budget-finance-calculator-head { grid-template-columns: 1fr; }
   .budget-finance-value-field,.budget-finance-card-table-head select { width: 100%; }
   .budget-finance-entry-grid { grid-template-columns: 1fr; width: 100%; }
 }
