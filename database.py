@@ -12,7 +12,7 @@ from pathlib import Path
 DB_PATH = os.getenv("DB_PATH", "clinica.db")
 USUARIO_ADMIN_INICIAL = os.getenv("ADMIN_INICIAL_USUARIO", "admin")
 SENHA_ADMIN_INICIAL = os.getenv("ADMIN_INICIAL_SENHA", "admin123")
-SENHA_PADRAO_USUARIOS = os.getenv("SENHA_PADRAO_USUARIOS", "SOULSUL")
+SENHA_PADRAO_USUARIOS = os.getenv("SENHA_PADRAO_USUARIOS", "soulsuledu")
 CRIAR_USUARIOS_PADRAO = os.getenv("CRIAR_USUARIOS_PADRAO", "1").strip().lower() in {"1", "true", "sim", "yes"}
 EDUCACAO_ADMIN_USUARIO = os.getenv("EDUCACAO_ADMIN_USUARIO", "").strip()
 EDUCACAO_ADMIN_SENHA = os.getenv("EDUCACAO_ADMIN_SENHA", "").strip()

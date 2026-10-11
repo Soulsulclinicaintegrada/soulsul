@@ -1022,7 +1022,8 @@ def listar_usuarios_educacao():
 def criar_usuario_educacao(payload: dict,request:Request):
     nome = str(payload.get("nome") or "").strip()
     usuario = normalizar_texto(str(payload.get("usuario") or "").strip()).replace(" ", "")
-    senha = str(payload.get("senha") or "")
+    # Usuários novos sempre começam com a senha padrão e devem redefini-la no primeiro acesso.
+    senha = "soulsuledu"
     if not nome or not usuario:
         raise HTTPException(status_code=400, detail="Informe o nome e o usuário de acesso.")
     if len(senha) < 6:
