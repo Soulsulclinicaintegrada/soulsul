@@ -1,5 +1,6 @@
-import { Clock3, FlaskConical, History, Plus, Settings2 } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, FlaskConical, History, Plus, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
 import {
   atualizarLaboratorioGuiasApi,
   criarLaboratorioGuiasApi,
@@ -19,8 +20,38 @@ function formatarData(valor?: string) {
   return Number.isNaN(data.getTime()) ? valor : data.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+function dataLocalIso(data: Date) {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+function isoParaBr(valor: string) {
+  const [ano, mes, dia] = valor.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
+function rotuloDiaAgenda(valor: string) {
+  const [dia, mes, ano] = valor.split("/").map(Number);
+  const data = new Date(ano, mes - 1, dia);
+  const hoje = new Date();
+  const amanha = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1);
+  const chave = dataLocalIso(data);
+  if (chave === dataLocalIso(hoje)) return "Hoje";
+  if (chave === dataLocalIso(amanha)) return "Amanhã";
+  return data.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).replace(".", "");
+}
+
+function instanteAgendamento(agendamento: AgendaApiAgendamento) {
+  const [dia, mes, ano] = agendamento.data.split("/").map(Number);
+  const [hora, minuto] = agendamento.inicio.split(":").map(Number);
+  return new Date(ano, mes - 1, dia, hora || 0, minuto || 0).getTime();
+}
+
 export function GuiasControle() {
   const [guias, setGuias] = useState<OrdemServicoResumoApi[]>([]);
+  const [agendaProxima, setAgendaProxima] = useState<AgendaApiAgendamento[]>([]);
   const [laboratorios, setLaboratorios] = useState<GuiaLaboratorioApi[]>([]);
   const [agrupamento, setAgrupamento] = useState<"status" | "laboratorio">("status");
   const [configurando, setConfigurando] = useState(false);
@@ -36,8 +67,15 @@ export function GuiasControle() {
   async function carregar() {
     setCarregando(true);
     try {
-      const [listaGuias, listaLabs] = await Promise.all([listarControleGuiasApi(), listarLaboratoriosGuiasApi()]);
+      const hoje = new Date();
+      const terceiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 2);
+      const [listaGuias, listaLabs, agendamentos] = await Promise.all([
+        listarControleGuiasApi(),
+        listarLaboratoriosGuiasApi(),
+        listarAgendamentosAgenda(isoParaBr(dataLocalIso(hoje)), isoParaBr(dataLocalIso(terceiroDia))).catch(() => [])
+      ]);
       setGuias(listaGuias);
+      setAgendaProxima(agendamentos);
       setLaboratorios(listaLabs);
       setNomes(Object.fromEntries(listaLabs.map((item) => [item.id, item.nome])));
     } catch (error) {
@@ -54,6 +92,14 @@ export function GuiasControle() {
     : [...laboratorios.filter((lab) => lab.ativo).map((lab) => ({ chave: String(lab.id), nome: lab.nome, itens: guias.filter((guia) => guia.laboratorioId === lab.id) })),
       { chave: "sem", nome: "Sem laboratório", itens: guias.filter((guia) => !guia.laboratorioId) }],
   [agrupamento, guias, laboratorios]);
+
+  const trabalhosProximos = useMemo(() => {
+    const guiasPorId = new Map(guias.map((guia) => [guia.id, guia]));
+    return agendaProxima
+      .filter((agendamento) => Boolean(agendamento.ordemServicoId && guiasPorId.has(agendamento.ordemServicoId)))
+      .map((agendamento) => ({ agendamento, guia: guiasPorId.get(agendamento.ordemServicoId!)! }))
+      .sort((a, b) => instanteAgendamento(a.agendamento) - instanteAgendamento(b.agendamento));
+  }, [agendaProxima, guias]);
 
   function abrirMovimento(guia: OrdemServicoResumoApi) {
     setMovendo(guia.id);
@@ -103,6 +149,19 @@ export function GuiasControle() {
     </header>
     {erro ? <div className="crm-inline-alert">{erro}</div> : null}
     {feedback ? <div className="dashboard-note success">{feedback}</div> : null}
+    <section className="panel guide-upcoming-panel">
+      <div className="guide-upcoming-head">
+        <div><span className="panel-kicker">Próximos 3 dias</span><h3>Trabalhos da agenda</h3><p>Guias vinculadas aos atendimentos de hoje e dos dois dias seguintes.</p></div>
+        <span className="guide-upcoming-count"><CalendarDays size={17}/>{trabalhosProximos.length} trabalho{trabalhosProximos.length === 1 ? "" : "s"}</span>
+      </div>
+      {carregando ? <div className="empty-inline">Carregando agenda...</div> : trabalhosProximos.length ? <div className="guide-upcoming-list">
+        {trabalhosProximos.map(({ agendamento, guia }) => <article className="guide-upcoming-item" key={`${agendamento.id}-${guia.id}`}>
+          <div className="guide-upcoming-date"><strong>{rotuloDiaAgenda(agendamento.data)}</strong><span>{agendamento.inicio}</span></div>
+          <div className="guide-upcoming-copy"><strong>{agendamento.paciente}</strong><span>{guia.procedimentoNome}{guia.elementoArcada ? ` · ${guia.elementoArcada}` : ""}</span><small>{agendamento.profissional || "Profissional não informado"}</small></div>
+          <span className={`guide-upcoming-status${guia.status === "Pronto e na clínica" ? " ready" : ""}`}>{guia.status === "Pronto e na clínica" ? <CheckCircle2 size={14}/> : null}{guia.status || "Emitida"}</span>
+        </article>)}
+      </div> : <div className="guide-upcoming-empty">Nenhum trabalho vinculado à agenda nos próximos 3 dias.</div>}
+    </section>
     {configurando ? <section className="panel guide-labs-panel">
       <div className="clinical-panel-header"><div><strong>Laboratórios</strong><span>Renomeie, desative ou inclua novos destinos.</span></div></div>
       <div className="guide-lab-add"><input value={novoLaboratorio} onChange={(e) => setNovoLaboratorio(e.target.value)} placeholder="Nome do novo laboratório"/><button className="primary-action" onClick={adicionarLaboratorio}><Plus size={16}/> Adicionar</button></div>

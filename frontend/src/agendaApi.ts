@@ -67,6 +67,7 @@ export type AgendaApiAgendamento = {
   trabalhoTipo?: string;
   ordemServicoId?: number | null;
   ordemServicoDocumentoNome?: string;
+  trabalhoNaClinica?: boolean;
   elementoArcada?: string;
   recorrenciaGrupo?: string;
   recorrenciaIntervaloDias?: number;

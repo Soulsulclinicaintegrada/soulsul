@@ -267,6 +267,7 @@ class AgendamentoResposta(BaseModel):
     trabalhoTipo: str | None = None
     ordemServicoId: int | None = None
     ordemServicoDocumentoNome: str | None = None
+    trabalhoNaClinica: bool = False
     elementoArcada: str | None = None
     recorrenciaGrupo: str | None = None
     recorrenciaIntervaloDias: int | None = None
@@ -868,6 +869,17 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         row_val(row, "procedimento_nome_snapshot", "") or row_val(row, "procedimento", "") or ""
     )
     contrato_id = row_val(row, "contrato_id")
+    ordem_servico_id = row_val(row, "ordem_servico_id")
+    trabalho_na_clinica = False
+    if ordem_servico_id:
+        ordem_servico = conn.execute(
+            "SELECT status FROM ordens_servico_protetico WHERE id=?",
+            (int(ordem_servico_id),),
+        ).fetchone()
+        trabalho_na_clinica = bool(
+            ordem_servico
+            and str(ordem_servico["status"] or "").strip() == "Pronto e na clínica"
+        )
     tratamento_suspenso, _mensagem_suspensao = obter_suspensao_tratamento_paciente(
         conn,
         paciente_id=row_val(row, "paciente_id"),
@@ -907,8 +919,9 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         atualizadoEm=row_val(row, "atualizado_em", "") or "",
         contratoId=contrato_id,
         trabalhoTipo=row_val(row, "trabalho_tipo", "") or "",
-        ordemServicoId=row_val(row, "ordem_servico_id"),
+        ordemServicoId=ordem_servico_id,
         ordemServicoDocumentoNome=row_val(row, "ordem_servico_documento_nome", "") or "",
+        trabalhoNaClinica=trabalho_na_clinica,
         elementoArcada=row_val(row, "elemento_arcada", "") or "",
         recorrenciaGrupo=row_val(row, "recorrencia_grupo", "") or "",
         recorrenciaIntervaloDias=row_val(row, "recorrencia_intervalo_dias"),

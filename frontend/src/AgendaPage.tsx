@@ -2492,7 +2492,7 @@ function atualizarConfigProfissionalDia(
                       <button
                         key={evento.id}
                         type="button"
-                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}${evento.tratamentoSuspenso ? " treatment-suspended" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
+                        className={`agenda-event-card${eventoCompacto ? " compact" : ""}${eventoMinimo ? " minimal" : ""}${evento.tratamentoSuspenso ? " treatment-suspended" : ""}${evento.trabalhoNaClinica ? " work-ready" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
                         style={{
                           top: `${topo}px`,
                           height: `${altura}px`,
@@ -2513,6 +2513,7 @@ function atualizarConfigProfissionalDia(
                         <span className="agenda-event-dot" style={{ background: corStatusAgendamento(evento.status) }} />
                         <div className="agenda-event-card-copy">
                           <strong title={evento.paciente}>{evento.paciente}</strong>
+                          {evento.trabalhoNaClinica && !eventoMinimo ? <span className="agenda-work-ready-label">Trabalho na clínica</span> : null}
                           {mostrarProcedimento ? <span title={procedimentoPrincipal}>{procedimentoPrincipal}</span> : null}
                         </div>
                       </button>
@@ -2619,7 +2620,7 @@ function atualizarConfigProfissionalDia(
                       <button
                         key={evento.id}
                         type="button"
-                        className={`agenda-week-event-block${evento.tratamentoSuspenso ? " treatment-suspended" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
+                        className={`agenda-week-event-block${evento.tratamentoSuspenso ? " treatment-suspended" : ""}${evento.trabalhoNaClinica ? " work-ready" : ""}${classeFinanceiroAgenda(evento.financeiro) === "devedor" ? " financial-alert" : ""}`}
                         style={{
                           top: `${topo}px`,
                           height: `${Math.max(altura, 18)}px`,
@@ -2640,7 +2641,7 @@ function atualizarConfigProfissionalDia(
                           void abrirEdicaoAgendamento(evento);
                         }}
                       >
-                        <span title={evento.paciente}>{resumoEventoAgenda(evento.paciente)}</span>
+                        <span title={`${evento.paciente}${evento.trabalhoNaClinica ? " · Trabalho na clínica" : ""}`}>{evento.trabalhoNaClinica ? "✓ " : ""}{resumoEventoAgenda(evento.paciente)}</span>
                       </button>
                     );
                   });
@@ -2678,7 +2679,7 @@ function atualizarConfigProfissionalDia(
                   {eventosDiaMes.slice(0, 12).map((evento) => (
                     <span
                       key={evento.id}
-                      className="agenda-month-marker"
+                      className={`agenda-month-marker${evento.trabalhoNaClinica ? " work-ready" : ""}`}
                       style={{ background: corProfissionalPorId(evento.profissionalId) }}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2692,7 +2693,7 @@ function atualizarConfigProfissionalDia(
                         }
                         void abrirEdicaoAgendamento(evento);
                       }}
-                      title={`${evento.inicio} · ${evento.paciente}`}
+                      title={`${evento.inicio} · ${evento.paciente}${evento.trabalhoNaClinica ? " · Trabalho na clínica" : ""}`}
                     />
                   ))}
                 </div>
@@ -2865,6 +2866,7 @@ function atualizarConfigProfissionalDia(
             <div><strong>Procedimentos:</strong> {detalheAtivo.procedimentos.join(", ")}</div>
             <div><strong>Trabalho:</strong> {detalheAtivo.trabalhoTipo || "Não informado"}</div>
             <div><strong>Guia emitida:</strong> {detalheAtivo.ordemServicoDocumentoNome || "Sem guia vinculada"}</div>
+            {detalheAtivo.trabalhoNaClinica ? <div className="agenda-work-ready-detail"><Check size={15}/><strong>Trabalho na clínica</strong></div> : null}
             <div><strong>Dente / arcada:</strong> {detalheAtivo.elementoArcada || "Não informado"}</div>
             <div><strong>Marcadores:</strong> {(detalheAtivo.marcadores ?? []).join(", ") || "Sem marcadores"}</div>
             <div><strong>Observações:</strong> {detalheAtivo.observacoes || "Sem observações"}</div>
