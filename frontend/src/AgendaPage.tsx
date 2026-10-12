@@ -391,7 +391,11 @@ function suavizarCor(hex: string) {
 }
 
 function construirProfissionaisBase(usuarios: UsuarioResumoApi[]) {
-  const ativos = usuarios.filter((usuario) => usuario.status === "Ativo" && usuario.modulos?.Agenda !== "Sem acesso");
+  const ativos = usuarios.filter((usuario) =>
+    usuario.status === "Ativo"
+    && usuario.agendaDisponivel === true
+    && usuario.modulos?.Agenda !== "Sem acesso"
+  );
   const deduplicados = new Map<string, UsuarioResumoApi>();
   ativos.forEach((usuario) => {
     const nomeAgenda = usuario.nomeAgenda || usuario.nome || usuario.usuario;
@@ -503,7 +507,7 @@ function carregarConfiguracaoAgenda(
       ...item,
       ...atual,
       nomeAgenda: String(atual.nomeAgenda || item.nomeAgenda),
-      usuarioVinculado: String(atual.usuarioVinculado || item.usuarioVinculado),
+      usuarioVinculado: item.usuarioVinculado,
       corSuave: atual.cor ? suavizarCor(atual.cor) : item.corSuave,
       configuracaoDias: {
         ...item.configuracaoDias,
@@ -717,7 +721,10 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [eventos, setEventos] = useState<AgendaEventoUI[]>(() => construirEventosIniciais());
   const profissionaisUsuariosBase = useMemo(() => construirProfissionaisBase(usuariosAgenda), [usuariosAgenda]);
   const profissionaisTodos = profissionaisUsuariosBase;
-  const usuariosAgendaDisponiveis = useMemo(() => profissionaisUsuariosBase.map((item) => item.nome), [profissionaisUsuariosBase]);
+  const usuariosAgendaDisponiveis = useMemo(
+    () => profissionaisUsuariosBase.map((item) => ({ valor: item.usuarioVinculado, rotulo: item.nome })),
+    [profissionaisUsuariosBase]
+  );
   const dataInicialHoje = hojeIso();
   const [visao, setVisao] = useState<AgendaView>("Dia");
   const [dataSelecionada, setDataSelecionada] = useState(dataInicialHoje);
@@ -938,7 +945,9 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         ]);
         if (cancelado) return;
         const usuariosAtivos = usuarios.filter(
-          (usuario) => usuario.status === "Ativo" && usuario.modulos?.Agenda !== "Sem acesso"
+          (usuario) => usuario.status === "Ativo"
+            && usuario.agendaDisponivel === true
+            && usuario.modulos?.Agenda !== "Sem acesso"
         );
         const usuariosFiltrados = usuariosAtivos.filter(
           (usuario) => usuario.cargo === "Profissional" || usuario.cargo === "Administrador"
@@ -1016,7 +1025,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
         return {
           ...existente,
           nomeAgenda: existente.nomeAgenda || item.nome,
-          usuarioVinculado: existente.usuarioVinculado || item.usuarioVinculado,
+          usuarioVinculado: item.usuarioVinculado,
           cor: existente.cor || item.cor,
           corSuave: existente.cor ? suavizarCor(existente.cor) : item.corSuave
         };
@@ -3324,8 +3333,8 @@ function atualizarConfigProfissionalDia(
                               )
                             }
                           >
-                            {usuariosAgendaDisponiveis.map((nome) => (
-                              <option key={nome} value={nome}>{nome}</option>
+                            {usuariosAgendaDisponiveis.map((usuario) => (
+                              <option key={usuario.valor} value={usuario.valor}>{usuario.rotulo}</option>
                             ))}
                           </select>
                         </label>
