@@ -229,12 +229,14 @@ def etapas_padrao_procedimento(nome):
 
 
 def gerar_hash_senha(senha, salt=None):
+    senha = str(senha or "").upper()
     salt_bytes = salt or secrets.token_bytes(16)
     hash_bytes = hashlib.pbkdf2_hmac("sha256", str(senha or "").encode("utf-8"), salt_bytes, 100000)
     return f"{salt_bytes.hex()}${hash_bytes.hex()}"
 
 
 def verificar_senha(senha, senha_hash):
+    senha = str(senha or "").upper()
     texto = str(senha_hash or "")
     if "$" not in texto:
         return False
