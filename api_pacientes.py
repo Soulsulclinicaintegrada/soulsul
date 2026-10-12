@@ -4205,14 +4205,19 @@ def excluir_usuario(usuario_id: int, request: Request):
         if str(usuario_row["perfil"] or "") == "Administrador" and str(usuario_row["usuario"] or "").strip().lower() == "admin":
             raise HTTPException(status_code=400, detail="Nao e permitido excluir o administrador padrao.")
 
-        conn.execute("DELETE FROM usuarios WHERE id=?", (int(usuario_id),))
+        conn.execute(
+            """UPDATE usuarios
+               SET ativo=0, agenda_disponivel=0, atividades_acesso=0
+               WHERE id=?""",
+            (int(usuario_id),),
+        )
         conn.commit()
     finally:
         conn.close()
 
     registrar_acao_usuario(
         usuario_request(request),
-        acao="Exclusao",
+        acao="Desativacao",
         tipo="Usuario",
         info=str(usuario_row["nome"] or usuario_row["usuario"] or f"Usuario {usuario_id}"),
         metodo_http="DELETE",

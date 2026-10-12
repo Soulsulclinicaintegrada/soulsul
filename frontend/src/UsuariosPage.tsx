@@ -480,33 +480,6 @@ export function UsuariosPage() {
         modulos: usuarioSelecionado.modulos,
         pacientes_abas: usuarioSelecionado.pacientesAbas
       });
-      const configuracaoAtual = await buscarConfiguracaoAgendaApi().catch(() => ({
-        salas: [],
-        ordemProfissionais: [],
-        configClinicaDias: {},
-        configProfissionais: []
-      }));
-      const configUsuario = agendaConfig[usuarioSelecionado.id] || agendaConfigPadraoUsuario();
-      const outros = (configuracaoAtual.configProfissionais || []).filter((item) => item.id !== usuarioSelecionado.id);
-      const usuarioAtivoNaAgenda = usuarioSelecionado.status === "Ativo" && usuarioSelecionado.agendaDisponivel;
-      await salvarConfiguracaoAgendaApi({
-        salas: configuracaoAtual.salas || [],
-        ordemProfissionais: (configuracaoAtual.ordemProfissionais || []).filter((id) => id !== usuarioSelecionado.id),
-        configClinicaDias: configuracaoAtual.configClinicaDias || {},
-        configProfissionais: usuarioAtivoNaAgenda ? [
-          ...outros.filter((item) => usuarios.some((usuario) => usuario.id === item.id && usuario.status === "Ativo")),
-          {
-            id: usuarioSelecionado.id,
-            nomeAgenda: usuarioSelecionado.nomeAgenda,
-            usuarioVinculado: usuarioSelecionado.usuario,
-            mostrar: configUsuario.mostrar,
-            cor: "#c7aa78",
-            corSuave: "#f7f0e4",
-            maxAgendamentosPorHorario: configUsuario.maxAgendamentosPorHorario,
-            configuracaoDias: configUsuario.configuracaoDias
-          }
-        ] : outros.filter((item) => usuarios.some((usuario) => usuario.id === item.id && usuario.status === "Ativo"))
-      });
       setUsuarios((atual) => atual.map((item) => (item.id === atualizado.id ? mapUsuarioApi(atualizado) : item)));
       if (atualizado.status === "Inativo" && !mostrarTodosUsuarios) {
         setUsuarioSelecionadoId((atual) => {
@@ -515,6 +488,23 @@ export function UsuariosPage() {
         });
       }
       setFeedbackPerfil("Dados do usuário salvos com sucesso.");
+      try {
+        const configuracaoAtual = await buscarConfiguracaoAgendaApi();
+        const configUsuario = agendaConfig[usuarioSelecionado.id] || agendaConfigPadraoUsuario();
+        const outros = (configuracaoAtual.configProfissionais || []).filter((item) => item.id !== usuarioSelecionado.id);
+        const usuarioAtivoNaAgenda = atualizado.status === "Ativo" && atualizado.agendaDisponivel;
+        await salvarConfiguracaoAgendaApi({
+          salas: configuracaoAtual.salas || [],
+          ordemProfissionais: (configuracaoAtual.ordemProfissionais || []).filter((id) => id !== usuarioSelecionado.id),
+          configClinicaDias: configuracaoAtual.configClinicaDias || {},
+          configProfissionais: usuarioAtivoNaAgenda ? [
+            ...outros.filter((item) => usuarios.some((usuario) => usuario.id === item.id && usuario.status === "Ativo")),
+            { id: usuarioSelecionado.id, nomeAgenda: usuarioSelecionado.nomeAgenda, usuarioVinculado: usuarioSelecionado.usuario, mostrar: configUsuario.mostrar, cor: "#c7aa78", corSuave: "#f7f0e4", maxAgendamentosPorHorario: configUsuario.maxAgendamentosPorHorario, configuracaoDias: configUsuario.configuracaoDias }
+          ] : outros.filter((item) => usuarios.some((usuario) => usuario.id === item.id && usuario.status === "Ativo"))
+        });
+      } catch {
+        setFeedbackPerfil("Usuário salvo. A agenda será sincronizada automaticamente ao abrir novamente.");
+      }
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : "Falha ao salvar os dados do usuário.";
       setFeedbackPerfil(mensagem);
@@ -525,20 +515,17 @@ export function UsuariosPage() {
 
   async function excluirUsuarioSelecionado() {
     if (!usuarioSelecionado) return;
-    const confirmar = window.confirm(`Deseja realmente excluir o usuário ${usuarioSelecionado.nome}?`);
+    const confirmar = window.confirm(`Deseja desativar o usuário ${usuarioSelecionado.nome}? O histórico será preservado e será possível reativá-lo em “Mostrar todos”.`);
     if (!confirmar) return;
 
     try {
       setFeedbackPerfil("");
       await excluirUsuarioApi(usuarioSelecionado.id);
-      setUsuarios((atual) => {
-        const proximos = atual.filter((item) => item.id !== usuarioSelecionado.id);
-        setUsuarioSelecionadoId(proximos[0]?.id || 0);
-        return proximos;
-      });
-      setFeedbackPerfil("Usuário excluído com sucesso.");
+      setUsuarios((atual) => atual.map((item) => item.id === usuarioSelecionado.id ? { ...item, status:"Inativo", agendaDisponivel:false, atividadesAcesso:false } : item));
+      if (!mostrarTodosUsuarios) setUsuarioSelecionadoId(usuarios.find((item) => item.id !== usuarioSelecionado.id && item.status === "Ativo")?.id || 0);
+      setFeedbackPerfil("Usuário desativado com sucesso. O histórico foi preservado.");
     } catch (error) {
-      setFeedbackPerfil(error instanceof Error ? error.message : "Falha ao excluir o usuário.");
+      setFeedbackPerfil(error instanceof Error ? error.message : "Falha ao desativar o usuário.");
     }
   }
 
@@ -839,7 +826,7 @@ export function UsuariosPage() {
                     {resetandoSenha ? "Resetando senha..." : "Resetar senha"}
                   </button>
                   <button type="button" className="ghost-action danger" onClick={excluirUsuarioSelecionado}>
-                    Excluir usuário
+                    Desativar usuário
                   </button>
                 </div>
                 {feedbackPerfil ? <p className={`users-password-feedback ${feedbackPerfil.includes("sucesso") ? "success" : "error"}`}>{feedbackPerfil}</p> : null}
