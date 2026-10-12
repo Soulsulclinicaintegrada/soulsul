@@ -311,8 +311,10 @@ export function UsuariosPage() {
   }, [usuarios]);
 
   const usuariosVisiveis = useMemo(
-    () => mostrarTodosUsuarios ? usuarios : usuarios.filter((item) => item.status === "Ativo"),
-    [mostrarTodosUsuarios, usuarios]
+    () => mostrarTodosUsuarios
+      ? usuarios
+      : usuarios.filter((item) => item.status === "Ativo" || item.id === usuarioSelecionadoId),
+    [mostrarTodosUsuarios, usuarioSelecionadoId, usuarios]
   );
   const usuarioSelecionado = useMemo(
     () => usuariosVisiveis.find((item) => item.id === usuarioSelecionadoId) || usuariosVisiveis[0] || null,
@@ -486,25 +488,32 @@ export function UsuariosPage() {
       }));
       const configUsuario = agendaConfig[usuarioSelecionado.id] || agendaConfigPadraoUsuario();
       const outros = (configuracaoAtual.configProfissionais || []).filter((item) => item.id !== usuarioSelecionado.id);
+      const usuarioAtivoNaAgenda = usuarioSelecionado.status === "Ativo" && usuarioSelecionado.agendaDisponivel;
       await salvarConfiguracaoAgendaApi({
         salas: configuracaoAtual.salas || [],
-        ordemProfissionais: configuracaoAtual.ordemProfissionais || [],
+        ordemProfissionais: (configuracaoAtual.ordemProfissionais || []).filter((id) => id !== usuarioSelecionado.id),
         configClinicaDias: configuracaoAtual.configClinicaDias || {},
-        configProfissionais: [
-          ...outros,
+        configProfissionais: usuarioAtivoNaAgenda ? [
+          ...outros.filter((item) => usuarios.some((usuario) => usuario.id === item.id && usuario.status === "Ativo")),
           {
             id: usuarioSelecionado.id,
             nomeAgenda: usuarioSelecionado.nomeAgenda,
             usuarioVinculado: usuarioSelecionado.usuario,
-            mostrar: usuarioSelecionado.agendaDisponivel && configUsuario.mostrar,
+            mostrar: configUsuario.mostrar,
             cor: "#c7aa78",
             corSuave: "#f7f0e4",
             maxAgendamentosPorHorario: configUsuario.maxAgendamentosPorHorario,
             configuracaoDias: configUsuario.configuracaoDias
           }
-        ]
+        ] : outros.filter((item) => usuarios.some((usuario) => usuario.id === item.id && usuario.status === "Ativo"))
       });
       setUsuarios((atual) => atual.map((item) => (item.id === atualizado.id ? mapUsuarioApi(atualizado) : item)));
+      if (atualizado.status === "Inativo" && !mostrarTodosUsuarios) {
+        setUsuarioSelecionadoId((atual) => {
+          if (atual !== atualizado.id) return atual;
+          return usuarios.find((item) => item.id !== atualizado.id && item.status === "Ativo")?.id || 0;
+        });
+      }
       setFeedbackPerfil("Dados do usuário salvos com sucesso.");
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : "Falha ao salvar os dados do usuário.";
