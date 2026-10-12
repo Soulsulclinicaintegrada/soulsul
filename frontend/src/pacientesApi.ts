@@ -1472,6 +1472,7 @@ export type AgendaAtividadePayloadApi = {
 };
 
 export type ResponsavelAtividadeApi = { id: number; nome: string };
+export type AtividadeNotificacaoApi = { id: number; atividadeId?: number | null; tipo: string; mensagem: string; lida: boolean; criadoEm: string };
 
 function cabecalhoUsuarioAtividades(identificadorUsuario: string) {
   return { "X-Usuario": identificadorUsuario.trim() };
@@ -1495,6 +1496,14 @@ export async function atualizarAtividadeApi(id: number, payload: AgendaAtividade
 
 export async function excluirAtividadeApi(id: number, identificadorUsuario: string) {
   return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/atividades/${id}`, { method: "DELETE", headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
+}
+
+export async function listarNotificacoesAtividadesApi(identificadorUsuario: string) {
+  return fetchJson<AtividadeNotificacaoApi[]>(`${API_BASE_URL}/api/atividades/notificacoes`, { headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
+}
+
+export async function marcarNotificacaoAtividadeLidaApi(id: number, identificadorUsuario: string) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/atividades/notificacoes/${id}/lida`, { method: "PATCH", headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
 }
 
 export async function criarUsuarioApi(payload: UsuarioPayloadApi) {

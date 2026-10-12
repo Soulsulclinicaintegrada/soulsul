@@ -1339,6 +1339,18 @@ def inicializar_banco():
         """
     )
     conn.execute(
+        """CREATE TABLE IF NOT EXISTS agenda_atividade_notificacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            atividade_id INTEGER,
+            tipo TEXT NOT NULL,
+            mensagem TEXT NOT NULL,
+            chave TEXT NOT NULL UNIQUE,
+            lida INTEGER DEFAULT 0,
+            criado_em TEXT
+        )"""
+    )
+    conn.execute(
         """
         CREATE TABLE IF NOT EXISTS sistema_migracoes (
             chave TEXT PRIMARY KEY,
@@ -1915,6 +1927,7 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_data ON agenda_atividades(data_atividade, hora_inicio)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_responsavel ON agenda_atividades(responsavel_id, data_atividade)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividade_responsaveis_usuario ON agenda_atividade_responsaveis(usuario_id, atividade_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_atividade_notificacoes_usuario ON agenda_atividade_notificacoes(usuario_id, lida, criado_em)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")
     garantir_usuario_admin_inicial(conn)

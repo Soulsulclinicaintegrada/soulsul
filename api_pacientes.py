@@ -2848,6 +2848,15 @@ class AgendaAtividadeResposta(BaseModel):
     atualizadoEm: str = ""
 
 
+class AtividadeNotificacaoResposta(BaseModel):
+    id: int
+    atividadeId: int | None = None
+    tipo: str
+    mensagem: str
+    lida: bool = False
+    criadoEm: str = ""
+
+
 class PlanoTratamentoPassoPayload(BaseModel):
     titulo: str = ""
     status: str = "Pendente"
@@ -4091,6 +4100,54 @@ def buscar_atividade_com_responsavel(conn: sqlite3.Connection, atividade_id: int
     ).fetchone()
 
 
+def notificar_atividade(conn: sqlite3.Connection, atividade_id: int, usuarios_ids: list[int], tipo: str, mensagem: str, chave_base: str):
+    momento = agora_str()
+    conn.executemany(
+        """INSERT OR IGNORE INTO agenda_atividade_notificacoes
+           (usuario_id, atividade_id, tipo, mensagem, chave, lida, criado_em)
+           VALUES (?, ?, ?, ?, ?, 0, ?)""",
+        [(usuario_id, atividade_id, tipo, mensagem, f"{chave_base}-{usuario_id}", momento) for usuario_id in usuarios_ids],
+    )
+
+
+@app.get("/api/atividades/notificacoes", response_model=list[AtividadeNotificacaoResposta])
+def listar_notificacoes_atividades(request: Request):
+    conn = conectar()
+    try:
+        usuario, _ = validar_acesso_atividades(conn, request)
+        agora = datetime.now(TIMEZONE_LOCAL) if TIMEZONE_LOCAL else datetime.now()
+        hoje, hora = agora.strftime("%Y-%m-%d"), agora.strftime("%H:%M")
+        vencidas = conn.execute(
+            """SELECT DISTINCT a.id, a.titulo FROM agenda_atividades a
+               JOIN agenda_atividade_responsaveis ar ON ar.atividade_id=a.id
+               WHERE ar.usuario_id=? AND a.data_atividade=? AND COALESCE(a.hora_inicio,'')<>''
+                 AND a.hora_inicio<=? AND a.status NOT IN ('Concluída','Cancelada')""",
+            (int(usuario["id"]), hoje, hora),
+        ).fetchall()
+        for atividade in vencidas:
+            notificar_atividade(conn, int(atividade["id"]), [int(usuario["id"])], "horario", f"Chegou o horário de: {atividade['titulo']}", f"horario-{atividade['id']}-{hoje}")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT * FROM agenda_atividade_notificacoes WHERE usuario_id=? ORDER BY lida, id DESC LIMIT 40",
+            (int(usuario["id"]),),
+        ).fetchall()
+        return [AtividadeNotificacaoResposta(id=int(row["id"]), atividadeId=row["atividade_id"], tipo=str(row["tipo"]), mensagem=str(row["mensagem"]), lida=bool(row["lida"]), criadoEm=str(row["criado_em"] or "")) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.patch("/api/atividades/notificacoes/{notificacao_id}/lida")
+def marcar_notificacao_lida(notificacao_id: int, request: Request):
+    conn = conectar()
+    try:
+        usuario, _ = validar_acesso_atividades(conn, request)
+        conn.execute("UPDATE agenda_atividade_notificacoes SET lida=1 WHERE id=? AND usuario_id=?", (notificacao_id, int(usuario["id"])))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
 @app.get("/api/atividades/responsaveis", response_model=list[ResponsavelAtividadeResposta])
 def listar_responsaveis_atividades(request: Request):
     conn = conectar()
@@ -4171,6 +4228,7 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
             "INSERT INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
             [(atividade_id, responsavel) for responsavel in responsaveis_ids],
         )
+        notificar_atividade(conn, atividade_id, responsaveis_ids, "nova", f"Nova atividade: {titulo}", f"nova-{atividade_id}")
         conn.commit()
         row = buscar_atividade_com_responsavel(conn, atividade_id)
         return mapear_atividade(conn, row)
@@ -4211,6 +4269,7 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
             "INSERT INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
             [(atividade_id, responsavel) for responsavel in responsaveis_ids],
         )
+        notificar_atividade(conn, atividade_id, responsaveis_ids, "alteracao", f"Atividade alterada: {titulo}", f"alteracao-{atividade_id}-{momento}")
         conn.commit()
         return mapear_atividade(conn, buscar_atividade_com_responsavel(conn, atividade_id))
     finally:

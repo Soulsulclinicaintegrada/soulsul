@@ -1,6 +1,6 @@
 ﻿import { LogOut, Menu, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CheckSquare2, KeyRound, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import { Bell, CheckSquare2, KeyRound, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
 import logoUrl from "./assets/logo-soul-sul.png";
 import { carregarUsuarioSessao, salvarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { AgendaPage } from "./AgendaPage";
@@ -12,7 +12,7 @@ import { GuiasPage } from "./GuiasPage";
 import { ImportacoesPage } from "./ImportacoesPage";
 import { menuItems, type MenuKey } from "./mockData";
 import { PacientesPage } from "./PacientesPage";
-import { listarUsuariosApi, loginApi, trocarSenhaApi, type UsuarioResumoApi } from "./pacientesApi";
+import { listarNotificacoesAtividadesApi, listarUsuariosApi, loginApi, marcarNotificacaoAtividadeLidaApi, trocarSenhaApi, type AtividadeNotificacaoApi, type UsuarioResumoApi } from "./pacientesApi";
 import {
   arquivarChecklistApi,
   atualizarChecklistApi,
@@ -196,6 +196,8 @@ function App() {
   });
   const [navegacaoPaciente, setNavegacaoPaciente] = useState<NavegacaoPaciente | null>(null);
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioSessao | null>(carregarUsuarioSessao());
+  const [avisos, setAvisos] = useState<AtividadeNotificacaoApi[]>([]);
+  const [avisosAbertos, setAvisosAbertos] = useState(false);
   const [usuariosSistema, setUsuariosSistema] = useState<UsuarioResumoApi[]>([]);
   const [usuarioLoginDigitado, setUsuarioLoginDigitado] = useState("");
   const [senhaLogin, setSenhaLogin] = useState("");
@@ -219,6 +221,22 @@ function App() {
   const modulosUsuario = permissoesUsuario.modulos;
   const pacientesAbasUsuario = permissoesUsuario.pacientesAbas;
   const atividadesPermitidas = Boolean(usuarioLogado?.atividadesAcesso);
+  const avisosNaoLidos = avisos.filter((item) => !item.lida).length;
+
+  useEffect(() => {
+    if (!usuarioLogado || !atividadesPermitidas) { setAvisos([]); return; }
+    const identificador = usuarioLogado.usuario || usuarioLogado.nome;
+    const carregarAvisos = () => void listarNotificacoesAtividadesApi(identificador).then(setAvisos).catch(() => undefined);
+    carregarAvisos();
+    const timer = window.setInterval(carregarAvisos, 30000);
+    return () => window.clearInterval(timer);
+  }, [atividadesPermitidas, usuarioLogado?.id, usuarioLogado?.nome, usuarioLogado?.usuario]);
+
+  async function lerAviso(aviso: AtividadeNotificacaoApi) {
+    if (!usuarioLogado || aviso.lida) return;
+    await marcarNotificacaoAtividadeLidaApi(aviso.id, usuarioLogado.usuario || usuarioLogado.nome).catch(() => undefined);
+    setAvisos((atuais) => atuais.map((item) => item.id === aviso.id ? { ...item, lida: true } : item));
+  }
   const menuDisponivel = useMemo(
     () => menuItems.filter((item) => item.key === "Atividades" ? atividadesPermitidas : nivelPermissao(modulosUsuario[MENU_TO_MODULO[item.key]]) > 0),
     [atividadesPermitidas, modulosUsuario]
@@ -1203,6 +1221,14 @@ function App() {
                 {checklistResumo ? `Rotina ${checklistResumo.concluidos}/${checklistResumo.total}` : "Minha rotina"}
               </button>
             ) : null}
+            {atividadesPermitidas ? <div className="activity-alerts-wrap">
+              <button type="button" className="activity-alerts-button" aria-label="Avisos" onClick={() => setAvisosAbertos((atual) => !atual)}>
+                <Bell size={18}/>{avisosNaoLidos ? <b>{avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}</b> : null}
+              </button>
+              {avisosAbertos ? <div className="activity-alerts-panel"><header><strong>Avisos</strong><span>{avisosNaoLidos} não lido{avisosNaoLidos === 1 ? "" : "s"}</span></header>
+                <div>{avisos.length ? avisos.map((aviso) => <button key={aviso.id} className={aviso.lida ? "read" : ""} onClick={() => void lerAviso(aviso)}><i/><span><strong>{aviso.mensagem}</strong><small>{aviso.criadoEm ? new Date(aviso.criadoEm.replace(" ", "T")).toLocaleString("pt-BR", { dateStyle:"short", timeStyle:"short" }) : "Agora"}</small></span></button>) : <p>Nenhum aviso.</p>}</div>
+              </div> : null}
+            </div> : null}
             <div className="header-user">
               <div className="header-user-text">
                 <span className="header-user-kicker">{usuarioLogado.cargo || "Usuário"}</span>
