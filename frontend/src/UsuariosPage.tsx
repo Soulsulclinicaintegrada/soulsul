@@ -568,11 +568,11 @@ export function UsuariosPage() {
           <div className="users-create-grid users-create-grid-wide">
             <label>
               <span>Nome</span>
-              <input type="text" value={novoUsuario.nome} onChange={(e) => setNovoUsuario((atual) => ({ ...atual, nome: e.target.value }))} />
+              <input type="text" value={novoUsuario.nome} onChange={(e) => setNovoUsuario((atual) => ({ ...atual, nome: e.target.value, nomeAgenda: atual.nomeAgenda === atual.nome || !atual.nomeAgenda ? e.target.value : atual.nomeAgenda }))} />
             </label>
             <label>
               <span>Nome na agenda</span>
-              <input type="text" value={novoUsuario.nomeAgenda} onChange={(e) => setNovoUsuario((atual) => ({ ...atual, nomeAgenda: e.target.value }))} />
+              <input type="text" value={novoUsuario.nomeAgenda || novoUsuario.nome} onChange={(e) => setNovoUsuario((atual) => ({ ...atual, nomeAgenda: e.target.value }))} />
             </label>
             <label>
               <span>Cargo</span>
