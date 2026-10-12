@@ -10481,6 +10481,11 @@ body, body * {
 .activities-mini-days button.outside { color:#c0b6ab; }
 .activities-mini-days button.today { box-shadow:inset 0 0 0 1px #829688; }
 .activities-mini-days button.selected { background:#6f8b79; color:#fff; box-shadow:none; font-weight:800; }
+.activities-mini-days button.holiday:not(.selected) { color:#a14b42; font-weight:800; text-decoration:underline; text-decoration-color:#d9aaa4; text-underline-offset:3px; }
+.activities-holiday-label { padding:7px 11px; border:1px solid #e2c5bd; border-radius:999px; background:#fbefeb; color:#90483f; font-size:11px; font-weight:800; text-transform:uppercase; }
+.activities-day-holiday { display:grid; gap:5px; margin:14px; padding:22px 12px; border:1px dashed #dfbdb4; border-radius:14px; background:#fff6f2; color:#8c4b42; text-align:center; }
+.activities-day-holiday strong { font-size:12px; text-transform:uppercase; }
+.activities-day-holiday span { font-size:11px; }
 .activities-team-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
 .activities-team-actions button { min-height:36px; padding:6px; border:1px solid #ddd1c2; border-radius:9px; background:#fff; color:#5e554c; font-size:10px; cursor:pointer; }
 .activities-team-list { display:grid; gap:7px; }

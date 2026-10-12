@@ -17,6 +17,13 @@ type Props = { usuarioLogado: UsuarioSessao };
 const STATUS = ["Pendente", "Em andamento", "Concluída", "Cancelada"];
 const PRIORIDADES = ["Baixa", "Normal", "Alta", "Urgente"];
 const CORES_RESPONSAVEIS = ["#7b61a8", "#2f7d66", "#b0603d", "#4175a6", "#9a6b22", "#a64f72", "#527b35", "#725b9d", "#277f87"];
+const FERIADOS_FIXOS = new Map<string, string>([
+  ["01-01", "Confraternização Universal"], ["03-28", "Aniversário de Campos"],
+  ["04-21", "Tiradentes"], ["04-23", "São Jorge"], ["05-01", "Dia do Trabalho"],
+  ["08-06", "Santíssimo Salvador"], ["09-07", "Independência do Brasil"],
+  ["10-12", "Nossa Senhora Aparecida"], ["11-02", "Finados"],
+  ["11-15", "Proclamação da República"], ["11-20", "Consciência Negra"], ["12-25", "Natal"]
+]);
 
 function dataIso(data: Date) {
   const ano = data.getFullYear();
@@ -41,6 +48,28 @@ function inicioSemana(valor: string) {
 function adicionarMes(valor: string, deslocamento: number) {
   const data = new Date(`${valor}T12:00:00`);
   return dataIso(new Date(data.getFullYear(), data.getMonth() + deslocamento, 1, 12));
+}
+
+function calcularPascoa(ano: number) {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(ano, mes - 1, dia, 12);
+}
+
+function descricaoFeriado(valor: string) {
+  const [anoTexto, mes, dia] = valor.split("-");
+  const ano = Number(anoTexto);
+  if (!ano || !mes || !dia) return "";
+  const fixo = FERIADOS_FIXOS.get(`${mes}-${dia}`);
+  if (fixo) return fixo;
+  const pascoa = calcularPascoa(ano);
+  const sexta = new Date(pascoa); sexta.setDate(sexta.getDate() - 2);
+  const corpus = new Date(pascoa); corpus.setDate(corpus.getDate() + 60);
+  if (valor === dataIso(sexta)) return "Paixão de Cristo";
+  if (valor === dataIso(corpus)) return "Corpus Christi";
+  return "";
 }
 
 function payloadVazio(usuarioId: number, data: string): AgendaAtividadePayloadApi {
@@ -75,6 +104,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   }, [referencia]);
   const mesReferencia = referencia.slice(0, 7);
   const usuariosVisiveis = usuarios.filter((usuario) => responsaveisSelecionados.includes(usuario.id));
+  const feriadoReferencia = descricaoFeriado(referencia);
 
   async function carregar() {
     setCarregando(true);
@@ -135,6 +165,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     try {
       const salva = editandoId ? await atualizarAtividadeApi(editandoId, form, identificadorUsuario) : await criarAtividadeApi(form, identificadorUsuario);
       setAtividades((atuais) => editandoId ? atuais.map((item) => item.id === salva.id ? salva : item) : [...atuais, salva]);
+      await carregar();
       setFormAberto(false);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível salvar a atividade.");
@@ -142,9 +173,16 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   }
 
   async function mudarStatus(item: AgendaAtividadeApi, status: string) {
-    const ids = item.responsaveisIds?.length ? item.responsaveisIds : [item.responsavelId];
-    const atualizada = await atualizarAtividadeApi(item.id, { titulo: item.titulo, descricao: item.descricao || "", responsavel_id: ids[0], responsaveis_ids: ids, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "", hora_fim: item.horaFim || "", prioridade: item.prioridade, status }, identificadorUsuario);
-    setAtividades((atuais) => atuais.map((atual) => atual.id === item.id ? atualizada : atual));
+    setAtividades((atuais) => atuais.map((atual) => atual.id === item.id ? { ...atual, status } : atual));
+    try {
+      const ids = item.responsaveisIds?.length ? item.responsaveisIds : [item.responsavelId];
+      const atualizada = await atualizarAtividadeApi(item.id, { titulo: item.titulo, descricao: item.descricao || "", responsavel_id: ids[0], responsaveis_ids: ids, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "", hora_fim: item.horaFim || "", prioridade: item.prioridade, status }, identificadorUsuario);
+      setAtividades((atuais) => atuais.map((atual) => atual.id === item.id ? atualizada : atual));
+      setErro("");
+    } catch (error) {
+      setAtividades((atuais) => atuais.map((atual) => atual.id === item.id ? item : atual));
+      setErro(error instanceof Error ? error.message : "Não foi possível alterar o status.");
+    }
   }
 
   async function remover(item: AgendaAtividadeApi) {
@@ -175,7 +213,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   return <section className="activities-page">
     <header className="panel activities-hero">
       <div><span className="panel-kicker">Organização da equipe</span><h2>Agenda de atividades</h2><p>{acessoEquipe ? "Acompanhe e distribua as atividades de todos os funcionários." : "Acompanhe e atualize suas atividades."}</p></div>
-      <button className="primary-action" onClick={() => abrirNova()}><Plus size={17}/> Nova atividade</button>
+      <button className="primary-action" onClick={() => abrirNova()} disabled={Boolean(feriadoReferencia)}><Plus size={17}/> Nova atividade</button>
     </header>
 
     <div className="activities-agenda-shell">
@@ -183,7 +221,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
         <div className="activities-mini-calendar">
           <header><button onClick={() => setReferencia(adicionarMes(referencia, -1))}><ChevronLeft size={16}/></button><strong>{new Date(`${referencia}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</strong><button onClick={() => setReferencia(adicionarMes(referencia, 1))}><ChevronRight size={16}/></button></header>
           <div className="activities-mini-weekdays">{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <span key={`${dia}-${indice}`}>{dia}</span>)}</div>
-          <div className="activities-mini-days">{diasCalendario.map((dia) => <button key={dia} className={`${dia === referencia ? "selected" : ""}${dia === hoje ? " today" : ""}${dia.slice(0, 7) !== mesReferencia ? " outside" : ""}`} onClick={() => setReferencia(dia)}>{Number(dia.slice(-2))}</button>)}</div>
+          <div className="activities-mini-days">{diasCalendario.map((dia) => { const feriado = descricaoFeriado(dia); const classes = [dia === referencia ? "selected" : "", dia === hoje ? "today" : "", dia.slice(0, 7) !== mesReferencia ? "outside" : "", feriado ? "holiday" : ""].filter(Boolean).join(" "); return <button key={dia} title={feriado || undefined} className={classes} onClick={() => setReferencia(dia)}>{Number(dia.slice(-2))}</button>; })}</div>
         </div>
         <div><span className="panel-kicker">Equipe</span><h2>Administrativo</h2><p>Marque quem deseja visualizar.</p></div>
         <div className="activities-team-actions"><button onClick={() => setResponsaveisSelecionados(usuarios.map((usuario) => usuario.id))}>Mostrar todos</button><button onClick={() => setResponsaveisSelecionados([])}>Limpar seleção</button></div>
@@ -193,18 +231,19 @@ export function AtividadesPage({ usuarioLogado }: Props) {
       <section className="activities-calendar-main">
         <div className="panel activities-toolbar">
           <div className="activities-nav"><button onClick={() => setReferencia(adicionarDias(referencia, -1))}><ChevronLeft size={17}/></button><button onClick={() => setReferencia(hoje)}>Hoje</button><button onClick={() => setReferencia(adicionarDias(referencia, 1))}><ChevronRight size={17}/></button><strong>{new Date(`${referencia}T12:00:00`).toLocaleDateString("pt-BR", { weekday:"long", day: "2-digit", month: "long", year: "numeric" })}</strong></div>
+          {feriadoReferencia ? <span className="activities-holiday-label">Feriado · {feriadoReferencia}</span> : null}
         </div>
         {erro && !formAberto ? <div className="crm-inline-alert">{erro}</div> : null}
         <div className="activities-people-board">
           {usuariosVisiveis.map((usuario) => {
             const itens = visiveis.filter((item) => item.dataAtividade === referencia && (item.responsaveisIds || [item.responsavelId]).includes(usuario.id));
             return <section className="activities-person-column" style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties} key={usuario.id}>
-              <header><div><i/><strong>{usuario.nome}</strong></div><button onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
+              <header><div><i/><strong>{usuario.nome}</strong></div><button disabled={Boolean(feriadoReferencia)} onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
               <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} style={{ "--activity-person-color": corResponsavel((item.responsaveisIds || [item.responsavelId])[0]) } as CSSProperties} key={item.id}>
                 <div className="activity-card-top"><span>{item.horaInicio ? <><Clock3 size={13}/>{item.horaInicio}{item.horaFim ? `–${item.horaFim}` : ""}</> : "Atividade do dia"}</span><b className="activity-priority-tag">{item.prioridade}</b></div>
                 <strong className="activity-card-title">{item.titulo}</strong>{acessoEquipe ? <div className="activity-assignees">{(item.responsaveisIds || [item.responsavelId]).map((id, indice) => <small key={id} style={{ "--person-color": corResponsavel(id) } as CSSProperties}><i/>{item.responsaveisNomes?.[indice] || usuarios.find((usuario) => usuario.id === id)?.nome || item.responsavelNome}</small>)}</div> : null}{item.descricao ? <p>{item.descricao}</p> : null}
                 <div className="activity-card-actions"><select value={item.status} onChange={(event) => void mudarStatus(item, event.target.value)}>{STATUS.map((status) => <option key={status}>{status}</option>)}</select><button onClick={() => abrirEdicao(item)} title="Editar"><Pencil size={14}/></button><button onClick={() => void remover(item)} title="Excluir"><Trash2 size={14}/></button></div>
-              </article>)}{!itens.length ? <button className="activities-empty" onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }}>+ Adicionar atividade</button> : null}</div>
+              </article>)}{feriadoReferencia ? <div className="activities-day-holiday"><strong>Feriado</strong><span>{feriadoReferencia}</span></div> : !itens.length ? <button className="activities-empty" onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }}>+ Adicionar atividade</button> : null}</div>
             </section>;
           })}
           {!usuariosVisiveis.length ? <div className="activities-no-people"><strong>Selecione ao menos uma pessoa</strong><span>Use o painel lateral para escolher quem deseja visualizar.</span></div> : null}

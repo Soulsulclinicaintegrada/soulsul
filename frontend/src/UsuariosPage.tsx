@@ -520,6 +520,38 @@ export function UsuariosPage() {
     }
   }
 
+  async function salvarControlesAtividades(parcial: Partial<Pick<UsuarioPermissao, "atividadesAcesso" | "atividadesAgendaDisponivel" | "atividadesEscopo">>) {
+    if (!usuarioSelecionado || salvandoPerfil) return;
+    const proximo = { ...usuarioSelecionado, ...parcial };
+    atualizarUsuarioSelecionado(parcial);
+    try {
+      setSalvandoPerfil(true);
+      setFeedbackPerfil("Salvando configuração da agenda de atividades...");
+      const atualizado = await atualizarUsuarioApi(proximo.id, {
+        nome: proximo.nome,
+        usuario: proximo.usuario,
+        nome_agenda: proximo.nomeAgenda,
+        cargo: proximo.cargo,
+        agenda_escopo: proximo.agendaEscopo,
+        agenda_disponivel: proximo.agendaDisponivel,
+        atividades_acesso: proximo.atividadesAcesso,
+        atividades_agenda_disponivel: proximo.atividadesAgendaDisponivel,
+        atividades_escopo: proximo.atividadesEscopo,
+        perfil: proximo.perfil,
+        ativo: proximo.status === "Ativo",
+        modulos: proximo.modulos,
+        pacientes_abas: proximo.pacientesAbas
+      });
+      setUsuarios((atuais) => atuais.map((item) => item.id === atualizado.id ? mapUsuarioApi(atualizado) : item));
+      setFeedbackPerfil("Configuração da agenda de atividades salva com sucesso.");
+    } catch (error) {
+      setUsuarios((atuais) => atuais.map((item) => item.id === usuarioSelecionado.id ? usuarioSelecionado : item));
+      setFeedbackPerfil(error instanceof Error ? error.message : "Não foi possível salvar a configuração de atividades.");
+    } finally {
+      setSalvandoPerfil(false);
+    }
+  }
+
   async function excluirUsuarioSelecionado() {
     if (!usuarioSelecionado) return;
     const confirmar = window.confirm(`Deseja desativar o usuário ${usuarioSelecionado.nome}? O histórico será preservado e será possível reativá-lo em “Mostrar todos”.`);
@@ -795,7 +827,8 @@ export function UsuariosPage() {
                     <span>Acesso à agenda de atividades</span>
                     <select
                       value={usuarioSelecionado.atividadesAcesso ? "Sim" : "Nao"}
-                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesAcesso: e.target.value === "Sim" })}
+                      disabled={salvandoPerfil}
+                      onChange={(e) => void salvarControlesAtividades({ atividadesAcesso: e.target.value === "Sim" })}
                     >
                       <option value="Sim">Sim</option>
                       <option value="Nao">Não</option>
@@ -805,7 +838,8 @@ export function UsuariosPage() {
                     <span>Tem agenda de atividades</span>
                     <select
                       value={usuarioSelecionado.atividadesAgendaDisponivel ? "Sim" : "Nao"}
-                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesAgendaDisponivel: e.target.value === "Sim" })}
+                      disabled={salvandoPerfil}
+                      onChange={(e) => void salvarControlesAtividades({ atividadesAgendaDisponivel: e.target.value === "Sim" })}
                     >
                       <option value="Sim">Sim</option>
                       <option value="Nao">Não</option>
@@ -815,8 +849,8 @@ export function UsuariosPage() {
                     <span>Atividades que pode visualizar</span>
                     <select
                       value={usuarioSelecionado.atividadesEscopo}
-                      disabled={!usuarioSelecionado.atividadesAcesso}
-                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesEscopo: e.target.value as AtividadesEscopo })}
+                      disabled={salvandoPerfil || !usuarioSelecionado.atividadesAcesso}
+                      onChange={(e) => void salvarControlesAtividades({ atividadesEscopo: e.target.value as AtividadesEscopo })}
                     >
                       <option value="PROPRIAS">Somente as próprias</option>
                       <option value="EQUIPE">Toda a equipe</option>
