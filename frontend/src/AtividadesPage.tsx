@@ -1,4 +1,4 @@
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Circle, Clock3, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Circle, Clock3, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { UsuarioSessao } from "./auth";
 import {
@@ -38,12 +38,13 @@ function inicioSemana(valor: string) {
   return dataIso(data);
 }
 
-function payloadVazio(usuarioId: number, data: string): AgendaAtividadePayloadApi {
-  return { titulo: "", descricao: "", responsavel_id: usuarioId, responsaveis_ids: [usuarioId], data_atividade: data, hora_inicio: "", hora_fim: "", prioridade: "Normal", status: "Pendente" };
+function adicionarMes(valor: string, deslocamento: number) {
+  const data = new Date(`${valor}T12:00:00`);
+  return dataIso(new Date(data.getFullYear(), data.getMonth() + deslocamento, 1, 12));
 }
 
-function rotuloDia(valor: string) {
-  return new Date(`${valor}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).replace(".", "");
+function payloadVazio(usuarioId: number, data: string): AgendaAtividadePayloadApi {
+  return { titulo: "", descricao: "", responsavel_id: usuarioId, responsaveis_ids: [usuarioId], data_atividade: data, hora_inicio: "", hora_fim: "", prioridade: "Normal", status: "Pendente" };
 }
 
 export function AtividadesPage({ usuarioLogado }: Props) {
@@ -62,6 +63,18 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   const acessoEquipe = String(usuarioLogado.atividadesEscopo || "").toUpperCase() === "EQUIPE" || String(usuarioLogado.perfil).toLowerCase() === "administrador";
   const inicio = inicioSemana(referencia);
   const dias = useMemo(() => Array.from({ length: 7 }, (_, indice) => adicionarDias(inicio, indice)), [inicio]);
+  const diasCalendario = useMemo(() => {
+    const base = new Date(`${referencia}T12:00:00`);
+    const primeiro = new Date(base.getFullYear(), base.getMonth(), 1, 12);
+    primeiro.setDate(primeiro.getDate() - primeiro.getDay());
+    return Array.from({ length: 42 }, (_, indice) => {
+      const data = new Date(primeiro);
+      data.setDate(primeiro.getDate() + indice);
+      return dataIso(data);
+    });
+  }, [referencia]);
+  const mesReferencia = referencia.slice(0, 7);
+  const usuariosVisiveis = usuarios.filter((usuario) => responsaveisSelecionados.includes(usuario.id));
 
   async function carregar() {
     setCarregando(true);
@@ -167,6 +180,11 @@ export function AtividadesPage({ usuarioLogado }: Props) {
 
     <div className="activities-agenda-shell">
       {acessoEquipe ? <aside className="panel activities-team-sidebar">
+        <div className="activities-mini-calendar">
+          <header><button onClick={() => setReferencia(adicionarMes(referencia, -1))}><ChevronLeft size={16}/></button><strong>{new Date(`${referencia}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</strong><button onClick={() => setReferencia(adicionarMes(referencia, 1))}><ChevronRight size={16}/></button></header>
+          <div className="activities-mini-weekdays">{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <span key={`${dia}-${indice}`}>{dia}</span>)}</div>
+          <div className="activities-mini-days">{diasCalendario.map((dia) => <button key={dia} className={`${dia === referencia ? "selected" : ""}${dia === hoje ? " today" : ""}${dia.slice(0, 7) !== mesReferencia ? " outside" : ""}`} onClick={() => setReferencia(dia)}>{Number(dia.slice(-2))}</button>)}</div>
+        </div>
         <div><span className="panel-kicker">Equipe</span><h2>Administrativo</h2><p>Marque quem deseja visualizar.</p></div>
         <div className="activities-team-actions"><button onClick={() => setResponsaveisSelecionados(usuarios.map((usuario) => usuario.id))}>Mostrar todos</button><button onClick={() => setResponsaveisSelecionados([])}>Limpar seleção</button></div>
         <div className="activities-team-list">{usuarios.map((usuario) => <label key={usuario.id} className={responsaveisSelecionados.includes(usuario.id) ? "active" : ""} style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties}><button type="button" onClick={() => setResponsaveisSelecionados([usuario.id])} aria-label={`Mostrar somente ${usuario.nome}`}><i/></button><input type="checkbox" checked={responsaveisSelecionados.includes(usuario.id)} onChange={() => alternarResponsavelVisivel(usuario.id)}/><span>{usuario.nome}</span></label>)}</div>
@@ -174,21 +192,22 @@ export function AtividadesPage({ usuarioLogado }: Props) {
       </aside> : null}
       <section className="activities-calendar-main">
         <div className="panel activities-toolbar">
-          <div className="activities-nav"><button onClick={() => setReferencia(adicionarDias(referencia, -7))}><ChevronLeft size={17}/></button><button onClick={() => setReferencia(hoje)}>Hoje</button><button onClick={() => setReferencia(adicionarDias(referencia, 7))}><ChevronRight size={17}/></button><strong>{new Date(`${dias[0]}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" })} — {new Date(`${dias[6]}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</strong></div>
+          <div className="activities-nav"><button onClick={() => setReferencia(adicionarDias(referencia, -1))}><ChevronLeft size={17}/></button><button onClick={() => setReferencia(hoje)}>Hoje</button><button onClick={() => setReferencia(adicionarDias(referencia, 1))}><ChevronRight size={17}/></button><strong>{new Date(`${referencia}T12:00:00`).toLocaleDateString("pt-BR", { weekday:"long", day: "2-digit", month: "long", year: "numeric" })}</strong></div>
         </div>
         {erro && !formAberto ? <div className="crm-inline-alert">{erro}</div> : null}
-        <div className="activities-week">
-          {dias.map((dia) => {
-            const itens = visiveis.filter((item) => item.dataAtividade === dia);
-            return <section className={`activities-day${dia === hoje ? " today" : ""}`} key={dia}>
-              <header><div><CalendarDays size={15}/><strong>{rotuloDia(dia)}</strong></div><button onClick={() => abrirNova(dia)} aria-label={`Adicionar atividade em ${rotuloDia(dia)}`}><Plus size={15}/></button></header>
+        <div className="activities-people-board">
+          {usuariosVisiveis.map((usuario) => {
+            const itens = visiveis.filter((item) => item.dataAtividade === referencia && (item.responsaveisIds || [item.responsavelId]).includes(usuario.id));
+            return <section className="activities-person-column" style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties} key={usuario.id}>
+              <header><div><i/><strong>{usuario.nome}</strong></div><button onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
               <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} style={{ "--activity-person-color": corResponsavel((item.responsaveisIds || [item.responsavelId])[0]) } as CSSProperties} key={item.id}>
                 <div className="activity-card-top"><span>{item.horaInicio ? <><Clock3 size={13}/>{item.horaInicio}{item.horaFim ? `–${item.horaFim}` : ""}</> : "Atividade do dia"}</span><b className="activity-priority-tag">{item.prioridade}</b></div>
                 <strong className="activity-card-title">{item.titulo}</strong>{acessoEquipe ? <div className="activity-assignees">{(item.responsaveisIds || [item.responsavelId]).map((id, indice) => <small key={id} style={{ "--person-color": corResponsavel(id) } as CSSProperties}><i/>{item.responsaveisNomes?.[indice] || usuarios.find((usuario) => usuario.id === id)?.nome || item.responsavelNome}</small>)}</div> : null}{item.descricao ? <p>{item.descricao}</p> : null}
                 <div className="activity-card-actions"><select value={item.status} onChange={(event) => void mudarStatus(item, event.target.value)}>{STATUS.map((status) => <option key={status}>{status}</option>)}</select><button onClick={() => abrirEdicao(item)} title="Editar"><Pencil size={14}/></button><button onClick={() => void remover(item)} title="Excluir"><Trash2 size={14}/></button></div>
-              </article>)}{!itens.length ? <button className="activities-empty" onClick={() => abrirNova(dia)}>+ Adicionar atividade</button> : null}</div>
+              </article>)}{!itens.length ? <button className="activities-empty" onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }}>+ Adicionar atividade</button> : null}</div>
             </section>;
           })}
+          {!usuariosVisiveis.length ? <div className="activities-no-people"><strong>Selecione ao menos uma pessoa</strong><span>Use o painel lateral para escolher quem deseja visualizar.</span></div> : null}
         </div>
         {carregando ? <div className="activities-loading">Carregando atividades...</div> : null}
       </section>
