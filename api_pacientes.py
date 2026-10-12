@@ -11727,6 +11727,7 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         return str(item["criado_por"] or item["status_usuario"] or "Não registrado").strip()
 
     vendas: list[ComissaoVendaItemResposta] = []
+    avaliacoes_elegiveis_ids: set[int] = set()
     for contrato in contratos:
         if contrato_eh_permuta(contrato):
             continue
@@ -11736,8 +11737,17 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         paciente_id = crm_int(contrato["paciente_id"])
         registros = por_paciente.get(paciente_id, [])
         primeiro = registros[0] if registros else None
-        avaliacoes_paciente = [item for item in registros if avaliacao(item) and compareceu(item)]
+        avaliacoes_paciente = [
+            item for item in registros
+            if avaliacao(item)
+            and compareceu(item)
+            and (parse_data_contrato(str(item["data"] or "")) or date.max) <= fechamento
+        ]
         avaliacao_comparecida = avaliacoes_paciente[0] if avaliacoes_paciente else None
+        # Comissão só existe para a interseção: compareceu à avaliação e fechou contrato.
+        if avaliacao_comparecida is None:
+            continue
+        avaliacoes_elegiveis_ids.add(crm_int(avaliacao_comparecida["id"]))
         no_fechamento = [item for item in registros if parse_data_contrato(str(item["data"] or "")) == fechamento and normalizar_texto(item["status"]) not in {"cancelado", "desmarcado"}]
         preferidos = [item for item in no_fechamento if avaliacao(item) and compareceu(item)] or [item for item in no_fechamento if compareceu(item)] or no_fechamento
         fechamento_agenda = preferidos[0] if preferidos else None
@@ -11747,7 +11757,7 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
             "SELECT 1 FROM recebiveis WHERE contrato_id=? AND lower(COALESCE(status,''))='pago' LIMIT 1", (contrato["id"],)
         ).fetchone())
         total = _calcular_comissao_contrato(contrato) if pago else 0.0
-        dados_ausentes = primeiro is None or avaliacao_comparecida is None or fechamento_agenda is None
+        dados_ausentes = primeiro is None or fechamento_agenda is None
         mesma_pessoa = normalizar_texto(captacao) == normalizar_texto(resgate) and captacao not in {"Não localizado", "Não registrado"}
         vendas.append(ComissaoVendaItemResposta(
             contratoId=crm_int(contrato["id"]), pacienteId=paciente_id or None,
@@ -11765,7 +11775,7 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
     avaliacoes_periodo = []
     for item in agenda:
         data_item = parse_data_contrato(str(item["data"] or ""))
-        if not data_item or data_item < inicio or data_item > fim or not avaliacao(item) or not compareceu(item):
+        if crm_int(item["id"]) not in avaliacoes_elegiveis_ids:
             continue
         avaliacoes_periodo.append(ComissaoAvaliacaoItemResposta(
             agendamentoId=crm_int(item["id"]), pacienteId=crm_int(item["paciente_id"]) or None,
