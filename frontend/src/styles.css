@@ -10398,3 +10398,24 @@ body, body * {
 .shell:not(.education-portal-shell).sidebar-collapsed .brand-logo {
   width: 37px;
 }
+
+/* Marca integrada ao fundo do menu, sem o efeito de quadro branco. */
+.shell:not(.education-portal-shell) .brand-card {
+  padding: 12px 8px 16px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell) .brand-logo-wrap {
+  background: transparent;
+  box-shadow: none;
+}
+
+.shell:not(.education-portal-shell) .brand-logo {
+  mix-blend-mode: multiply;
+}
+
+.shell:not(.education-portal-shell).sidebar-collapsed .brand-card {
+  padding: 8px 4px;
+}
