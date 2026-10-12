@@ -10,6 +10,11 @@
       content="width=device-width, initial-scale=1.0"
     />
     <title>Soul Sul Clínica</title>
+    <script>
+      if (window.location.pathname === "/educacao" || window.location.pathname.startsWith("/educacao/")) {
+        document.title = "Soul Sul Educação";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
