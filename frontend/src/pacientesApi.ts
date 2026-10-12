@@ -1043,8 +1043,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   const requestInit: RequestInit = {
-    headers,
-    ...init
+    ...init,
+    headers
   };
 
   let response: Response;
@@ -1468,24 +1468,28 @@ export type AgendaAtividadePayloadApi = {
 
 export type ResponsavelAtividadeApi = { id: number; nome: string };
 
-export async function listarResponsaveisAtividadesApi() {
-  return fetchJson<ResponsavelAtividadeApi[]>(`${API_BASE_URL}/api/atividades/responsaveis`);
+function cabecalhoUsuarioAtividades(identificadorUsuario: string) {
+  return { "X-Usuario": identificadorUsuario.trim() };
 }
 
-export async function listarAtividadesApi(dataInicio: string, dataFim: string) {
-  return fetchJson<AgendaAtividadeApi[]>(`${API_BASE_URL}/api/atividades?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFim)}`);
+export async function listarResponsaveisAtividadesApi(identificadorUsuario: string) {
+  return fetchJson<ResponsavelAtividadeApi[]>(`${API_BASE_URL}/api/atividades/responsaveis`, { headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
 }
 
-export async function criarAtividadeApi(payload: AgendaAtividadePayloadApi) {
-  return fetchJson<AgendaAtividadeApi>(`${API_BASE_URL}/api/atividades`, { method: "POST", body: JSON.stringify(payload) });
+export async function listarAtividadesApi(dataInicio: string, dataFim: string, identificadorUsuario: string) {
+  return fetchJson<AgendaAtividadeApi[]>(`${API_BASE_URL}/api/atividades?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFim)}`, { headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
 }
 
-export async function atualizarAtividadeApi(id: number, payload: AgendaAtividadePayloadApi) {
-  return fetchJson<AgendaAtividadeApi>(`${API_BASE_URL}/api/atividades/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+export async function criarAtividadeApi(payload: AgendaAtividadePayloadApi, identificadorUsuario: string) {
+  return fetchJson<AgendaAtividadeApi>(`${API_BASE_URL}/api/atividades`, { method: "POST", headers: cabecalhoUsuarioAtividades(identificadorUsuario), body: JSON.stringify(payload) });
 }
 
-export async function excluirAtividadeApi(id: number) {
-  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/atividades/${id}`, { method: "DELETE" });
+export async function atualizarAtividadeApi(id: number, payload: AgendaAtividadePayloadApi, identificadorUsuario: string) {
+  return fetchJson<AgendaAtividadeApi>(`${API_BASE_URL}/api/atividades/${id}`, { method: "PUT", headers: cabecalhoUsuarioAtividades(identificadorUsuario), body: JSON.stringify(payload) });
+}
+
+export async function excluirAtividadeApi(id: number, identificadorUsuario: string) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/atividades/${id}`, { method: "DELETE", headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
 }
 
 export async function criarUsuarioApi(payload: UsuarioPayloadApi) {

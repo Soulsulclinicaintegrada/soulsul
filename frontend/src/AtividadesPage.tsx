@@ -57,6 +57,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const identificadorUsuario = usuarioLogado.usuario || usuarioLogado.nome;
   const acessoEquipe = String(usuarioLogado.atividadesEscopo || "").toUpperCase() === "EQUIPE" || String(usuarioLogado.perfil).toLowerCase() === "administrador";
   const inicio = inicioSemana(referencia);
   const dias = useMemo(() => Array.from({ length: 7 }, (_, indice) => adicionarDias(inicio, indice)), [inicio]);
@@ -66,8 +67,8 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     setErro("");
     try {
       const [lista, equipe] = await Promise.all([
-        listarAtividadesApi(dias[0], dias[6]),
-        listarResponsaveisAtividadesApi()
+        listarAtividadesApi(dias[0], dias[6], identificadorUsuario),
+        listarResponsaveisAtividadesApi(identificadorUsuario)
       ]);
       setAtividades(lista);
       setUsuarios(equipe);
@@ -111,7 +112,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     setSalvando(true);
     setErro("");
     try {
-      const salva = editandoId ? await atualizarAtividadeApi(editandoId, form) : await criarAtividadeApi(form);
+      const salva = editandoId ? await atualizarAtividadeApi(editandoId, form, identificadorUsuario) : await criarAtividadeApi(form, identificadorUsuario);
       setAtividades((atuais) => editandoId ? atuais.map((item) => item.id === salva.id ? salva : item) : [...atuais, salva]);
       setFormAberto(false);
     } catch (error) {
@@ -120,13 +121,13 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   }
 
   async function mudarStatus(item: AgendaAtividadeApi, status: string) {
-    const atualizada = await atualizarAtividadeApi(item.id, { titulo: item.titulo, descricao: item.descricao || "", responsavel_id: item.responsavelId, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "", hora_fim: item.horaFim || "", prioridade: item.prioridade, status });
+    const atualizada = await atualizarAtividadeApi(item.id, { titulo: item.titulo, descricao: item.descricao || "", responsavel_id: item.responsavelId, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "", hora_fim: item.horaFim || "", prioridade: item.prioridade, status }, identificadorUsuario);
     setAtividades((atuais) => atuais.map((atual) => atual.id === item.id ? atualizada : atual));
   }
 
   async function remover(item: AgendaAtividadeApi) {
     if (!window.confirm(`Excluir a atividade “${item.titulo}”?`)) return;
-    await excluirAtividadeApi(item.id);
+    await excluirAtividadeApi(item.id, identificadorUsuario);
     setAtividades((atuais) => atuais.filter((atual) => atual.id !== item.id));
   }
 
@@ -161,7 +162,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
       <div className="education-list-head"><div><span className="page-eyebrow">{editandoId ? "EDITAR" : "NOVA"}</span><h2>{editandoId ? "Editar atividade" : "Nova atividade"}</h2></div><button onClick={() => setFormAberto(false)}><X size={18}/></button></div>
       {erro ? <div className="crm-inline-alert">{erro}</div> : null}
       <div className="activity-form-grid"><label className="wide"><span>Título</span><input value={form.titulo} onChange={(event) => setForm({ ...form, titulo: event.target.value })}/></label>{acessoEquipe ? <label className="wide"><span>Responsável</span><select value={form.responsavel_id} disabled={!usuarios.length} onChange={(event) => setForm({ ...form, responsavel_id: Number(event.target.value) })}>{!usuarios.length ? <option value={0}>Carregando funcionários...</option> : null}{usuarios.map((usuario) => <option value={usuario.id} key={usuario.id}>{usuario.nome}</option>)}</select></label> : null}<label><span>Data</span><input type="date" value={form.data_atividade} onChange={(event) => setForm({ ...form, data_atividade: event.target.value })}/></label><label><span>Prioridade</span><select value={form.prioridade} onChange={(event) => setForm({ ...form, prioridade: event.target.value })}>{PRIORIDADES.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Início</span><input type="time" value={form.hora_inicio} onChange={(event) => setForm({ ...form, hora_inicio: event.target.value })}/></label><label><span>Fim</span><input type="time" value={form.hora_fim} onChange={(event) => setForm({ ...form, hora_fim: event.target.value })}/></label><label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{STATUS.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide"><span>Descrição</span><textarea rows={4} value={form.descricao} onChange={(event) => setForm({ ...form, descricao: event.target.value })}/></label></div>
-      <div className="education-actions"><button className="primary-action" onClick={() => void salvar()} disabled={salvando}><Check size={16}/>{salvando ? "Salvando..." : "Salvar atividade"}</button><button onClick={() => setFormAberto(false)}><Circle size={15}/>Cancelar</button></div>
+      <div className="education-actions activity-modal-actions"><button className="primary-action" onClick={() => void salvar()} disabled={salvando || (acessoEquipe && !usuarios.length)}><Check size={16}/>{salvando ? "Salvando..." : "Salvar atividade"}</button><button onClick={() => setFormAberto(false)}><Circle size={15}/>Cancelar</button></div>
     </div></div> : null}
   </section>;
 }
