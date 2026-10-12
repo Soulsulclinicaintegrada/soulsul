@@ -2725,6 +2725,12 @@ class UsuarioCriacaoPayload(BaseModel):
     pacientes_abas: dict[str, str] = Field(default_factory=dict)
 
 
+class UsuarioAtividadesPayload(BaseModel):
+    atividades_acesso: bool
+    atividades_agenda_disponivel: bool
+    atividades_escopo: str = "PROPRIAS"
+
+
 class AlunoPayload(BaseModel):
     nome: str
     cpf: str = ""
@@ -3990,6 +3996,40 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
         info=nome,
         metodo_http="PUT",
         rota=f"/api/usuarios/{usuario_id}",
+    )
+    return mapear_usuario_resumo(usuario_row)
+
+
+@app.patch("/api/usuarios/{usuario_id}/atividades", response_model=UsuarioResumoResposta)
+def atualizar_controles_atividades_usuario(usuario_id: int, payload: UsuarioAtividadesPayload, request: Request):
+    escopo = "EQUIPE" if str(payload.atividades_escopo or "").strip().upper() == "EQUIPE" else "PROPRIAS"
+    conn = conectar()
+    try:
+        usuario_row = conn.execute("SELECT * FROM usuarios WHERE id=? LIMIT 1", (int(usuario_id),)).fetchone()
+        if usuario_row is None:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+        conn.execute(
+            """UPDATE usuarios
+               SET atividades_acesso=?, atividades_agenda_disponivel=?, atividades_escopo=?
+               WHERE id=?""",
+            (
+                1 if payload.atividades_acesso else 0,
+                1 if payload.atividades_agenda_disponivel else 0,
+                escopo,
+                int(usuario_id),
+            ),
+        )
+        conn.commit()
+        usuario_row = conn.execute("SELECT * FROM usuarios WHERE id=?", (int(usuario_id),)).fetchone()
+    finally:
+        conn.close()
+    registrar_acao_usuario(
+        usuario_request(request),
+        acao="Atualização de acesso",
+        tipo="Agenda de atividades",
+        info=str(usuario_row["nome"] or usuario_row["usuario"] or f"Usuário {usuario_id}"),
+        metodo_http="PATCH",
+        rota=f"/api/usuarios/{usuario_id}/atividades",
     )
     return mapear_usuario_resumo(usuario_row)
 

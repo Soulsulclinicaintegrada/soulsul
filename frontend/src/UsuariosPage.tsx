@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { buscarConfiguracaoAgendaApi, salvarConfiguracaoAgendaApi } from "./agendaApi";
 import { obterUsuariosSistema } from "./mockData";
-import { atualizarUsuarioApi, criarUsuarioApi, excluirUsuarioApi, listarUsuariosApi, redefinirSenhaUsuarioApi, urlExportarAcoesUsuariosApi, type UsuarioResumoApi } from "./pacientesApi";
+import { atualizarControlesAtividadesUsuarioApi, atualizarUsuarioApi, criarUsuarioApi, excluirUsuarioApi, listarUsuariosApi, redefinirSenhaUsuarioApi, urlExportarAcoesUsuariosApi, type UsuarioResumoApi } from "./pacientesApi";
 
 type NivelPermissao = "Sem acesso" | "Visualizacao" | "Edicao";
 type CargoUsuario = "Administrador" | "Profissional" | "Recepcionista";
@@ -527,20 +527,10 @@ export function UsuariosPage() {
     try {
       setSalvandoPerfil(true);
       setFeedbackPerfil("Salvando configuração da agenda de atividades...");
-      const atualizado = await atualizarUsuarioApi(proximo.id, {
-        nome: proximo.nome,
-        usuario: proximo.usuario,
-        nome_agenda: proximo.nomeAgenda,
-        cargo: proximo.cargo,
-        agenda_escopo: proximo.agendaEscopo,
-        agenda_disponivel: proximo.agendaDisponivel,
+      const atualizado = await atualizarControlesAtividadesUsuarioApi(proximo.id, {
         atividades_acesso: proximo.atividadesAcesso,
         atividades_agenda_disponivel: proximo.atividadesAgendaDisponivel,
-        atividades_escopo: proximo.atividadesEscopo,
-        perfil: proximo.perfil,
-        ativo: proximo.status === "Ativo",
-        modulos: proximo.modulos,
-        pacientes_abas: proximo.pacientesAbas
+        atividades_escopo: proximo.atividadesEscopo
       });
       setUsuarios((atuais) => atuais.map((item) => item.id === atualizado.id ? mapUsuarioApi(atualizado) : item));
       setFeedbackPerfil("Configuração da agenda de atividades salva com sucesso.");

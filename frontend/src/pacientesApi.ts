@@ -1511,6 +1511,13 @@ export async function atualizarUsuarioApi(usuarioId: number, payload: UsuarioPay
   });
 }
 
+export async function atualizarControlesAtividadesUsuarioApi(usuarioId: number, payload: { atividades_acesso: boolean; atividades_agenda_disponivel: boolean; atividades_escopo: string }) {
+  return fetchJson<UsuarioResumoApi>(`${API_BASE_URL}/api/usuarios/${usuarioId}/atividades`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function excluirUsuarioApi(usuarioId: number) {
   return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/usuarios/${usuarioId}`, {
     method: "DELETE"
