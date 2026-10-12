@@ -4048,7 +4048,7 @@ def listar_responsaveis_atividades(request: Request):
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
         if acesso_equipe:
             rows = conn.execute(
-                "SELECT id, nome FROM usuarios WHERE ativo=1 ORDER BY nome COLLATE NOCASE"
+                "SELECT id, nome FROM usuarios WHERE ativo=1 AND atividades_acesso=1 ORDER BY nome COLLATE NOCASE"
             ).fetchall()
         else:
             rows = conn.execute(

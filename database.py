@@ -1339,6 +1339,14 @@ def inicializar_banco():
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS sistema_migracoes (
+            chave TEXT PRIMARY KEY,
+            aplicado_em TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
         INSERT OR IGNORE INTO agenda_atividade_responsaveis (atividade_id, usuario_id)
         SELECT id, responsavel_id FROM agenda_atividades
         WHERE responsavel_id IS NOT NULL
@@ -1892,6 +1900,20 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")
     garantir_usuario_admin_inicial(conn)
     garantir_usuarios_padrao(conn)
+    migracao_atividades_administrativo = conn.execute(
+        "SELECT chave FROM sistema_migracoes WHERE chave='atividades_equipe_administrativa_v1' LIMIT 1"
+    ).fetchone()
+    if migracao_atividades_administrativo is None:
+        conn.execute("UPDATE usuarios SET atividades_acesso=0, atividades_escopo='PROPRIAS'")
+        conn.execute(
+            """UPDATE usuarios SET atividades_acesso=1, atividades_escopo='EQUIPE'
+               WHERE lower(trim(COALESCE(nome, ''))) IN ('camila', 'maria', 'juliana', 'eliane')
+                  OR lower(trim(COALESCE(usuario, ''))) IN ('camila', 'maria', 'juliana', 'eliane')"""
+        )
+        conn.execute(
+            "INSERT INTO sistema_migracoes (chave, aplicado_em) VALUES ('atividades_equipe_administrativa_v1', ?)",
+            (agora_str(),),
+        )
     garantir_configuracao_usuarios_agenda(conn)
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_profissionais_ativo_ordem ON profissionais(ativo, ordem_exibicao)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_tipos_atendimento_ativo_ordem ON tipos_atendimento(ativo, ordem_exibicao)")
