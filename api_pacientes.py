@@ -4585,6 +4585,10 @@ def mapear_ordem_servico_controle(conn: sqlite3.Connection, ordem: sqlite3.Row) 
     laboratorio = None
     if ordem["laboratorio_id"] is not None:
         laboratorio = conn.execute("SELECT nome FROM guia_laboratorios WHERE id=?", (int(ordem["laboratorio_id"]),)).fetchone()
+    movimento_atual = movimentos[0] if movimentos else None
+    status_atual = str(movimento_atual["status_novo"] or ordem["status"] or "Emitida") if movimento_atual else str(ordem["status"] or "Emitida")
+    status_atualizado_por = str(movimento_atual["criado_por"] or ordem["status_atualizado_por"] or "") if movimento_atual else str(ordem["status_atualizado_por"] or "")
+    status_atualizado_em = str(movimento_atual["criado_em"] or ordem["status_atualizado_em"] or ordem["criado_em"] or "") if movimento_atual else str(ordem["status_atualizado_em"] or ordem["criado_em"] or "")
     return OrdemServicoResumoResposta(
         id=int(ordem["id"]),
         procedimentoId=int(ordem["procedimento_id"]) if ordem["procedimento_id"] is not None else None,
@@ -4604,11 +4608,11 @@ def mapear_ordem_servico_controle(conn: sqlite3.Connection, ordem: sqlite3.Row) 
         pacienteId=int(paciente["id"]) if paciente else None,
         pacienteNome=corrigir_texto_importado(str(paciente["nome"] or "")) if paciente else "",
         prontuario=formatar_prontuario_valor(paciente["prontuario"]) if paciente else "",
-        status=str(ordem["status"] or "Emitida"),
+        status=status_atual,
         laboratorioId=int(ordem["laboratorio_id"]) if ordem["laboratorio_id"] is not None else None,
         laboratorioNome=corrigir_texto_importado(str(laboratorio["nome"] or "")) if laboratorio else "",
-        statusAtualizadoPor=corrigir_texto_importado(str(ordem["status_atualizado_por"] or "")),
-        statusAtualizadoEm=str(ordem["status_atualizado_em"] or ordem["criado_em"] or ""),
+        statusAtualizadoPor=corrigir_texto_importado(status_atualizado_por),
+        statusAtualizadoEm=status_atualizado_em,
         movimentacoes=[{
             "id": int(item["id"]), "statusAnterior": str(item["status_anterior"] or ""),
             "statusNovo": str(item["status_novo"] or ""), "laboratorioId": item["laboratorio_id"],
@@ -4705,6 +4709,8 @@ def movimentar_guia(guia_id: int, payload: GuiaMovimentacaoPayload, request: Req
         conn.execute("INSERT INTO ordem_servico_movimentacoes (ordem_servico_id, status_anterior, status_novo, laboratorio_id, laboratorio_nome_snapshot, observacao, criado_por, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (guia_id, str(ordem["status"] or "Emitida"), status_novo, laboratorio_id or None, str(laboratorio["nome"] or "") if laboratorio else "", corrigir_texto_importado(str(payload.observacao or "").strip()), usuario, momento))
         conn.commit()
         atualizada = conn.execute("SELECT * FROM ordens_servico_protetico WHERE id=?", (guia_id,)).fetchone()
+        if atualizada is None or str(atualizada["status"] or "") != status_novo:
+            raise HTTPException(status_code=500, detail="Não foi possível confirmar o novo status da guia.")
         resposta = mapear_ordem_servico_controle(conn, atualizada)
     finally:
         conn.close()

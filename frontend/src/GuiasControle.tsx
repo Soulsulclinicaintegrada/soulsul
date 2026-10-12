@@ -20,6 +20,12 @@ function formatarData(valor?: string) {
   return Number.isNaN(data.getTime()) ? valor : data.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+function formatarDataRetorno(valor?: string) {
+  if (!valor) return "Não informada";
+  const [ano, mes, dia] = valor.slice(0, 10).split("-");
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : valor;
+}
+
 function dataLocalIso(data: Date) {
   const ano = data.getFullYear();
   const mes = String(data.getMonth() + 1).padStart(2, "0");
@@ -173,11 +179,12 @@ export function GuiasControle() {
         <div className="guide-card-top"><span className="guide-id">GUIA #{guia.id}</span><span className="guide-current-status">{guia.status || "Emitida"}</span></div>
         <h3>{guia.pacienteNome || "Paciente"}</h3><p className="guide-record">Prontuário {guia.prontuario || "não informado"}</p>
         <div className="guide-procedure"><strong>{guia.procedimentoNome}</strong><span>{guia.elementoArcada || "Elemento não informado"}</span></div>
+        <div className="guide-meta"><CalendarDays size={15}/><span><strong>Retorno solicitado:</strong> {formatarDataRetorno(guia.retornoSolicitado)}</span></div>
         {guia.laboratorioNome ? <div className="guide-meta"><FlaskConical size={15}/><span>{guia.laboratorioNome}</span></div> : null}
         <div className="guide-meta"><Clock3 size={15}/><span>{formatarData(guia.statusAtualizadoEm || guia.criadoEm)}{guia.statusAtualizadoPor ? ` · ${guia.statusAtualizadoPor}` : ""}</span></div>
         <div className="guide-card-buttons"><button className="primary-action" onClick={() => abrirMovimento(guia)}>Movimentar</button><button className="ghost-action" onClick={() => setHistorico(historico === guia.id ? null : guia.id)}><History size={15}/> Histórico</button></div>
         {movendo === guia.id ? <div className="guide-move-form"><label><span>Novo status</span><select value={movimento.status} onChange={(e) => setMovimento((atual) => ({ ...atual, status: e.target.value }))}>{STATUS.map((status) => <option key={status}>{status}</option>)}</select></label>{exigeDestino(movimento.status) ? <label><span>Laboratório de destino *</span><select value={movimento.laboratorioId} onChange={(e) => setMovimento((atual) => ({ ...atual, laboratorioId: e.target.value }))}><option value="">Selecione</option>{laboratorios.filter((lab) => lab.ativo).map((lab) => <option key={lab.id} value={lab.id}>{lab.nome}</option>)}</select></label> : null}<label><span>Observação</span><textarea rows={2} value={movimento.observacao} onChange={(e) => setMovimento((atual) => ({ ...atual, observacao: e.target.value }))}/></label><div><button className="primary-action" onClick={() => salvarMovimento(guia.id)}>Registrar</button><button className="ghost-action" onClick={() => setMovendo(null)}>Cancelar</button></div></div> : null}
-        {historico === guia.id ? <div className="guide-history">{guia.movimentacoes?.length ? guia.movimentacoes.map((item) => <div key={item.id}><i/><p><strong>{item.statusNovo}</strong>{item.laboratorioNome ? ` · ${item.laboratorioNome}` : ""}<small>{formatarData(item.criadoEm)}{item.criadoPor ? ` · ${item.criadoPor}` : ""}{item.observacao ? ` · ${item.observacao}` : ""}</small></p></div>) : <span className="empty-inline">Sem movimentações registradas.</span>}</div> : null}
+        {historico === guia.id ? <div className="guide-history">{guia.movimentacoes?.length ? guia.movimentacoes.map((item) => <div key={item.id}><i/><p><strong>{item.statusNovo}</strong>{item.laboratorioNome ? ` · ${item.laboratorioNome}` : ""}<small>{item.criadoPor ? `Por ${item.criadoPor} · ` : ""}{formatarData(item.criadoEm)}{item.observacao ? ` · ${item.observacao}` : ""}</small></p></div>) : <span className="empty-inline">Sem movimentações registradas.</span>}</div> : null}
       </article>) : <div className="guide-column-empty">Nenhuma guia nesta etapa.</div>}</div>
     </section>)}</div>}
   </div>;

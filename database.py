@@ -1879,6 +1879,24 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_status ON ordens_servico_protetico(status)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordens_servico_laboratorio ON ordens_servico_protetico(laboratorio_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_ordem_servico_movimentacoes_ordem ON ordem_servico_movimentacoes(ordem_servico_id)")
+    migracao_historico_guias = conn.execute(
+        "SELECT chave FROM sistema_migracoes WHERE chave='historico_emissao_guias_v1' LIMIT 1"
+    ).fetchone()
+    if migracao_historico_guias is None:
+        conn.execute(
+            """INSERT INTO ordem_servico_movimentacoes
+               (ordem_servico_id, status_anterior, status_novo, observacao, criado_por, criado_em)
+               SELECT os.id, '', 'Emitida', 'Guia emitida', COALESCE(os.criado_por, ''), COALESCE(os.criado_em, os.atualizado_em, ?)
+               FROM ordens_servico_protetico os
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM ordem_servico_movimentacoes m WHERE m.ordem_servico_id=os.id
+               )""",
+            (agora_str(),),
+        )
+        conn.execute(
+            "INSERT INTO sistema_migracoes (chave, aplicado_em) VALUES ('historico_emissao_guias_v1', ?)",
+            (agora_str(),),
+        )
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pacientes_paciente_id ON crm_pacientes(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_conversas_paciente_id ON crm_conversas(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_conversas_crm_id ON crm_conversas(crm_id)")
