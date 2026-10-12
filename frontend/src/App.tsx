@@ -4,6 +4,7 @@ import { CheckSquare2, KeyRound, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } f
 import logoUrl from "./assets/logo-soul-sul.png";
 import { carregarUsuarioSessao, salvarUsuarioSessao, type UsuarioSessao } from "./auth";
 import { AgendaPage } from "./AgendaPage";
+import { AtividadesPage } from "./AtividadesPage";
 import { CRMPage } from "./CRMPage";
 import { DashboardPage } from "./DashboardPage";
 import { FinanceiroPage } from "./FinanceiroPage";
@@ -41,6 +42,7 @@ const MENU_TO_MODULO: Record<MenuKey, string> = {
   Pacientes: "Pacientes",
   Guias: "Guias",
   Agenda: "Agenda",
+  Atividades: "Atividades",
   CRM: "CRM",
   Financeiro: "Financeiro",
   Tabelas: "Tabelas",
@@ -216,11 +218,13 @@ function App() {
   const permissoesUsuario = useMemo(() => mesclarPermissoes(permissoesSessao, usuarioLogado), [permissoesSessao, usuarioLogado]);
   const modulosUsuario = permissoesUsuario.modulos;
   const pacientesAbasUsuario = permissoesUsuario.pacientesAbas;
+  const administrador = String(usuarioLogado?.perfil || usuarioLogado?.cargo || "").toLowerCase() === "administrador";
+  const atividadesPermitidas = administrador || Boolean(usuarioLogado?.atividadesAcesso);
   const menuDisponivel = useMemo(
-    () => menuItems.filter((item) => nivelPermissao(modulosUsuario[MENU_TO_MODULO[item.key]]) > 0),
-    [modulosUsuario]
+    () => menuItems.filter((item) => item.key === "Atividades" ? atividadesPermitidas : nivelPermissao(modulosUsuario[MENU_TO_MODULO[item.key]]) > 0),
+    [atividadesPermitidas, modulosUsuario]
   );
-  const acessoModuloAtual = nivelPermissao(modulosUsuario[MENU_TO_MODULO[menuAtivo]]);
+  const acessoModuloAtual = menuAtivo === "Atividades" ? (atividadesPermitidas ? 2 : 0) : nivelPermissao(modulosUsuario[MENU_TO_MODULO[menuAtivo]]);
 
   useEffect(() => {
     try {
@@ -321,6 +325,8 @@ function App() {
             cargo: cadastroAtual.cargo,
             agendaEscopo: cadastroAtual.agendaEscopo,
             agendaDisponivel: cadastroAtual.agendaDisponivel,
+            atividadesAcesso: cadastroAtual.atividadesAcesso,
+            atividadesEscopo: cadastroAtual.atividadesEscopo,
             nomeAgenda: cadastroAtual.nomeAgenda,
             modulos: cadastroAtual.modulos,
             pacientesAbas: cadastroAtual.pacientesAbas
@@ -334,6 +340,8 @@ function App() {
             && sessaoAtualizada.cargo === sessaoAtual.cargo
             && sessaoAtualizada.agendaEscopo === sessaoAtual.agendaEscopo
             && sessaoAtualizada.agendaDisponivel === sessaoAtual.agendaDisponivel
+            && sessaoAtualizada.atividadesAcesso === sessaoAtual.atividadesAcesso
+            && sessaoAtualizada.atividadesEscopo === sessaoAtual.atividadesEscopo
             && sessaoAtualizada.nomeAgenda === sessaoAtual.nomeAgenda;
           if (semAlteracao) return sessaoAtual;
           salvarUsuarioSessao(sessaoAtualizada);
@@ -393,6 +401,7 @@ function App() {
     if (menuAtivo === "Pacientes") return { titulo: "Pacientes", busca: "Buscar paciente, prontuario, telefone ou CPF..." };
     if (menuAtivo === "Guias") return { titulo: "Guias", busca: "Buscar paciente" };
     if (menuAtivo === "Agenda") return { titulo: "Agenda Clínica", busca: "Buscar paciente" };
+    if (menuAtivo === "Atividades") return { titulo: "Agenda de Atividades", busca: "Buscar paciente" };
     if (menuAtivo === "CRM") return { titulo: "CRM", busca: "Buscar paciente" };
     if (menuAtivo === "Financeiro") return { titulo: "Financeiro", busca: "Buscar paciente" };
     if (menuAtivo === "Tabelas") return { titulo: "Tabelas", busca: "Buscar paciente" };
@@ -606,6 +615,7 @@ function App() {
     }
     if (menuAtivo === "Financeiro") return <FinanceiroPage usuarioLogado={usuarioLogado} />;
     if (menuAtivo === "Tabelas") return <ImportacoesPage />;
+    if (menuAtivo === "Atividades") return <AtividadesPage usuarioLogado={usuarioLogado!} />;
     if (menuAtivo === "Usuários") return <UsuariosPage />;
     return null;
   };

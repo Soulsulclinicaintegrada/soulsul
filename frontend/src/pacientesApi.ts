@@ -144,6 +144,8 @@ export type UsuarioResumoApi = {
   cargo: "Administrador" | "Profissional" | "Recepcionista";
   agendaEscopo: "Toda a clinica" | "Somente a propria" | string;
   agendaDisponivel: boolean;
+  atividadesAcesso: boolean;
+  atividadesEscopo: "PROPRIAS" | "EQUIPE" | string;
   status: "Ativo" | "Inativo" | string;
   ultimoAcesso: string;
   modulos: Record<string, string>;
@@ -157,6 +159,8 @@ export type UsuarioPayloadApi = {
   cargo: string;
   agenda_escopo: string;
   agenda_disponivel?: boolean;
+  atividades_acesso?: boolean;
+  atividades_escopo?: string;
   perfil?: string;
   ativo?: boolean;
   modulos?: Record<string, string>;
@@ -1432,6 +1436,50 @@ export async function redefinirSenhaUsuarioApi(usuarioId: number) {
 
 export async function listarUsuariosApi() {
   return fetchJson<UsuarioResumoApi[]>(`${API_BASE_URL}/api/usuarios`);
+}
+
+export type AgendaAtividadeApi = {
+  id: number;
+  titulo: string;
+  descricao: string;
+  responsavelId: number;
+  responsavelNome: string;
+  dataAtividade: string;
+  horaInicio: string;
+  horaFim: string;
+  prioridade: "Baixa" | "Normal" | "Alta" | "Urgente" | string;
+  status: "Pendente" | "Em andamento" | "Concluída" | "Cancelada" | string;
+  criadoPor: string;
+  criadoEm: string;
+  atualizadoPor: string;
+  atualizadoEm: string;
+};
+
+export type AgendaAtividadePayloadApi = {
+  titulo: string;
+  descricao: string;
+  responsavel_id: number;
+  data_atividade: string;
+  hora_inicio: string;
+  hora_fim: string;
+  prioridade: string;
+  status: string;
+};
+
+export async function listarAtividadesApi(dataInicio: string, dataFim: string) {
+  return fetchJson<AgendaAtividadeApi[]>(`${API_BASE_URL}/api/atividades?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFim)}`);
+}
+
+export async function criarAtividadeApi(payload: AgendaAtividadePayloadApi) {
+  return fetchJson<AgendaAtividadeApi>(`${API_BASE_URL}/api/atividades`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function atualizarAtividadeApi(id: number, payload: AgendaAtividadePayloadApi) {
+  return fetchJson<AgendaAtividadeApi>(`${API_BASE_URL}/api/atividades/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function excluirAtividadeApi(id: number) {
+  return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/atividades/${id}`, { method: "DELETE" });
 }
 
 export async function criarUsuarioApi(payload: UsuarioPayloadApi) {

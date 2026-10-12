@@ -2703,6 +2703,8 @@ class UsuarioAtualizacaoPayload(BaseModel):
     cargo: str = ""
     agenda_escopo: str = ""
     agenda_disponivel: bool | None = None
+    atividades_acesso: bool | None = None
+    atividades_escopo: str = ""
     perfil: str = ""
     usuario: str = ""
     ativo: bool | None = None
@@ -2716,6 +2718,8 @@ class UsuarioCriacaoPayload(BaseModel):
     cargo: str = ""
     agenda_escopo: str = ""
     agenda_disponivel: bool | None = None
+    atividades_acesso: bool | None = None
+    atividades_escopo: str = "PROPRIAS"
     perfil: str = ""
     ativo: bool | None = True
     modulos: dict[str, str] = Field(default_factory=dict)
@@ -2769,6 +2773,8 @@ class UsuarioResumoResposta(BaseModel):
     cargo: str = ""
     agendaEscopo: str = ""
     agendaDisponivel: bool = False
+    atividadesAcesso: bool = False
+    atividadesEscopo: str = "PROPRIAS"
     status: str = "Ativo"
     ultimoAcesso: str = "-"
     modulos: dict[str, str] = Field(default_factory=dict)
@@ -2783,6 +2789,8 @@ class LoginResposta(BaseModel):
     cargo: str = ""
     agendaEscopo: str = ""
     agendaDisponivel: bool = False
+    atividadesAcesso: bool = False
+    atividadesEscopo: str = "PROPRIAS"
     nomeAgenda: str = ""
     modulos: dict[str, str] = Field(default_factory=dict)
     pacientesAbas: dict[str, str] = Field(default_factory=dict)
@@ -2795,6 +2803,34 @@ class ChecklistUsuarioItemPayload(BaseModel):
     tipo_meta: str = "manual"
     meta_diaria: int = 1
     ativo: bool = True
+
+
+class AgendaAtividadePayload(BaseModel):
+    titulo: str
+    descricao: str = ""
+    responsavel_id: int = 0
+    data_atividade: str
+    hora_inicio: str = ""
+    hora_fim: str = ""
+    prioridade: str = "Normal"
+    status: str = "Pendente"
+
+
+class AgendaAtividadeResposta(BaseModel):
+    id: int
+    titulo: str
+    descricao: str = ""
+    responsavelId: int
+    responsavelNome: str
+    dataAtividade: str
+    horaInicio: str = ""
+    horaFim: str = ""
+    prioridade: str = "Normal"
+    status: str = "Pendente"
+    criadoPor: str = ""
+    criadoEm: str = ""
+    atualizadoPor: str = ""
+    atualizadoEm: str = ""
 
 
 class PlanoTratamentoPassoPayload(BaseModel):
@@ -3151,6 +3187,8 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
         cargo=cargo,
         agendaEscopo=str(usuario_row["agenda_escopo"] or ""),
         agendaDisponivel=bool(int(usuario_row["agenda_disponivel"] or 0)),
+        atividadesAcesso=bool(int(usuario_row["atividades_acesso"] or 0)),
+        atividadesEscopo=str(usuario_row["atividades_escopo"] or "PROPRIAS"),
         nomeAgenda=str(usuario_row["nome_agenda"] or usuario_row["nome"] or "").upper(),
         modulos=json_dict_seguro(usuario_row["modulos_json"], modulos_padrao),
         pacientesAbas=json_dict_seguro(usuario_row["pacientes_abas_json"], abas_padrao),
@@ -3415,6 +3453,8 @@ def mapear_usuario_resumo(usuario_row: sqlite3.Row) -> UsuarioResumoResposta:
         cargo=cargo,
         agendaEscopo=str(usuario_row["agenda_escopo"] or ""),
         agendaDisponivel=bool(int(usuario_row["agenda_disponivel"] or 0)),
+        atividadesAcesso=bool(int(usuario_row["atividades_acesso"] or 0)),
+        atividadesEscopo=str(usuario_row["atividades_escopo"] or "PROPRIAS"),
         status="Ativo" if bool(int(usuario_row["ativo"] or 0)) else "Inativo",
         ultimoAcesso=str(usuario_row["ultimo_login"] or "-"),
         modulos=json_dict_seguro(usuario_row["modulos_json"], modulos_padrao),
@@ -3789,6 +3829,8 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
     modulos, pacientes_abas, agenda_padrao = normalizar_payload_permissoes(cargo, perfil, payload.modulos, payload.pacientes_abas)
     agenda_escopo = corrigir_texto_importado(str(payload.agenda_escopo or "").strip()) or agenda_padrao
     agenda_disponivel = bool(payload.agenda_disponivel if payload.agenda_disponivel is not None else cargo in {"Profissional", "Administrador"})
+    atividades_acesso = bool(payload.atividades_acesso if payload.atividades_acesso is not None else cargo == "Administrador")
+    atividades_escopo = "EQUIPE" if str(payload.atividades_escopo or "").strip().upper() == "EQUIPE" else "PROPRIAS"
     ativo = 1 if (payload.ativo if payload.ativo is not None else True) else 0
 
     conn = conectar()
@@ -3799,8 +3841,8 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
         cursor = conn.execute(
             """
             INSERT INTO usuarios
-            (nome, usuario, nome_agenda, senha_hash, perfil, cargo, agenda_escopo, agenda_disponivel, senha_temporaria, precisa_trocar_senha, ultimo_login, ativo, modulos_json, pacientes_abas_json, data_criacao)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, '', ?, ?, ?, ?)
+            (nome, usuario, nome_agenda, senha_hash, perfil, cargo, agenda_escopo, agenda_disponivel, atividades_acesso, atividades_escopo, senha_temporaria, precisa_trocar_senha, ultimo_login, ativo, modulos_json, pacientes_abas_json, data_criacao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, '', ?, ?, ?, ?)
             """,
             (
                 nome,
@@ -3811,6 +3853,8 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
                 cargo,
                 agenda_escopo,
                 1 if agenda_disponivel else 0,
+                1 if atividades_acesso else 0,
+                atividades_escopo,
                 ativo,
                 json.dumps(modulos, ensure_ascii=False),
                 json.dumps(pacientes_abas, ensure_ascii=False),
@@ -3896,6 +3940,8 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
                 cargo=?,
                 agenda_escopo=?,
                 agenda_disponivel=COALESCE(?, agenda_disponivel),
+                atividades_acesso=COALESCE(?, atividades_acesso),
+                atividades_escopo=COALESCE(NULLIF(?, ''), atividades_escopo),
                 ativo=COALESCE(?, ativo),
                 modulos_json=?,
                 pacientes_abas_json=?
@@ -3909,6 +3955,8 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
                 cargo_final,
                 agenda_escopo or str(usuario_row["agenda_escopo"] or "") or agenda_padrao,
                 1 if payload.agenda_disponivel else 0 if payload.agenda_disponivel is not None else None,
+                1 if payload.atividades_acesso else 0 if payload.atividades_acesso is not None else None,
+                "EQUIPE" if str(payload.atividades_escopo or "").strip().upper() == "EQUIPE" else "PROPRIAS" if str(payload.atividades_escopo or "").strip() else "",
                 1 if payload.ativo else 0 if payload.ativo is not None else None,
                 json.dumps(modulos, ensure_ascii=False),
                 json.dumps(pacientes_abas, ensure_ascii=False),
@@ -3929,6 +3977,155 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
         rota=f"/api/usuarios/{usuario_id}",
     )
     return mapear_usuario_resumo(usuario_row)
+
+
+STATUS_ATIVIDADE_VALIDOS = {"Pendente", "Em andamento", "Concluída", "Cancelada"}
+PRIORIDADE_ATIVIDADE_VALIDAS = {"Baixa", "Normal", "Alta", "Urgente"}
+
+
+def validar_acesso_atividades(conn: sqlite3.Connection, request: Request) -> tuple[sqlite3.Row, bool]:
+    usuario = buscar_usuario_por_identificador(conn, usuario_request(request))
+    if usuario is None:
+        raise HTTPException(status_code=401, detail="Usuário não identificado.")
+    administrador = str(usuario["perfil"] or "").strip().lower() == "administrador" or str(usuario["cargo"] or "").strip().lower() == "administrador"
+    if not administrador and not bool(int(usuario["atividades_acesso"] or 0)):
+        raise HTTPException(status_code=403, detail="Usuário sem acesso à agenda de atividades.")
+    acesso_equipe = administrador or str(usuario["atividades_escopo"] or "").strip().upper() == "EQUIPE"
+    return usuario, acesso_equipe
+
+
+def mapear_atividade(row: sqlite3.Row) -> AgendaAtividadeResposta:
+    return AgendaAtividadeResposta(
+        id=int(row["id"]),
+        titulo=corrigir_texto_importado(str(row["titulo"] or "")),
+        descricao=corrigir_texto_importado(str(row["descricao"] or "")),
+        responsavelId=int(row["responsavel_id"]),
+        responsavelNome=corrigir_texto_importado(str(row["responsavel_nome"] or "")),
+        dataAtividade=str(row["data_atividade"] or ""),
+        horaInicio=str(row["hora_inicio"] or ""),
+        horaFim=str(row["hora_fim"] or ""),
+        prioridade=str(row["prioridade"] or "Normal"),
+        status=str(row["status"] or "Pendente"),
+        criadoPor=str(row["criado_por"] or ""),
+        criadoEm=str(row["criado_em"] or ""),
+        atualizadoPor=str(row["atualizado_por"] or ""),
+        atualizadoEm=str(row["atualizado_em"] or ""),
+    )
+
+
+def buscar_atividade_com_responsavel(conn: sqlite3.Connection, atividade_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        """SELECT a.*, u.nome AS responsavel_nome FROM agenda_atividades a
+           JOIN usuarios u ON u.id=a.responsavel_id WHERE a.id=?""",
+        (int(atividade_id),),
+    ).fetchone()
+
+
+@app.get("/api/atividades", response_model=list[AgendaAtividadeResposta])
+def listar_atividades(request: Request, data_inicio: str = Query(default=""), data_fim: str = Query(default="")):
+    conn = conectar()
+    try:
+        usuario, acesso_equipe = validar_acesso_atividades(conn, request)
+        filtros, parametros = [], []
+        if data_inicio:
+            filtros.append("a.data_atividade>=?")
+            parametros.append(data_inicio)
+        if data_fim:
+            filtros.append("a.data_atividade<=?")
+            parametros.append(data_fim)
+        if not acesso_equipe:
+            filtros.append("a.responsavel_id=?")
+            parametros.append(int(usuario["id"]))
+        where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
+        rows = conn.execute(
+            f"""SELECT a.*, u.nome AS responsavel_nome FROM agenda_atividades a
+                JOIN usuarios u ON u.id=a.responsavel_id {where}
+                ORDER BY a.data_atividade, COALESCE(a.hora_inicio, ''), a.id""",
+            tuple(parametros),
+        ).fetchall()
+        return [mapear_atividade(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/atividades", response_model=AgendaAtividadeResposta)
+def criar_atividade(payload: AgendaAtividadePayload, request: Request):
+    titulo = corrigir_texto_importado(str(payload.titulo or "").strip())
+    if not titulo:
+        raise HTTPException(status_code=400, detail="Informe o título da atividade.")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(payload.data_atividade or "")):
+        raise HTTPException(status_code=400, detail="Informe uma data válida.")
+    conn = conectar()
+    try:
+        usuario, acesso_equipe = validar_acesso_atividades(conn, request)
+        responsavel_id = int(payload.responsavel_id or usuario["id"])
+        if not acesso_equipe and responsavel_id != int(usuario["id"]):
+            raise HTTPException(status_code=403, detail="Você só pode criar atividades para si.")
+        responsavel = conn.execute("SELECT id FROM usuarios WHERE id=? AND ativo=1", (responsavel_id,)).fetchone()
+        if responsavel is None:
+            raise HTTPException(status_code=400, detail="Selecione um funcionário ativo.")
+        prioridade = payload.prioridade if payload.prioridade in PRIORIDADE_ATIVIDADE_VALIDAS else "Normal"
+        status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
+        momento, nome_usuario = agora_str(), str(usuario["nome"] or usuario["usuario"] or "")
+        cursor = conn.execute(
+            """INSERT INTO agenda_atividades
+               (titulo, descricao, responsavel_id, data_atividade, hora_inicio, hora_fim, prioridade, status, criado_por_id, criado_por, criado_em, atualizado_por, atualizado_em)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, int(usuario["id"]), nome_usuario, momento, nome_usuario, momento),
+        )
+        conn.commit()
+        row = buscar_atividade_com_responsavel(conn, int(cursor.lastrowid))
+        return mapear_atividade(row)
+    finally:
+        conn.close()
+
+
+@app.put("/api/atividades/{atividade_id}", response_model=AgendaAtividadeResposta)
+def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, request: Request):
+    conn = conectar()
+    try:
+        usuario, acesso_equipe = validar_acesso_atividades(conn, request)
+        atual = buscar_atividade_com_responsavel(conn, atividade_id)
+        if atual is None:
+            raise HTTPException(status_code=404, detail="Atividade não encontrada.")
+        if not acesso_equipe and int(atual["responsavel_id"]) != int(usuario["id"]):
+            raise HTTPException(status_code=403, detail="Você só pode alterar suas atividades.")
+        responsavel_id = int(payload.responsavel_id or atual["responsavel_id"])
+        if not acesso_equipe and responsavel_id != int(usuario["id"]):
+            raise HTTPException(status_code=403, detail="Você não pode transferir esta atividade.")
+        if conn.execute("SELECT id FROM usuarios WHERE id=? AND ativo=1", (responsavel_id,)).fetchone() is None:
+            raise HTTPException(status_code=400, detail="Selecione um funcionário ativo.")
+        titulo = corrigir_texto_importado(str(payload.titulo or "").strip())
+        if not titulo:
+            raise HTTPException(status_code=400, detail="Informe o título da atividade.")
+        prioridade = payload.prioridade if payload.prioridade in PRIORIDADE_ATIVIDADE_VALIDAS else "Normal"
+        status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
+        nome_usuario, momento = str(usuario["nome"] or usuario["usuario"] or ""), agora_str()
+        conn.execute(
+            """UPDATE agenda_atividades SET titulo=?, descricao=?, responsavel_id=?, data_atividade=?, hora_inicio=?, hora_fim=?, prioridade=?, status=?, atualizado_por=?, atualizado_em=? WHERE id=?""",
+            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, nome_usuario, momento, atividade_id),
+        )
+        conn.commit()
+        return mapear_atividade(buscar_atividade_com_responsavel(conn, atividade_id))
+    finally:
+        conn.close()
+
+
+@app.delete("/api/atividades/{atividade_id}")
+def excluir_atividade(atividade_id: int, request: Request):
+    conn = conectar()
+    try:
+        usuario, acesso_equipe = validar_acesso_atividades(conn, request)
+        atividade = buscar_atividade_com_responsavel(conn, atividade_id)
+        if atividade is None:
+            raise HTTPException(status_code=404, detail="Atividade não encontrada.")
+        if not acesso_equipe and int(atividade["responsavel_id"]) != int(usuario["id"]):
+            raise HTTPException(status_code=403, detail="Você só pode excluir suas atividades.")
+        conn.execute("DELETE FROM agenda_atividades WHERE id=?", (atividade_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
 
 
 @app.delete("/api/usuarios/{usuario_id}")

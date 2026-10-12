@@ -8,6 +8,8 @@ export type UsuarioSessao = {
   cargo?: string;
   agendaEscopo?: string;
   agendaDisponivel?: boolean;
+  atividadesAcesso?: boolean;
+  atividadesEscopo?: string;
   nomeAgenda?: string;
   modulos?: Record<string, string>;
   pacientesAbas?: Record<string, string>;

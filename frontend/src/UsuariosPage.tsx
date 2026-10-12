@@ -7,6 +7,7 @@ import { atualizarUsuarioApi, criarUsuarioApi, excluirUsuarioApi, listarUsuarios
 type NivelPermissao = "Sem acesso" | "Visualizacao" | "Edicao";
 type CargoUsuario = "Administrador" | "Profissional" | "Recepcionista";
 type AgendaEscopo = "Toda a clinica" | "Somente a propria";
+type AtividadesEscopo = "PROPRIAS" | "EQUIPE";
 
 type UsuarioPermissao = {
   id: number;
@@ -17,6 +18,8 @@ type UsuarioPermissao = {
   cargo: CargoUsuario;
   agendaEscopo: AgendaEscopo;
   agendaDisponivel: boolean;
+  atividadesAcesso: boolean;
+  atividadesEscopo: AtividadesEscopo;
   status: "Ativo" | "Inativo";
   ultimoAcesso: string;
   modulos: Record<string, NivelPermissao>;
@@ -190,6 +193,8 @@ function mapUsuarioApi(usuario: UsuarioResumoApi): UsuarioPermissao {
     cargo: cargoInicial(usuario),
     agendaEscopo: agendaEscopoInicial(usuario),
     agendaDisponivel: usuario.agendaDisponivel ?? cargoInicial(usuario) === "Profissional",
+    atividadesAcesso: cargoInicial(usuario) === "Administrador" || Boolean(usuario.atividadesAcesso),
+    atividadesEscopo: cargoInicial(usuario) === "Administrador" || usuario.atividadesEscopo === "EQUIPE" ? "EQUIPE" : "PROPRIAS",
     status: (usuario.status as "Ativo" | "Inativo") || "Ativo",
     ultimoAcesso: usuario.ultimoAcesso || "-",
     modulos,
@@ -217,6 +222,8 @@ export function UsuariosPage() {
     cargo: "Profissional" as CargoUsuario,
     agendaEscopo: "Somente a propria" as AgendaEscopo,
     agendaDisponivel: true,
+    atividadesAcesso: false,
+    atividadesEscopo: "PROPRIAS" as AtividadesEscopo,
     status: "Ativo" as "Ativo" | "Inativo"
   });
   const [dataRelatorio, setDataRelatorio] = useState(hojeIso);
@@ -351,6 +358,8 @@ export function UsuariosPage() {
           perfil: padrao.perfil,
           agendaEscopo: cargo === "Profissional" ? usuario.agendaEscopo : padrao.agendaEscopo,
           agendaDisponivel: cargo === "Profissional" ? usuario.agendaDisponivel : false,
+          atividadesAcesso: cargo === "Administrador" ? true : usuario.atividadesAcesso,
+          atividadesEscopo: cargo === "Administrador" ? "EQUIPE" : usuario.atividadesEscopo,
           modulos: { ...padrao.modulos },
           pacientesAbas: { ...padrao.pacientesAbas }
         };
@@ -406,6 +415,8 @@ export function UsuariosPage() {
           cargo: novoUsuario.cargo,
           agenda_escopo: novoUsuario.cargo === "Profissional" ? novoUsuario.agendaEscopo : padrao.agendaEscopo,
           agenda_disponivel: cargoPodeTerAgenda(novoUsuario.cargo) ? novoUsuario.agendaDisponivel : false,
+          atividades_acesso: novoUsuario.cargo === "Administrador" || novoUsuario.atividadesAcesso,
+          atividades_escopo: novoUsuario.cargo === "Administrador" ? "EQUIPE" : novoUsuario.atividadesEscopo,
           perfil: padrao.perfil,
           ativo: novoUsuario.status === "Ativo",
           modulos: padrao.modulos,
@@ -419,6 +430,8 @@ export function UsuariosPage() {
           cargo: "Profissional",
           agendaEscopo: "Somente a propria",
           agendaDisponivel: true,
+          atividadesAcesso: false,
+          atividadesEscopo: "PROPRIAS",
           status: "Ativo"
         });
         setFeedbackPerfil("Usuário criado com sucesso.");
@@ -458,6 +471,8 @@ export function UsuariosPage() {
         cargo: usuarioSelecionado.cargo,
         agenda_escopo: usuarioSelecionado.agendaEscopo,
         agenda_disponivel: usuarioSelecionado.agendaDisponivel,
+        atividades_acesso: usuarioSelecionado.cargo === "Administrador" || usuarioSelecionado.atividadesAcesso,
+        atividades_escopo: usuarioSelecionado.cargo === "Administrador" ? "EQUIPE" : usuarioSelecionado.atividadesEscopo,
         perfil: usuarioSelecionado.perfil,
         ativo: usuarioSelecionado.status === "Ativo",
         modulos: usuarioSelecionado.modulos,
@@ -597,6 +612,28 @@ export function UsuariosPage() {
               >
                 <option value="Sim">Sim</option>
                 <option value="Nao">Não</option>
+              </select>
+            </label>
+            <label>
+              <span>Acesso à agenda de atividades</span>
+              <select
+                value={novoUsuario.cargo === "Administrador" || novoUsuario.atividadesAcesso ? "Sim" : "Nao"}
+                disabled={novoUsuario.cargo === "Administrador"}
+                onChange={(e) => setNovoUsuario((atual) => ({ ...atual, atividadesAcesso: e.target.value === "Sim" }))}
+              >
+                <option value="Sim">Sim</option>
+                <option value="Nao">Não</option>
+              </select>
+            </label>
+            <label>
+              <span>Atividades que pode visualizar</span>
+              <select
+                value={novoUsuario.cargo === "Administrador" ? "EQUIPE" : novoUsuario.atividadesEscopo}
+                disabled={novoUsuario.cargo === "Administrador" || !novoUsuario.atividadesAcesso}
+                onChange={(e) => setNovoUsuario((atual) => ({ ...atual, atividadesEscopo: e.target.value as AtividadesEscopo }))}
+              >
+                <option value="PROPRIAS">Somente as próprias</option>
+                <option value="EQUIPE">Toda a equipe</option>
               </select>
             </label>
             <label>
@@ -740,6 +777,28 @@ export function UsuariosPage() {
                     >
                       <option value="Sim">Sim</option>
                       <option value="Nao">Não</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Acesso à agenda de atividades</span>
+                    <select
+                      value={usuarioSelecionado.cargo === "Administrador" || usuarioSelecionado.atividadesAcesso ? "Sim" : "Nao"}
+                      disabled={usuarioSelecionado.cargo === "Administrador"}
+                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesAcesso: e.target.value === "Sim" })}
+                    >
+                      <option value="Sim">Sim</option>
+                      <option value="Nao">Não</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Atividades que pode visualizar</span>
+                    <select
+                      value={usuarioSelecionado.cargo === "Administrador" ? "EQUIPE" : usuarioSelecionado.atividadesEscopo}
+                      disabled={usuarioSelecionado.cargo === "Administrador" || !usuarioSelecionado.atividadesAcesso}
+                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesEscopo: e.target.value as AtividadesEscopo })}
+                    >
+                      <option value="PROPRIAS">Somente as próprias</option>
+                      <option value="EQUIPE">Toda a equipe</option>
                     </select>
                   </label>
                 </div>

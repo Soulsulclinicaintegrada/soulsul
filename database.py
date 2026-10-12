@@ -1285,6 +1285,8 @@ def inicializar_banco():
             cargo TEXT DEFAULT 'Administrador',
             agenda_escopo TEXT DEFAULT 'TODA_CLINICA',
             agenda_disponivel INTEGER DEFAULT 0,
+            atividades_acesso INTEGER DEFAULT 0,
+            atividades_escopo TEXT DEFAULT 'PROPRIAS',
             senha_temporaria INTEGER DEFAULT 1,
             precisa_trocar_senha INTEGER DEFAULT 1,
             ultimo_login TEXT,
@@ -1297,6 +1299,29 @@ def inicializar_banco():
             modulos_json TEXT DEFAULT '{}',
             pacientes_abas_json TEXT DEFAULT '{}',
             data_criacao TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS agenda_atividades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            descricao TEXT DEFAULT '',
+            responsavel_id INTEGER NOT NULL,
+            data_atividade TEXT NOT NULL,
+            hora_inicio TEXT DEFAULT '',
+            hora_fim TEXT DEFAULT '',
+            prioridade TEXT DEFAULT 'Normal',
+            status TEXT DEFAULT 'Pendente',
+            criado_por_id INTEGER,
+            criado_por TEXT DEFAULT '',
+            criado_em TEXT,
+            atualizado_por TEXT DEFAULT '',
+            atualizado_em TEXT,
+            FOREIGN KEY (responsavel_id) REFERENCES usuarios(id),
+            FOREIGN KEY (criado_por_id) REFERENCES usuarios(id)
         )
         """
     )
@@ -1564,6 +1589,9 @@ def inicializar_banco():
     garantir_coluna(conn, "usuarios", "cargo TEXT DEFAULT 'Administrador'")
     garantir_coluna(conn, "usuarios", "agenda_escopo TEXT DEFAULT 'TODA_CLINICA'")
     garantir_coluna(conn, "usuarios", "agenda_disponivel INTEGER DEFAULT 0")
+    garantir_coluna(conn, "usuarios", "atividades_acesso INTEGER DEFAULT 0")
+    garantir_coluna(conn, "usuarios", "atividades_escopo TEXT DEFAULT 'PROPRIAS'")
+    conn.execute("UPDATE usuarios SET atividades_acesso=1, atividades_escopo='EQUIPE' WHERE lower(COALESCE(perfil, ''))='administrador' OR lower(COALESCE(cargo, ''))='administrador'")
     garantir_coluna(conn, "usuarios", "senha_temporaria INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "precisa_trocar_senha INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "ultimo_login TEXT")
@@ -1838,6 +1866,8 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_paciente_id ON crm_contatos_historico(paciente_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_data ON agenda_atividades(data_atividade, hora_inicio)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_responsavel ON agenda_atividades(responsavel_id, data_atividade)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")
     garantir_usuario_admin_inicial(conn)

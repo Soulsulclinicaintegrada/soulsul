@@ -5,6 +5,7 @@
   ContactRound,
   Handshake,
   LayoutDashboard,
+  ListTodo,
   ShieldCheck,
   Stethoscope,
   TableProperties,
@@ -27,6 +28,7 @@ export type MenuKey =
   | "Pacientes"
   | "Guias"
   | "Agenda"
+  | "Atividades"
   | "CRM"
   | "Tabelas"
   | "Financeiro"
@@ -124,6 +126,7 @@ export const menuItems: MenuItem[] = [
   { key: "Pacientes", label: "Pacientes", icon: <ContactRound size={19} /> },
   { key: "Guias", label: "Guias", icon: <ToothIcon size={19} /> },
   { key: "Agenda", label: "Agenda", icon: <CalendarDays size={19} /> },
+  { key: "Atividades", label: "Atividades", icon: <ListTodo size={19} /> },
   { key: "CRM", label: "CRM", icon: <Handshake size={19} /> },
   { key: "Tabelas", label: "Tabelas", icon: <TableProperties size={19} /> },
   { key: "Financeiro", label: "Financeiro", icon: <WalletCards size={19} /> },
