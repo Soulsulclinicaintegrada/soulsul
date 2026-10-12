@@ -1180,6 +1180,11 @@ def validar_senha_gerencial_educacao(conn: sqlite3.Connection, senha: str) -> No
             (EDUCACAO_ADMIN_USUARIO,),
         ).fetchone()
     if administrador is None:
+        administrador = conn.execute(
+            "SELECT * FROM usuarios_educacao WHERE lower(usuario)=lower(?) AND ativo=1",
+            ("educacao.admin",),
+        ).fetchone()
+    if administrador is None:
         administrador = conn.execute("SELECT * FROM usuarios_educacao WHERE ativo=1 ORDER BY id LIMIT 1").fetchone()
     if administrador is None or not verificar_senha(str(senha or ""), administrador["senha_hash"]):
         raise HTTPException(status_code=403, detail="Senha gerencial inválida.")
