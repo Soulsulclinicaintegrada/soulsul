@@ -145,6 +145,7 @@ export type UsuarioResumoApi = {
   agendaEscopo: "Toda a clinica" | "Somente a propria" | string;
   agendaDisponivel: boolean;
   atividadesAcesso: boolean;
+  atividadesAgendaDisponivel: boolean;
   atividadesEscopo: "PROPRIAS" | "EQUIPE" | string;
   status: "Ativo" | "Inativo" | string;
   ultimoAcesso: string;
@@ -160,6 +161,7 @@ export type UsuarioPayloadApi = {
   agenda_escopo: string;
   agenda_disponivel?: boolean;
   atividades_acesso?: boolean;
+  atividades_agenda_disponivel?: boolean;
   atividades_escopo?: string;
   perfil?: string;
   ativo?: boolean;

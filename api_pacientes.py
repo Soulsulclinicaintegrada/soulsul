@@ -2701,6 +2701,7 @@ class UsuarioAtualizacaoPayload(BaseModel):
     agenda_escopo: str = ""
     agenda_disponivel: bool | None = None
     atividades_acesso: bool | None = None
+    atividades_agenda_disponivel: bool | None = None
     atividades_escopo: str = ""
     perfil: str = ""
     usuario: str = ""
@@ -2716,6 +2717,7 @@ class UsuarioCriacaoPayload(BaseModel):
     agenda_escopo: str = ""
     agenda_disponivel: bool | None = None
     atividades_acesso: bool | None = None
+    atividades_agenda_disponivel: bool | None = None
     atividades_escopo: str = "PROPRIAS"
     perfil: str = ""
     ativo: bool | None = True
@@ -2771,6 +2773,7 @@ class UsuarioResumoResposta(BaseModel):
     agendaEscopo: str = ""
     agendaDisponivel: bool = False
     atividadesAcesso: bool = False
+    atividadesAgendaDisponivel: bool = False
     atividadesEscopo: str = "PROPRIAS"
     status: str = "Ativo"
     ultimoAcesso: str = "-"
@@ -2787,6 +2790,7 @@ class LoginResposta(BaseModel):
     agendaEscopo: str = ""
     agendaDisponivel: bool = False
     atividadesAcesso: bool = False
+    atividadesAgendaDisponivel: bool = False
     atividadesEscopo: str = "PROPRIAS"
     nomeAgenda: str = ""
     modulos: dict[str, str] = Field(default_factory=dict)
@@ -3193,6 +3197,7 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
         agendaEscopo=str(usuario_row["agenda_escopo"] or ""),
         agendaDisponivel=bool(int(usuario_row["agenda_disponivel"] or 0)),
         atividadesAcesso=bool(int(usuario_row["atividades_acesso"] or 0)),
+        atividadesAgendaDisponivel=bool(int(usuario_row["atividades_agenda_disponivel"] or 0)),
         atividadesEscopo=str(usuario_row["atividades_escopo"] or "PROPRIAS"),
         nomeAgenda=str(usuario_row["nome_agenda"] or usuario_row["nome"] or "").upper(),
         modulos=json_dict_seguro(usuario_row["modulos_json"], modulos_padrao),
@@ -3459,6 +3464,7 @@ def mapear_usuario_resumo(usuario_row: sqlite3.Row) -> UsuarioResumoResposta:
         agendaEscopo=str(usuario_row["agenda_escopo"] or ""),
         agendaDisponivel=bool(int(usuario_row["agenda_disponivel"] or 0)),
         atividadesAcesso=bool(int(usuario_row["atividades_acesso"] or 0)),
+        atividadesAgendaDisponivel=bool(int(usuario_row["atividades_agenda_disponivel"] or 0)),
         atividadesEscopo=str(usuario_row["atividades_escopo"] or "PROPRIAS"),
         status="Ativo" if bool(int(usuario_row["ativo"] or 0)) else "Inativo",
         ultimoAcesso=str(usuario_row["ultimo_login"] or "-"),
@@ -3835,6 +3841,7 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
     agenda_escopo = corrigir_texto_importado(str(payload.agenda_escopo or "").strip()) or agenda_padrao
     agenda_disponivel = bool(payload.agenda_disponivel if payload.agenda_disponivel is not None else cargo in {"Profissional", "Administrador"})
     atividades_acesso = bool(payload.atividades_acesso if payload.atividades_acesso is not None else cargo == "Administrador")
+    atividades_agenda_disponivel = bool(payload.atividades_agenda_disponivel if payload.atividades_agenda_disponivel is not None else False)
     atividades_escopo = "EQUIPE" if str(payload.atividades_escopo or "").strip().upper() == "EQUIPE" else "PROPRIAS"
     ativo = 1 if (payload.ativo if payload.ativo is not None else True) else 0
 
@@ -3846,8 +3853,8 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
         cursor = conn.execute(
             """
             INSERT INTO usuarios
-            (nome, usuario, nome_agenda, senha_hash, perfil, cargo, agenda_escopo, agenda_disponivel, atividades_acesso, atividades_escopo, senha_temporaria, precisa_trocar_senha, ultimo_login, ativo, modulos_json, pacientes_abas_json, data_criacao)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, '', ?, ?, ?, ?)
+            (nome, usuario, nome_agenda, senha_hash, perfil, cargo, agenda_escopo, agenda_disponivel, atividades_acesso, atividades_agenda_disponivel, atividades_escopo, senha_temporaria, precisa_trocar_senha, ultimo_login, ativo, modulos_json, pacientes_abas_json, data_criacao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, '', ?, ?, ?, ?)
             """,
             (
                 nome,
@@ -3859,6 +3866,7 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
                 agenda_escopo,
                 1 if agenda_disponivel else 0,
                 1 if atividades_acesso else 0,
+                1 if atividades_agenda_disponivel else 0,
                 atividades_escopo,
                 ativo,
                 json.dumps(modulos, ensure_ascii=False),
@@ -3946,6 +3954,7 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
                 agenda_escopo=?,
                 agenda_disponivel=COALESCE(?, agenda_disponivel),
                 atividades_acesso=COALESCE(?, atividades_acesso),
+                atividades_agenda_disponivel=COALESCE(?, atividades_agenda_disponivel),
                 atividades_escopo=COALESCE(NULLIF(?, ''), atividades_escopo),
                 ativo=COALESCE(?, ativo),
                 modulos_json=?,
@@ -3961,6 +3970,7 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
                 agenda_escopo or str(usuario_row["agenda_escopo"] or "") or agenda_padrao,
                 1 if payload.agenda_disponivel else 0 if payload.agenda_disponivel is not None else None,
                 1 if payload.atividades_acesso else 0 if payload.atividades_acesso is not None else None,
+                1 if payload.atividades_agenda_disponivel else 0 if payload.atividades_agenda_disponivel is not None else None,
                 "EQUIPE" if str(payload.atividades_escopo or "").strip().upper() == "EQUIPE" else "PROPRIAS" if str(payload.atividades_escopo or "").strip() else "",
                 1 if payload.ativo else 0 if payload.ativo is not None else None,
                 json.dumps(modulos, ensure_ascii=False),
@@ -3993,7 +4003,7 @@ def validar_acesso_atividades(conn: sqlite3.Connection, request: Request) -> tup
     if usuario is None:
         raise HTTPException(status_code=401, detail="Usuário não identificado.")
     administrador = str(usuario["perfil"] or "").strip().lower() == "administrador" or str(usuario["cargo"] or "").strip().lower() == "administrador"
-    if not administrador and not bool(int(usuario["atividades_acesso"] or 0)):
+    if not bool(int(usuario["atividades_acesso"] or 0)):
         raise HTTPException(status_code=403, detail="Usuário sem acesso à agenda de atividades.")
     acesso_equipe = administrador or str(usuario["atividades_escopo"] or "").strip().upper() == "EQUIPE"
     return usuario, acesso_equipe
@@ -4048,11 +4058,11 @@ def listar_responsaveis_atividades(request: Request):
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
         if acesso_equipe:
             rows = conn.execute(
-                "SELECT id, nome FROM usuarios WHERE ativo=1 AND atividades_acesso=1 ORDER BY nome COLLATE NOCASE"
+                "SELECT id, nome FROM usuarios WHERE ativo=1 AND atividades_agenda_disponivel=1 ORDER BY nome COLLATE NOCASE"
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, nome FROM usuarios WHERE id=? AND ativo=1",
+                "SELECT id, nome FROM usuarios WHERE id=? AND ativo=1 AND atividades_agenda_disponivel=1",
                 (int(usuario["id"]),),
             ).fetchall()
         return [ResponsavelAtividadeResposta(id=int(row["id"]), nome=corrigir_texto_importado(str(row["nome"] or ""))) for row in rows]
@@ -4207,7 +4217,7 @@ def excluir_usuario(usuario_id: int, request: Request):
 
         conn.execute(
             """UPDATE usuarios
-               SET ativo=0, agenda_disponivel=0, atividades_acesso=0
+               SET ativo=0, agenda_disponivel=0, atividades_acesso=0, atividades_agenda_disponivel=0
                WHERE id=?""",
             (int(usuario_id),),
         )

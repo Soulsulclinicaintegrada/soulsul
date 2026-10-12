@@ -1286,6 +1286,7 @@ def inicializar_banco():
             agenda_escopo TEXT DEFAULT 'TODA_CLINICA',
             agenda_disponivel INTEGER DEFAULT 0,
             atividades_acesso INTEGER DEFAULT 0,
+            atividades_agenda_disponivel INTEGER DEFAULT 0,
             atividades_escopo TEXT DEFAULT 'PROPRIAS',
             senha_temporaria INTEGER DEFAULT 1,
             precisa_trocar_senha INTEGER DEFAULT 1,
@@ -1617,8 +1618,8 @@ def inicializar_banco():
     garantir_coluna(conn, "usuarios", "agenda_escopo TEXT DEFAULT 'TODA_CLINICA'")
     garantir_coluna(conn, "usuarios", "agenda_disponivel INTEGER DEFAULT 0")
     garantir_coluna(conn, "usuarios", "atividades_acesso INTEGER DEFAULT 0")
+    garantir_coluna(conn, "usuarios", "atividades_agenda_disponivel INTEGER DEFAULT 0")
     garantir_coluna(conn, "usuarios", "atividades_escopo TEXT DEFAULT 'PROPRIAS'")
-    conn.execute("UPDATE usuarios SET atividades_acesso=1, atividades_escopo='EQUIPE' WHERE lower(COALESCE(perfil, ''))='administrador' OR lower(COALESCE(cargo, ''))='administrador'")
     garantir_coluna(conn, "usuarios", "senha_temporaria INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "precisa_trocar_senha INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "ultimo_login TEXT")
@@ -1912,6 +1913,15 @@ def inicializar_banco():
         )
         conn.execute(
             "INSERT INTO sistema_migracoes (chave, aplicado_em) VALUES ('atividades_equipe_administrativa_v1', ?)",
+            (agora_str(),),
+        )
+    migracao_agenda_atividades = conn.execute(
+        "SELECT chave FROM sistema_migracoes WHERE chave='agenda_atividades_responsaveis_v1' LIMIT 1"
+    ).fetchone()
+    if migracao_agenda_atividades is None:
+        conn.execute("UPDATE usuarios SET atividades_agenda_disponivel=atividades_acesso WHERE ativo=1")
+        conn.execute(
+            "INSERT INTO sistema_migracoes (chave, aplicado_em) VALUES ('agenda_atividades_responsaveis_v1', ?)",
             (agora_str(),),
         )
     garantir_configuracao_usuarios_agenda(conn)

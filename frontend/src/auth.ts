@@ -9,6 +9,7 @@ export type UsuarioSessao = {
   agendaEscopo?: string;
   agendaDisponivel?: boolean;
   atividadesAcesso?: boolean;
+  atividadesAgendaDisponivel?: boolean;
   atividadesEscopo?: string;
   nomeAgenda?: string;
   modulos?: Record<string, string>;

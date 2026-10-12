@@ -218,8 +218,7 @@ function App() {
   const permissoesUsuario = useMemo(() => mesclarPermissoes(permissoesSessao, usuarioLogado), [permissoesSessao, usuarioLogado]);
   const modulosUsuario = permissoesUsuario.modulos;
   const pacientesAbasUsuario = permissoesUsuario.pacientesAbas;
-  const administrador = String(usuarioLogado?.perfil || usuarioLogado?.cargo || "").toLowerCase() === "administrador";
-  const atividadesPermitidas = administrador || Boolean(usuarioLogado?.atividadesAcesso);
+  const atividadesPermitidas = Boolean(usuarioLogado?.atividadesAcesso);
   const menuDisponivel = useMemo(
     () => menuItems.filter((item) => item.key === "Atividades" ? atividadesPermitidas : nivelPermissao(modulosUsuario[MENU_TO_MODULO[item.key]]) > 0),
     [atividadesPermitidas, modulosUsuario]
@@ -326,6 +325,7 @@ function App() {
             agendaEscopo: cadastroAtual.agendaEscopo,
             agendaDisponivel: cadastroAtual.agendaDisponivel,
             atividadesAcesso: cadastroAtual.atividadesAcesso,
+            atividadesAgendaDisponivel: cadastroAtual.atividadesAgendaDisponivel,
             atividadesEscopo: cadastroAtual.atividadesEscopo,
             nomeAgenda: cadastroAtual.nomeAgenda,
             modulos: cadastroAtual.modulos,
@@ -341,6 +341,7 @@ function App() {
             && sessaoAtualizada.agendaEscopo === sessaoAtual.agendaEscopo
             && sessaoAtualizada.agendaDisponivel === sessaoAtual.agendaDisponivel
             && sessaoAtualizada.atividadesAcesso === sessaoAtual.atividadesAcesso
+            && sessaoAtualizada.atividadesAgendaDisponivel === sessaoAtual.atividadesAgendaDisponivel
             && sessaoAtualizada.atividadesEscopo === sessaoAtual.atividadesEscopo
             && sessaoAtualizada.nomeAgenda === sessaoAtual.nomeAgenda;
           if (semAlteracao) return sessaoAtual;
