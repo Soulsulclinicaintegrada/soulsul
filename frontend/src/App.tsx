@@ -1107,7 +1107,6 @@ function App() {
           <div className="brand-logo-wrap">
             <img className="brand-logo" src={logoUrl} alt="SoulSul" />
           </div>
-          <div className="brand-title">SoulSul</div>
         </div>
 
         <div className="sidebar-section-title">Menu</div>
