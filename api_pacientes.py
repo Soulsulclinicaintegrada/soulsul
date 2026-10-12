@@ -2806,6 +2806,7 @@ class AgendaAtividadePayload(BaseModel):
     titulo: str
     descricao: str = ""
     responsavel_id: int = 0
+    responsaveis_ids: list[int] = Field(default_factory=list)
     data_atividade: str
     hora_inicio: str = ""
     hora_fim: str = ""
@@ -2824,6 +2825,8 @@ class AgendaAtividadeResposta(BaseModel):
     descricao: str = ""
     responsavelId: int
     responsavelNome: str
+    responsaveisIds: list[int] = Field(default_factory=list)
+    responsaveisNomes: list[str] = Field(default_factory=list)
     dataAtividade: str
     horaInicio: str = ""
     horaFim: str = ""
@@ -3996,13 +3999,28 @@ def validar_acesso_atividades(conn: sqlite3.Connection, request: Request) -> tup
     return usuario, acesso_equipe
 
 
-def mapear_atividade(row: sqlite3.Row) -> AgendaAtividadeResposta:
+def responsaveis_da_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> list[sqlite3.Row]:
+    rows = conn.execute(
+        """SELECT u.id, u.nome FROM agenda_atividade_responsaveis ar
+           JOIN usuarios u ON u.id=ar.usuario_id
+           WHERE ar.atividade_id=? ORDER BY lower(u.nome), u.id""",
+        (int(row["id"]),),
+    ).fetchall()
+    if rows:
+        return rows
+    return [{"id": int(row["responsavel_id"]), "nome": str(row["responsavel_nome"] or "")}]
+
+
+def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendaAtividadeResposta:
+    responsaveis = responsaveis_da_atividade(conn, row)
     return AgendaAtividadeResposta(
         id=int(row["id"]),
         titulo=corrigir_texto_importado(str(row["titulo"] or "")),
         descricao=corrigir_texto_importado(str(row["descricao"] or "")),
         responsavelId=int(row["responsavel_id"]),
         responsavelNome=corrigir_texto_importado(str(row["responsavel_nome"] or "")),
+        responsaveisIds=[int(item["id"]) for item in responsaveis],
+        responsaveisNomes=[corrigir_texto_importado(str(item["nome"] or "")) for item in responsaveis],
         dataAtividade=str(row["data_atividade"] or ""),
         horaInicio=str(row["hora_inicio"] or ""),
         horaFim=str(row["hora_fim"] or ""),
@@ -4055,7 +4073,8 @@ def listar_atividades(request: Request, data_inicio: str = Query(default=""), da
             filtros.append("a.data_atividade<=?")
             parametros.append(data_fim)
         if not acesso_equipe:
-            filtros.append("a.responsavel_id=?")
+            filtros.append("(a.responsavel_id=? OR EXISTS (SELECT 1 FROM agenda_atividade_responsaveis ar WHERE ar.atividade_id=a.id AND ar.usuario_id=?))")
+            parametros.append(int(usuario["id"]))
             parametros.append(int(usuario["id"]))
         where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
         rows = conn.execute(
@@ -4064,7 +4083,7 @@ def listar_atividades(request: Request, data_inicio: str = Query(default=""), da
                 ORDER BY a.data_atividade, COALESCE(a.hora_inicio, ''), a.id""",
             tuple(parametros),
         ).fetchall()
-        return [mapear_atividade(row) for row in rows]
+        return [mapear_atividade(conn, row) for row in rows]
     finally:
         conn.close()
 
@@ -4079,12 +4098,15 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
     conn = conectar()
     try:
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
-        responsavel_id = int(payload.responsavel_id or usuario["id"])
-        if not acesso_equipe and responsavel_id != int(usuario["id"]):
+        responsaveis_ids = list(dict.fromkeys(int(item) for item in (payload.responsaveis_ids or [payload.responsavel_id or usuario["id"]]) if int(item) > 0))
+        if not responsaveis_ids:
+            responsaveis_ids = [int(usuario["id"])]
+        responsavel_id = responsaveis_ids[0]
+        if not acesso_equipe and responsaveis_ids != [int(usuario["id"])]:
             raise HTTPException(status_code=403, detail="Você só pode criar atividades para si.")
-        responsavel = conn.execute("SELECT id FROM usuarios WHERE id=? AND ativo=1", (responsavel_id,)).fetchone()
-        if responsavel is None:
-            raise HTTPException(status_code=400, detail="Selecione um funcionário ativo.")
+        ativos = conn.execute(f"SELECT id FROM usuarios WHERE ativo=1 AND id IN ({','.join('?' for _ in responsaveis_ids)})", tuple(responsaveis_ids)).fetchall()
+        if len(ativos) != len(responsaveis_ids):
+            raise HTTPException(status_code=400, detail="Selecione apenas funcionários ativos.")
         prioridade = payload.prioridade if payload.prioridade in PRIORIDADE_ATIVIDADE_VALIDAS else "Normal"
         status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
         momento, nome_usuario = agora_str(), str(usuario["nome"] or usuario["usuario"] or "")
@@ -4094,9 +4116,14 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, int(usuario["id"]), nome_usuario, momento, nome_usuario, momento),
         )
+        atividade_id = int(cursor.lastrowid)
+        conn.executemany(
+            "INSERT INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
+            [(atividade_id, responsavel) for responsavel in responsaveis_ids],
+        )
         conn.commit()
-        row = buscar_atividade_com_responsavel(conn, int(cursor.lastrowid))
-        return mapear_atividade(row)
+        row = buscar_atividade_com_responsavel(conn, atividade_id)
+        return mapear_atividade(conn, row)
     finally:
         conn.close()
 
@@ -4109,13 +4136,16 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
         atual = buscar_atividade_com_responsavel(conn, atividade_id)
         if atual is None:
             raise HTTPException(status_code=404, detail="Atividade não encontrada.")
-        if not acesso_equipe and int(atual["responsavel_id"]) != int(usuario["id"]):
+        responsaveis_atuais = [int(item["id"]) for item in responsaveis_da_atividade(conn, atual)]
+        if not acesso_equipe and int(usuario["id"]) not in responsaveis_atuais:
             raise HTTPException(status_code=403, detail="Você só pode alterar suas atividades.")
-        responsavel_id = int(payload.responsavel_id or atual["responsavel_id"])
-        if not acesso_equipe and responsavel_id != int(usuario["id"]):
+        responsaveis_ids = list(dict.fromkeys(int(item) for item in (payload.responsaveis_ids or [payload.responsavel_id or atual["responsavel_id"]]) if int(item) > 0))
+        responsavel_id = responsaveis_ids[0]
+        if not acesso_equipe and responsaveis_ids != [int(usuario["id"])]:
             raise HTTPException(status_code=403, detail="Você não pode transferir esta atividade.")
-        if conn.execute("SELECT id FROM usuarios WHERE id=? AND ativo=1", (responsavel_id,)).fetchone() is None:
-            raise HTTPException(status_code=400, detail="Selecione um funcionário ativo.")
+        ativos = conn.execute(f"SELECT id FROM usuarios WHERE ativo=1 AND id IN ({','.join('?' for _ in responsaveis_ids)})", tuple(responsaveis_ids)).fetchall()
+        if len(ativos) != len(responsaveis_ids):
+            raise HTTPException(status_code=400, detail="Selecione apenas funcionários ativos.")
         titulo = corrigir_texto_importado(str(payload.titulo or "").strip())
         if not titulo:
             raise HTTPException(status_code=400, detail="Informe o título da atividade.")
@@ -4126,8 +4156,13 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
             """UPDATE agenda_atividades SET titulo=?, descricao=?, responsavel_id=?, data_atividade=?, hora_inicio=?, hora_fim=?, prioridade=?, status=?, atualizado_por=?, atualizado_em=? WHERE id=?""",
             (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, nome_usuario, momento, atividade_id),
         )
+        conn.execute("DELETE FROM agenda_atividade_responsaveis WHERE atividade_id=?", (atividade_id,))
+        conn.executemany(
+            "INSERT INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
+            [(atividade_id, responsavel) for responsavel in responsaveis_ids],
+        )
         conn.commit()
-        return mapear_atividade(buscar_atividade_com_responsavel(conn, atividade_id))
+        return mapear_atividade(conn, buscar_atividade_com_responsavel(conn, atividade_id))
     finally:
         conn.close()
 
@@ -4140,8 +4175,10 @@ def excluir_atividade(atividade_id: int, request: Request):
         atividade = buscar_atividade_com_responsavel(conn, atividade_id)
         if atividade is None:
             raise HTTPException(status_code=404, detail="Atividade não encontrada.")
-        if not acesso_equipe and int(atividade["responsavel_id"]) != int(usuario["id"]):
+        responsaveis_ids = [int(item["id"]) for item in responsaveis_da_atividade(conn, atividade)]
+        if not acesso_equipe and int(usuario["id"]) not in responsaveis_ids:
             raise HTTPException(status_code=403, detail="Você só pode excluir suas atividades.")
+        conn.execute("DELETE FROM agenda_atividade_responsaveis WHERE atividade_id=?", (atividade_id,))
         conn.execute("DELETE FROM agenda_atividades WHERE id=?", (atividade_id,))
         conn.commit()
         return {"ok": True}

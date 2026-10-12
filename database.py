@@ -1328,6 +1328,25 @@ def inicializar_banco():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS agenda_atividade_responsaveis (
+            atividade_id INTEGER NOT NULL,
+            usuario_id INTEGER NOT NULL,
+            PRIMARY KEY (atividade_id, usuario_id),
+            FOREIGN KEY (atividade_id) REFERENCES agenda_atividades(id),
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO agenda_atividade_responsaveis (atividade_id, usuario_id)
+        SELECT id, responsavel_id FROM agenda_atividades
+        WHERE responsavel_id IS NOT NULL
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS agenda_configuracao (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             ordem_profissionais_json TEXT DEFAULT '[]',
@@ -1868,6 +1887,7 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_data ON agenda_atividades(data_atividade, hora_inicio)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_responsavel ON agenda_atividades(responsavel_id, data_atividade)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividade_responsaveis_usuario ON agenda_atividade_responsaveis(usuario_id, atividade_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_usuario ON acoes_usuario(usuario)")
     garantir_usuario_admin_inicial(conn)

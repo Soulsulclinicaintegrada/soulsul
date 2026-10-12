@@ -1,5 +1,5 @@
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Circle, Clock3, Pencil, Plus, Trash2, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { UsuarioSessao } from "./auth";
 import {
   atualizarAtividadeApi,
@@ -16,6 +16,7 @@ type Props = { usuarioLogado: UsuarioSessao };
 
 const STATUS = ["Pendente", "Em andamento", "Concluída", "Cancelada"];
 const PRIORIDADES = ["Baixa", "Normal", "Alta", "Urgente"];
+const CORES_RESPONSAVEIS = ["#7b61a8", "#2f7d66", "#b0603d", "#4175a6", "#9a6b22", "#a64f72", "#527b35", "#725b9d", "#277f87"];
 
 function dataIso(data: Date) {
   const ano = data.getFullYear();
@@ -38,7 +39,7 @@ function inicioSemana(valor: string) {
 }
 
 function payloadVazio(usuarioId: number, data: string): AgendaAtividadePayloadApi {
-  return { titulo: "", descricao: "", responsavel_id: usuarioId, data_atividade: data, hora_inicio: "09:00", hora_fim: "10:00", prioridade: "Normal", status: "Pendente" };
+  return { titulo: "", descricao: "", responsavel_id: usuarioId, responsaveis_ids: [usuarioId], data_atividade: data, hora_inicio: "09:00", hora_fim: "10:00", prioridade: "Normal", status: "Pendente" };
 }
 
 function rotuloDia(valor: string) {
@@ -83,13 +84,15 @@ export function AtividadesPage({ usuarioLogado }: Props) {
 
   useEffect(() => {
     if (!usuarios.length) return;
-    setForm((atual) => usuarios.some((usuario) => usuario.id === atual.responsavel_id)
-      ? atual
-      : { ...atual, responsavel_id: usuarios[0].id });
+    setForm((atual) => {
+      const responsaveisValidos = atual.responsaveis_ids.filter((id) => usuarios.some((usuario) => usuario.id === id));
+      const ids = responsaveisValidos.length ? responsaveisValidos : [usuarios[0].id];
+      return { ...atual, responsavel_id: ids[0], responsaveis_ids: ids };
+    });
   }, [usuarios]);
 
   const visiveis = useMemo(
-    () => responsavelFiltro ? atividades.filter((item) => item.responsavelId === responsavelFiltro) : atividades,
+    () => responsavelFiltro ? atividades.filter((item) => (item.responsaveisIds || [item.responsavelId]).includes(responsavelFiltro)) : atividades,
     [atividades, responsavelFiltro]
   );
 
@@ -102,7 +105,8 @@ export function AtividadesPage({ usuarioLogado }: Props) {
 
   function abrirEdicao(item: AgendaAtividadeApi) {
     setEditandoId(item.id);
-    setForm({ titulo: item.titulo, descricao: item.descricao || "", responsavel_id: item.responsavelId, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "09:00", hora_fim: item.horaFim || "10:00", prioridade: item.prioridade, status: item.status });
+    const ids = item.responsaveisIds?.length ? item.responsaveisIds : [item.responsavelId];
+    setForm({ titulo: item.titulo, descricao: item.descricao || "", responsavel_id: ids[0], responsaveis_ids: ids, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "09:00", hora_fim: item.horaFim || "10:00", prioridade: item.prioridade, status: item.status });
     setFormAberto(true);
     setErro("");
   }
@@ -121,7 +125,8 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   }
 
   async function mudarStatus(item: AgendaAtividadeApi, status: string) {
-    const atualizada = await atualizarAtividadeApi(item.id, { titulo: item.titulo, descricao: item.descricao || "", responsavel_id: item.responsavelId, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "", hora_fim: item.horaFim || "", prioridade: item.prioridade, status }, identificadorUsuario);
+    const ids = item.responsaveisIds?.length ? item.responsaveisIds : [item.responsavelId];
+    const atualizada = await atualizarAtividadeApi(item.id, { titulo: item.titulo, descricao: item.descricao || "", responsavel_id: ids[0], responsaveis_ids: ids, data_atividade: item.dataAtividade, hora_inicio: item.horaInicio || "", hora_fim: item.horaFim || "", prioridade: item.prioridade, status }, identificadorUsuario);
     setAtividades((atuais) => atuais.map((atual) => atual.id === item.id ? atualizada : atual));
   }
 
@@ -129,6 +134,21 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     if (!window.confirm(`Excluir a atividade “${item.titulo}”?`)) return;
     await excluirAtividadeApi(item.id, identificadorUsuario);
     setAtividades((atuais) => atuais.filter((atual) => atual.id !== item.id));
+  }
+
+  function corResponsavel(id: number) {
+    const indice = Math.max(0, usuarios.findIndex((usuario) => usuario.id === id));
+    return CORES_RESPONSAVEIS[indice % CORES_RESPONSAVEIS.length];
+  }
+
+  function alternarResponsavel(id: number) {
+    setForm((atual) => {
+      const selecionados = atual.responsaveis_ids.includes(id)
+        ? atual.responsaveis_ids.filter((item) => item !== id)
+        : [...atual.responsaveis_ids, id];
+      const ids = selecionados.length ? selecionados : atual.responsaveis_ids;
+      return { ...atual, responsaveis_ids: ids, responsavel_id: ids[0] };
+    });
   }
 
   return <section className="activities-page">
@@ -141,6 +161,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
       <div className="activities-nav"><button onClick={() => setReferencia(adicionarDias(referencia, -7))}><ChevronLeft size={17}/></button><button onClick={() => setReferencia(hoje)}>Hoje</button><button onClick={() => setReferencia(adicionarDias(referencia, 7))}><ChevronRight size={17}/></button><strong>{new Date(`${dias[0]}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" })} — {new Date(`${dias[6]}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</strong></div>
       {acessoEquipe ? <label className="activities-filter"><Users size={16}/><select value={responsavelFiltro} onChange={(event) => setResponsavelFiltro(Number(event.target.value))}><option value={0}>Toda a equipe</option>{usuarios.map((usuario) => <option value={usuario.id} key={usuario.id}>{usuario.nome}</option>)}</select></label> : null}
     </div>
+    {acessoEquipe ? <div className="activities-people-strip"><button className={!responsavelFiltro ? "active" : ""} onClick={() => setResponsavelFiltro(0)}>Todos</button>{usuarios.map((usuario) => <button key={usuario.id} className={responsavelFiltro === usuario.id ? "active" : ""} style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties} onClick={() => setResponsavelFiltro((atual) => atual === usuario.id ? 0 : usuario.id)}><i/>{usuario.nome}</button>)}</div> : null}
 
     {erro && !formAberto ? <div className="crm-inline-alert">{erro}</div> : null}
     <div className="activities-week">
@@ -148,9 +169,9 @@ export function AtividadesPage({ usuarioLogado }: Props) {
         const itens = visiveis.filter((item) => item.dataAtividade === dia);
         return <section className={`activities-day${dia === hoje ? " today" : ""}`} key={dia}>
           <header><div><CalendarDays size={15}/><strong>{rotuloDia(dia)}</strong></div><button onClick={() => abrirNova(dia)} aria-label={`Adicionar atividade em ${rotuloDia(dia)}`}><Plus size={15}/></button></header>
-          <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} key={item.id}>
-            <div className="activity-card-top"><span><Clock3 size={13}/>{item.horaInicio || "Sem horário"}{item.horaFim ? `–${item.horaFim}` : ""}</span><b>{item.prioridade}</b></div>
-            <strong>{item.titulo}</strong>{acessoEquipe ? <small>{item.responsavelNome}</small> : null}{item.descricao ? <p>{item.descricao}</p> : null}
+          <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} style={{ "--activity-person-color": corResponsavel((item.responsaveisIds || [item.responsavelId])[0]) } as CSSProperties} key={item.id}>
+            <div className="activity-card-top"><span><Clock3 size={13}/>{item.horaInicio || "Sem horário"}{item.horaFim ? `–${item.horaFim}` : ""}</span><b className="activity-priority-tag">{item.prioridade}</b></div>
+            <strong className="activity-card-title">{item.titulo}</strong>{acessoEquipe ? <div className="activity-assignees">{(item.responsaveisIds || [item.responsavelId]).map((id, indice) => <small key={id} style={{ "--person-color": corResponsavel(id) } as CSSProperties}><i/>{item.responsaveisNomes?.[indice] || usuarios.find((usuario) => usuario.id === id)?.nome || item.responsavelNome}</small>)}</div> : null}{item.descricao ? <p>{item.descricao}</p> : null}
             <div className="activity-card-actions"><select value={item.status} onChange={(event) => void mudarStatus(item, event.target.value)}>{STATUS.map((status) => <option key={status}>{status}</option>)}</select><button onClick={() => abrirEdicao(item)} title="Editar"><Pencil size={14}/></button><button onClick={() => void remover(item)} title="Excluir"><Trash2 size={14}/></button></div>
           </article>)}{!itens.length ? <button className="activities-empty" onClick={() => abrirNova(dia)}>+ Adicionar atividade</button> : null}</div>
         </section>;
@@ -161,7 +182,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     {formAberto ? <div className="education-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormAberto(false); }}><div className="education-modal activity-modal">
       <div className="education-list-head"><div><span className="page-eyebrow">{editandoId ? "EDITAR" : "NOVA"}</span><h2>{editandoId ? "Editar atividade" : "Nova atividade"}</h2></div><button onClick={() => setFormAberto(false)}><X size={18}/></button></div>
       {erro ? <div className="crm-inline-alert">{erro}</div> : null}
-      <div className="activity-form-grid"><label className="wide"><span>Título</span><input value={form.titulo} onChange={(event) => setForm({ ...form, titulo: event.target.value })}/></label>{acessoEquipe ? <label className="wide"><span>Responsável</span><select value={form.responsavel_id} disabled={!usuarios.length} onChange={(event) => setForm({ ...form, responsavel_id: Number(event.target.value) })}>{!usuarios.length ? <option value={0}>Carregando funcionários...</option> : null}{usuarios.map((usuario) => <option value={usuario.id} key={usuario.id}>{usuario.nome}</option>)}</select></label> : null}<label><span>Data</span><input type="date" value={form.data_atividade} onChange={(event) => setForm({ ...form, data_atividade: event.target.value })}/></label><label><span>Prioridade</span><select value={form.prioridade} onChange={(event) => setForm({ ...form, prioridade: event.target.value })}>{PRIORIDADES.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Início</span><input type="time" value={form.hora_inicio} onChange={(event) => setForm({ ...form, hora_inicio: event.target.value })}/></label><label><span>Fim</span><input type="time" value={form.hora_fim} onChange={(event) => setForm({ ...form, hora_fim: event.target.value })}/></label><label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{STATUS.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide"><span>Descrição</span><textarea rows={4} value={form.descricao} onChange={(event) => setForm({ ...form, descricao: event.target.value })}/></label></div>
+      <div className="activity-form-grid"><label className="wide"><span>Título</span><input value={form.titulo} onChange={(event) => setForm((atual) => ({ ...atual, titulo: event.target.value }))}/></label>{acessoEquipe ? <fieldset className="wide activity-assignee-picker" disabled={!usuarios.length}><legend>Responsáveis</legend>{!usuarios.length ? <span>Carregando funcionários...</span> : usuarios.map((usuario) => <label key={usuario.id} style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties}><input type="checkbox" checked={form.responsaveis_ids.includes(usuario.id)} onChange={() => alternarResponsavel(usuario.id)}/><i/>{usuario.nome}</label>)}</fieldset> : null}<label><span>Data</span><input type="date" value={form.data_atividade} onChange={(event) => setForm((atual) => ({ ...atual, data_atividade: event.target.value }))}/></label><label><span>Prioridade</span><select value={form.prioridade} onChange={(event) => setForm((atual) => ({ ...atual, prioridade: event.target.value }))}>{PRIORIDADES.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Início</span><input type="time" value={form.hora_inicio} onChange={(event) => setForm((atual) => ({ ...atual, hora_inicio: event.target.value }))}/></label><label><span>Fim</span><input type="time" value={form.hora_fim} onChange={(event) => setForm((atual) => ({ ...atual, hora_fim: event.target.value }))}/></label><label><span>Status</span><select value={form.status} onChange={(event) => setForm((atual) => ({ ...atual, status: event.target.value }))}>{STATUS.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide"><span>Descrição</span><textarea rows={4} value={form.descricao} onChange={(event) => setForm((atual) => ({ ...atual, descricao: event.target.value }))}/></label></div>
       <div className="education-actions activity-modal-actions"><button className="primary-action" onClick={() => void salvar()} disabled={salvando || (acessoEquipe && !usuarios.length)}><Check size={16}/>{salvando ? "Salvando..." : "Salvar atividade"}</button><button onClick={() => setFormAberto(false)}><Circle size={15}/>Cancelar</button></div>
     </div></div> : null}
   </section>;

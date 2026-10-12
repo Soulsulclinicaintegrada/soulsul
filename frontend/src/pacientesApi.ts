@@ -1444,6 +1444,8 @@ export type AgendaAtividadeApi = {
   descricao: string;
   responsavelId: number;
   responsavelNome: string;
+  responsaveisIds: number[];
+  responsaveisNomes: string[];
   dataAtividade: string;
   horaInicio: string;
   horaFim: string;
@@ -1459,6 +1461,7 @@ export type AgendaAtividadePayloadApi = {
   titulo: string;
   descricao: string;
   responsavel_id: number;
+  responsaveis_ids: number[];
   data_atividade: string;
   hora_inicio: string;
   hora_fim: string;
