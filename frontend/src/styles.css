@@ -10344,6 +10344,11 @@ input::placeholder, textarea::placeholder {
   text-transform: uppercase !important;
 }
 
+/* A interface inteira segue o padrão de caixa alta, inclusive textos que recebem estilos locais. */
+body, body * {
+  text-transform: uppercase !important;
+}
+
 /* Mantém a assinatura da clínica como um único bloco visual no menu. */
 .shell:not(.education-portal-shell) .brand-card {
   align-items: center;
