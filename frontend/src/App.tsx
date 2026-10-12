@@ -170,7 +170,7 @@ function App() {
   useEffect(() => {
     const upperCaseInput = (event: Event) => {
       const element = event.target as HTMLInputElement | HTMLTextAreaElement | null;
-      if (!element || (element instanceof HTMLInputElement && !["text", "password", "email", "search", "tel"].includes(element.type))) return;
+      if (!element || (element instanceof HTMLInputElement && !["text", "email", "search", "tel"].includes(element.type))) return;
       const start = element.selectionStart;
       const end = element.selectionEnd;
       const upper = element.value.toLocaleUpperCase("pt-BR");
