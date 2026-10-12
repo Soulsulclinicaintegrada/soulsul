@@ -213,7 +213,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   return <section className="activities-page">
     <header className="panel activities-hero">
       <div><span className="panel-kicker">Organização da equipe</span><h2>Agenda de atividades</h2><p>{acessoEquipe ? "Acompanhe e distribua as atividades de todos os funcionários." : "Acompanhe e atualize suas atividades."}</p></div>
-      <button className="primary-action" onClick={() => abrirNova()} disabled={Boolean(feriadoReferencia)}><Plus size={17}/> Nova atividade</button>
+      <button className="primary-action" onClick={() => abrirNova()}><Plus size={17}/> Nova atividade</button>
     </header>
 
     <div className="activities-agenda-shell">
@@ -238,7 +238,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
           {usuariosVisiveis.map((usuario) => {
             const itens = visiveis.filter((item) => item.dataAtividade === referencia && (item.responsaveisIds || [item.responsavelId]).includes(usuario.id));
             return <section className="activities-person-column" style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties} key={usuario.id}>
-              <header><div><i/><strong>{usuario.nome}</strong></div><button disabled={Boolean(feriadoReferencia)} onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
+              <header><div><i/><strong>{usuario.nome}</strong></div><button onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
               <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} style={{ "--activity-person-color": corResponsavel((item.responsaveisIds || [item.responsavelId])[0]) } as CSSProperties} key={item.id}>
                 <div className="activity-card-top"><span>{item.horaInicio ? <><Clock3 size={13}/>{item.horaInicio}{item.horaFim ? `–${item.horaFim}` : ""}</> : "Atividade do dia"}</span><b className="activity-priority-tag">{item.prioridade}</b></div>
                 <strong className="activity-card-title">{item.titulo}</strong>{acessoEquipe ? <div className="activity-assignees">{(item.responsaveisIds || [item.responsavelId]).map((id, indice) => <small key={id} style={{ "--person-color": corResponsavel(id) } as CSSProperties}><i/>{item.responsaveisNomes?.[indice] || usuarios.find((usuario) => usuario.id === id)?.nome || item.responsavelNome}</small>)}</div> : null}{item.descricao ? <p>{item.descricao}</p> : null}

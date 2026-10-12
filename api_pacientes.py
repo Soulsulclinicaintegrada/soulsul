@@ -4251,9 +4251,11 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
         responsavel_id = responsaveis_ids[0]
         if not acesso_equipe and responsaveis_ids != [int(usuario["id"])]:
             raise HTTPException(status_code=403, detail="Você não pode transferir esta atividade.")
-        ativos = conn.execute(f"SELECT id FROM usuarios WHERE ativo=1 AND id IN ({','.join('?' for _ in responsaveis_ids)})", tuple(responsaveis_ids)).fetchall()
-        if len(ativos) != len(responsaveis_ids):
-            raise HTTPException(status_code=400, detail="Selecione apenas funcionários ativos.")
+        novos_responsaveis = [item for item in responsaveis_ids if item not in responsaveis_atuais]
+        if novos_responsaveis:
+            ativos = conn.execute(f"SELECT id FROM usuarios WHERE ativo=1 AND id IN ({','.join('?' for _ in novos_responsaveis)})", tuple(novos_responsaveis)).fetchall()
+            if len(ativos) != len(novos_responsaveis):
+                raise HTTPException(status_code=400, detail="Selecione apenas funcionários ativos.")
         titulo = corrigir_texto_importado(str(payload.titulo or "").strip())
         if not titulo:
             raise HTTPException(status_code=400, detail="Informe o título da atividade.")
