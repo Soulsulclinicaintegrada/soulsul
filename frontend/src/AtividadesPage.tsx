@@ -6,10 +6,10 @@ import {
   criarAtividadeApi,
   excluirAtividadeApi,
   listarAtividadesApi,
-  listarUsuariosApi,
+  listarResponsaveisAtividadesApi,
   type AgendaAtividadeApi,
   type AgendaAtividadePayloadApi,
-  type UsuarioResumoApi
+  type ResponsavelAtividadeApi
 } from "./pacientesApi";
 
 type Props = { usuarioLogado: UsuarioSessao };
@@ -49,7 +49,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   const hoje = dataIso(new Date());
   const [referencia, setReferencia] = useState(hoje);
   const [atividades, setAtividades] = useState<AgendaAtividadeApi[]>([]);
-  const [usuarios, setUsuarios] = useState<UsuarioResumoApi[]>([]);
+  const [usuarios, setUsuarios] = useState<ResponsavelAtividadeApi[]>([]);
   const [responsavelFiltro, setResponsavelFiltro] = useState(0);
   const [formAberto, setFormAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
@@ -67,10 +67,10 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     try {
       const [lista, equipe] = await Promise.all([
         listarAtividadesApi(dias[0], dias[6]),
-        acessoEquipe ? listarUsuariosApi() : Promise.resolve([])
+        listarResponsaveisAtividadesApi()
       ]);
       setAtividades(lista);
-      setUsuarios(equipe.filter((item) => item.status === "Ativo"));
+      setUsuarios(equipe);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível carregar as atividades.");
     } finally {
@@ -79,6 +79,13 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   }
 
   useEffect(() => { void carregar(); }, [inicio, acessoEquipe]);
+
+  useEffect(() => {
+    if (!usuarios.length) return;
+    setForm((atual) => usuarios.some((usuario) => usuario.id === atual.responsavel_id)
+      ? atual
+      : { ...atual, responsavel_id: usuarios[0].id });
+  }, [usuarios]);
 
   const visiveis = useMemo(
     () => responsavelFiltro ? atividades.filter((item) => item.responsavelId === responsavelFiltro) : atividades,
@@ -153,7 +160,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     {formAberto ? <div className="education-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormAberto(false); }}><div className="education-modal activity-modal">
       <div className="education-list-head"><div><span className="page-eyebrow">{editandoId ? "EDITAR" : "NOVA"}</span><h2>{editandoId ? "Editar atividade" : "Nova atividade"}</h2></div><button onClick={() => setFormAberto(false)}><X size={18}/></button></div>
       {erro ? <div className="crm-inline-alert">{erro}</div> : null}
-      <div className="activity-form-grid"><label className="wide"><span>Título</span><input value={form.titulo} onChange={(event) => setForm({ ...form, titulo: event.target.value })}/></label>{acessoEquipe ? <label className="wide"><span>Responsável</span><select value={form.responsavel_id} onChange={(event) => setForm({ ...form, responsavel_id: Number(event.target.value) })}>{usuarios.map((usuario) => <option value={usuario.id} key={usuario.id}>{usuario.nome}</option>)}</select></label> : null}<label><span>Data</span><input type="date" value={form.data_atividade} onChange={(event) => setForm({ ...form, data_atividade: event.target.value })}/></label><label><span>Prioridade</span><select value={form.prioridade} onChange={(event) => setForm({ ...form, prioridade: event.target.value })}>{PRIORIDADES.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Início</span><input type="time" value={form.hora_inicio} onChange={(event) => setForm({ ...form, hora_inicio: event.target.value })}/></label><label><span>Fim</span><input type="time" value={form.hora_fim} onChange={(event) => setForm({ ...form, hora_fim: event.target.value })}/></label><label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{STATUS.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide"><span>Descrição</span><textarea rows={4} value={form.descricao} onChange={(event) => setForm({ ...form, descricao: event.target.value })}/></label></div>
+      <div className="activity-form-grid"><label className="wide"><span>Título</span><input value={form.titulo} onChange={(event) => setForm({ ...form, titulo: event.target.value })}/></label>{acessoEquipe ? <label className="wide"><span>Responsável</span><select value={form.responsavel_id} disabled={!usuarios.length} onChange={(event) => setForm({ ...form, responsavel_id: Number(event.target.value) })}>{!usuarios.length ? <option value={0}>Carregando funcionários...</option> : null}{usuarios.map((usuario) => <option value={usuario.id} key={usuario.id}>{usuario.nome}</option>)}</select></label> : null}<label><span>Data</span><input type="date" value={form.data_atividade} onChange={(event) => setForm({ ...form, data_atividade: event.target.value })}/></label><label><span>Prioridade</span><select value={form.prioridade} onChange={(event) => setForm({ ...form, prioridade: event.target.value })}>{PRIORIDADES.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Início</span><input type="time" value={form.hora_inicio} onChange={(event) => setForm({ ...form, hora_inicio: event.target.value })}/></label><label><span>Fim</span><input type="time" value={form.hora_fim} onChange={(event) => setForm({ ...form, hora_fim: event.target.value })}/></label><label><span>Status</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>{STATUS.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide"><span>Descrição</span><textarea rows={4} value={form.descricao} onChange={(event) => setForm({ ...form, descricao: event.target.value })}/></label></div>
       <div className="education-actions"><button className="primary-action" onClick={() => void salvar()} disabled={salvando}><Check size={16}/>{salvando ? "Salvando..." : "Salvar atividade"}</button><button onClick={() => setFormAberto(false)}><Circle size={15}/>Cancelar</button></div>
     </div></div> : null}
   </section>;

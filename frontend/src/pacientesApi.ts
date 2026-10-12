@@ -1466,6 +1466,12 @@ export type AgendaAtividadePayloadApi = {
   status: string;
 };
 
+export type ResponsavelAtividadeApi = { id: number; nome: string };
+
+export async function listarResponsaveisAtividadesApi() {
+  return fetchJson<ResponsavelAtividadeApi[]>(`${API_BASE_URL}/api/atividades/responsaveis`);
+}
+
 export async function listarAtividadesApi(dataInicio: string, dataFim: string) {
   return fetchJson<AgendaAtividadeApi[]>(`${API_BASE_URL}/api/atividades?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFim)}`);
 }

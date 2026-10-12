@@ -2817,6 +2817,11 @@ class AgendaAtividadePayload(BaseModel):
     status: str = "Pendente"
 
 
+class ResponsavelAtividadeResposta(BaseModel):
+    id: int
+    nome: str
+
+
 class AgendaAtividadeResposta(BaseModel):
     id: int
     titulo: str
@@ -4020,6 +4025,25 @@ def buscar_atividade_com_responsavel(conn: sqlite3.Connection, atividade_id: int
            JOIN usuarios u ON u.id=a.responsavel_id WHERE a.id=?""",
         (int(atividade_id),),
     ).fetchone()
+
+
+@app.get("/api/atividades/responsaveis", response_model=list[ResponsavelAtividadeResposta])
+def listar_responsaveis_atividades(request: Request):
+    conn = conectar()
+    try:
+        usuario, acesso_equipe = validar_acesso_atividades(conn, request)
+        if acesso_equipe:
+            rows = conn.execute(
+                "SELECT id, nome FROM usuarios WHERE ativo=1 ORDER BY nome COLLATE NOCASE"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, nome FROM usuarios WHERE id=? AND ativo=1",
+                (int(usuario["id"]),),
+            ).fetchall()
+        return [ResponsavelAtividadeResposta(id=int(row["id"]), nome=corrigir_texto_importado(str(row["nome"] or ""))) for row in rows]
+    finally:
+        conn.close()
 
 
 @app.get("/api/atividades", response_model=list[AgendaAtividadeResposta])
