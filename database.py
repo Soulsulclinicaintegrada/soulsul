@@ -1638,6 +1638,7 @@ def inicializar_banco():
     garantir_coluna(conn, "usuarios", "atividades_acesso INTEGER DEFAULT 0")
     garantir_coluna(conn, "usuarios", "atividades_agenda_disponivel INTEGER DEFAULT 0")
     garantir_coluna(conn, "usuarios", "atividades_escopo TEXT DEFAULT 'PROPRIAS'")
+    garantir_coluna(conn, "usuarios", "atividades_cor TEXT")
     garantir_coluna(conn, "usuarios", "senha_temporaria INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "precisa_trocar_senha INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "ultimo_login TEXT")

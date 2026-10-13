@@ -10536,8 +10536,10 @@ body, body * {
 .activities-team-list { display:grid; gap:7px; }
 .activities-team-list label { --person-color:#789080; display:grid; grid-template-columns:24px 16px minmax(0,1fr); align-items:center; gap:7px; min-height:42px; padding:7px 9px; border:1px solid #e6ddd2; border-radius:11px; background:#fffdfa; color:#655d55; cursor:pointer; }
 .activities-team-list label.active { border-color:color-mix(in srgb,var(--person-color) 55%,white); background:color-mix(in srgb,var(--person-color) 7%,white); color:#2f2a26; font-weight:700; }
-.activities-team-list label>button { display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; background:transparent; cursor:pointer; }
-.activities-team-list label i { display:block; width:11px; height:11px; border-radius:50%; background:var(--person-color); }
+.activities-team-list .activity-person-color { width:24px; height:24px; min-height:0; padding:2px; border:1px solid color-mix(in srgb,var(--person-color) 55%,white); border-radius:50%; background:#fff; cursor:pointer; }
+.activities-team-list .activity-person-color::-webkit-color-swatch-wrapper { padding:0; }
+.activities-team-list .activity-person-color::-webkit-color-swatch { border:0; border-radius:50%; }
+.activities-team-list .activity-person-color::-moz-color-swatch { border:0; border-radius:50%; }
 .activities-team-list label input { width:14px; height:14px; margin:0; accent-color:var(--person-color); }
 .activities-team-list label span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
 .activities-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 24px; }
@@ -10573,13 +10575,17 @@ body, body * {
 .activities-day > header div { display: flex; align-items: center; gap: 6px; text-transform: capitalize; }
 .activities-day > header button { min-height: 29px; width: 29px; padding: 0; }
 .activities-day-list { display: grid; align-content: start; gap: 9px; padding: 10px; }
-.activity-card { --activity-person-color:#baa47c; display: grid; gap: 8px; padding: 12px; border: 1px solid #e8e0d6; border-left: 5px solid var(--activity-person-color); border-radius: 13px; background: #fff; box-shadow: 0 4px 14px rgba(58,46,34,.04); }
+.activity-card { --priority-color:#5f936f; --priority-soft:#f4f8f5; display: grid; gap: 8px; padding: 12px; border: 1px solid color-mix(in srgb,var(--priority-color) 34%,#e8e0d6); border-left: 5px solid var(--priority-color); border-radius: 13px; background:var(--priority-soft); box-shadow: 0 4px 14px rgba(58,46,34,.04); }
+.activity-card.priority-urgente { --priority-color:#c74343; --priority-soft:#fff5f4; }
+.activity-card.priority-alta { --priority-color:#df842e; --priority-soft:#fff8ef; }
+.activity-card.priority-baixa { --priority-color:#d2b52f; --priority-soft:#fffbea; }
+.activity-card.priority-normal { --priority-color:#5f936f; --priority-soft:#f4f8f5; }
 .activity-card.status-concluída { background: #f1f6f1; opacity: .8; }
 .activity-card.status-cancelada { opacity: .55; }
 .activity-card-top, .activity-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .activity-card-top span { display: inline-flex; align-items: center; gap: 4px; color: #756d64; font-size: 11px; }
 .activity-card-top b { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
-.activity-priority-tag { padding:4px 7px; border:1px solid #6b9476; border-radius:999px; color:#477255; background:transparent; }
+.activity-priority-tag { padding:4px 7px; border:1px solid var(--priority-color); border-radius:999px; color:var(--priority-color); background:#fff; }
 .priority-urgente .activity-priority-tag { border-color:#c74343; color:#a42c2c; }
 .priority-alta .activity-priority-tag { border-color:#df842e; color:#b66418; }
 .priority-baixa .activity-priority-tag { border-color:#d2b52f; color:#8b7511; }

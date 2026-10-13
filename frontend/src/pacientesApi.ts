@@ -1479,7 +1479,7 @@ export type AgendaAtividadePayloadApi = {
   secreta: boolean;
 };
 
-export type ResponsavelAtividadeApi = { id: number; nome: string };
+export type ResponsavelAtividadeApi = { id: number; nome: string; cor?: string };
 export type AtividadeNotificacaoApi = { id: number; atividadeId?: number | null; tipo: string; mensagem: string; lida: boolean; criadoEm: string };
 
 function cabecalhoUsuarioAtividades(identificadorUsuario: string) {
@@ -1488,6 +1488,10 @@ function cabecalhoUsuarioAtividades(identificadorUsuario: string) {
 
 export async function listarResponsaveisAtividadesApi(identificadorUsuario: string) {
   return fetchJson<ResponsavelAtividadeApi[]>(`${API_BASE_URL}/api/atividades/responsaveis`, { headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
+}
+
+export async function atualizarCorResponsavelAtividadesApi(usuarioId: number, cor: string, identificadorUsuario: string) {
+  return fetchJson<ResponsavelAtividadeApi>(`${API_BASE_URL}/api/atividades/responsaveis/${usuarioId}/cor`, { method: "PATCH", headers: cabecalhoUsuarioAtividades(identificadorUsuario), body: JSON.stringify({ cor }) });
 }
 
 export async function listarAtividadesApi(dataInicio: string, dataFim: string, identificadorUsuario: string) {

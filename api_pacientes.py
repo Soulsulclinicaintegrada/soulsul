@@ -2834,6 +2834,11 @@ class AgendaAtividadePayload(BaseModel):
 class ResponsavelAtividadeResposta(BaseModel):
     id: int
     nome: str
+    cor: str = ""
+
+
+class ResponsavelAtividadeCorPayload(BaseModel):
+    cor: str
 
 
 class AgendaAtividadeResposta(BaseModel):
@@ -4191,14 +4196,37 @@ def listar_responsaveis_atividades(request: Request):
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
         if acesso_equipe:
             rows = conn.execute(
-                "SELECT id, nome FROM usuarios WHERE ativo=1 AND atividades_agenda_disponivel=1 ORDER BY nome COLLATE NOCASE"
+                "SELECT id, nome, atividades_cor FROM usuarios WHERE ativo=1 AND atividades_agenda_disponivel=1 ORDER BY nome COLLATE NOCASE"
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, nome FROM usuarios WHERE id=? AND ativo=1 AND atividades_agenda_disponivel=1",
+                "SELECT id, nome, atividades_cor FROM usuarios WHERE id=? AND ativo=1 AND atividades_agenda_disponivel=1",
                 (int(usuario["id"]),),
             ).fetchall()
-        return [ResponsavelAtividadeResposta(id=int(row["id"]), nome=corrigir_texto_importado(str(row["nome"] or ""))) for row in rows]
+        return [ResponsavelAtividadeResposta(id=int(row["id"]), nome=corrigir_texto_importado(str(row["nome"] or "")), cor=str(row["atividades_cor"] or "")) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.patch("/api/atividades/responsaveis/{usuario_id}/cor", response_model=ResponsavelAtividadeResposta)
+def atualizar_cor_responsavel_atividades(usuario_id: int, payload: ResponsavelAtividadeCorPayload, request: Request):
+    cor = str(payload.cor or "").strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", cor):
+        raise HTTPException(status_code=400, detail="Informe uma cor válida.")
+    conn = conectar()
+    try:
+        _, acesso_equipe = validar_acesso_atividades(conn, request)
+        if not acesso_equipe:
+            raise HTTPException(status_code=403, detail="Você não pode alterar as cores da equipe.")
+        row = conn.execute(
+            "SELECT id, nome FROM usuarios WHERE id=? AND ativo=1 AND atividades_agenda_disponivel=1",
+            (usuario_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Responsável não encontrado.")
+        conn.execute("UPDATE usuarios SET atividades_cor=? WHERE id=?", (cor.lower(), usuario_id))
+        conn.commit()
+        return ResponsavelAtividadeResposta(id=int(row["id"]), nome=corrigir_texto_importado(str(row["nome"] or "")), cor=cor.lower())
     finally:
         conn.close()
 
