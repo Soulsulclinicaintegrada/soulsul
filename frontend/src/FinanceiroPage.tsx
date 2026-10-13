@@ -793,6 +793,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setSalvando(true);
     setErro(null);
     try {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const senhaAdministrativa = caixaForm.dataMovimento < hoje
+        ? window.prompt("Baixa retroativa: informe a senha administrativa:")
+        : "";
+      if (caixaForm.dataMovimento < hoje && senhaAdministrativa === null) return;
       for (const item of recebiveisSelecionadosDetalhe) {
         if (!item.pacienteId) continue;
         await baixarRecebivelPacienteApi(item.pacienteId, item.id, {
@@ -800,7 +805,8 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
           forma_pagamento: caixaForm.formaPagamento,
           conta_caixa: caixaForm.contaCaixa,
           desconto_valor: moedaParaNumero(item.desconto),
-          observacao: caixaForm.observacao
+          observacao: caixaForm.observacao,
+          senha_administrativa: senhaAdministrativa || ""
         });
       }
       setRecebiveisBaixaSelecionados([]);
@@ -871,6 +877,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     if (!item?.pacienteId) return;
     setSalvando(true);
     setErro(null);
+    const vencimentoOriginal = dataBrParaIso(item.vencimento) || String(item.vencimento || "");
+    const hoje = new Date().toISOString().slice(0, 10);
+    const exigeSenhaRetroativa = vencimentoOriginal < hoje || recebivelForm.vencimento < hoje || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < hoje);
+    const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Alteração retroativa: informe a senha administrativa:") : "";
+    if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
     const payload: RecebivelAtualizacaoPayload = {
       paciente_nome: recebivelForm.pacienteNome,
       prontuario: recebivelForm.prontuario,
@@ -881,7 +892,8 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
       data_pagamento: recebivelForm.dataPagamento,
       observacao: recebivelForm.observacao,
       cobranca_realizada: recebivelForm.cobrancaRealizada,
-      observacao_cobranca: recebivelForm.observacaoCobranca
+      observacao_cobranca: recebivelForm.observacaoCobranca,
+      senha_administrativa: senhaAdministrativa || ""
     };
     try {
       await atualizarRecebivelPacienteApi(item.pacienteId, item.id, payload);
@@ -913,6 +925,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setSalvando(true);
     setErro(null);
     try {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const vencimentoOriginal = dataBrParaIso(atual.vencimento) || String(atual.vencimento || "");
+      const exigeSenhaRetroativa = vencimentoOriginal < hoje || formLinha.vencimento < hoje || (formLinha.dataPagamento && formLinha.dataPagamento < hoje);
+      const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Alteração retroativa: informe a senha administrativa:") : "";
+      if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       await atualizarRecebivelPacienteApi(atual.pacienteId, recebivelId, {
         paciente_nome: formLinha.pacienteNome,
         prontuario: formLinha.prontuario,
@@ -923,7 +940,8 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
         data_pagamento: formLinha.dataPagamento,
         observacao: formLinha.observacao,
         cobranca_realizada: formLinha.cobrancaRealizada,
-        observacao_cobranca: formLinha.observacaoCobranca
+        observacao_cobranca: formLinha.observacaoCobranca,
+        senha_administrativa: senhaAdministrativa || ""
       });
       await carregarPainel();
     } catch (error) {
@@ -1015,6 +1033,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setSalvando(true);
     setErro(null);
     try {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const exigeSenhaRetroativa = recebiveisDoLote.some((item) => (dataBrParaIso(item.vencimento) || String(item.vencimento || "")) < hoje)
+        || renegociacaoParcelas.some((item) => item.vencimento < hoje);
+      const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Renegociação com parcelas retroativas: informe a senha administrativa:") : "";
+      if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       const loteDestino = loteSelecionado.contratoId ? String(loteSelecionado.contratoId) : loteSelecionado.loteId;
       const novasParcelas: RecebivelRenegociacaoParcelaPayload[] = renegociacaoParcelas.map((item, indice) => {
         if (!item.vencimento) {
@@ -1040,7 +1063,8 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
         primeiro_vencimento: novasParcelas[0]?.vencimento || dataBrParaIso(loteSelecionado.primeiroVencimento),
         novas_parcelas: novasParcelas,
         suspender_anteriores: true,
-        observacao_renegociacao: renegociacaoObservacao
+        observacao_renegociacao: renegociacaoObservacao,
+        senha_administrativa: senhaAdministrativa || ""
       });
       await carregarPainel();
     } catch (error) {
@@ -1055,6 +1079,10 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setSalvando(true);
     setErro(null);
     try {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const exigeSenhaRetroativa = recebiveisDoLote.some((item) => (dataBrParaIso(item.vencimento) || String(item.vencimento || "")) < hoje);
+      const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Suspensão com parcelas retroativas: informe a senha administrativa:") : "";
+      if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       const loteDestino = loteSelecionado.contratoId ? String(loteSelecionado.contratoId) : loteSelecionado.loteId;
       await atualizarRecebiveisLoteApi(loteDestino, {
         paciente_id: loteSelecionado.pacienteId,
@@ -1066,7 +1094,8 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
         primeiro_vencimento: "",
         novas_parcelas: [],
         suspender_anteriores: true,
-        observacao_renegociacao: renegociacaoObservacao
+        observacao_renegociacao: renegociacaoObservacao,
+        senha_administrativa: senhaAdministrativa || ""
       });
       await carregarPainel();
     } catch (error) {

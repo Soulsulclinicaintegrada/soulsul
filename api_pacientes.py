@@ -1929,6 +1929,7 @@ class RecebivelAtualizacaoPayload(BaseModel):
     observacao: str = ""
     cobranca_realizada: bool = False
     observacao_cobranca: str = ""
+    senha_administrativa: str = ""
 
 
 class RecebivelRenegociacaoParcelaPayload(BaseModel):
@@ -1949,6 +1950,7 @@ class RecebivelLotePayload(BaseModel):
     novas_parcelas: list[RecebivelRenegociacaoParcelaPayload] = Field(default_factory=list)
     suspender_anteriores: bool = True
     observacao_renegociacao: str = ""
+    senha_administrativa: str = ""
 
 
 class AgendamentoResumo(BaseModel):
@@ -2047,6 +2049,7 @@ class BaixaRecebivelPayload(BaseModel):
     conta_caixa: str = ""
     desconto_valor: float = 0
     observacao: str = ""
+    senha_administrativa: str = ""
 
 
 class MovimentoCaixaPayload(BaseModel):
@@ -3036,6 +3039,20 @@ def validar_perfil_administrador(request: Request, *, acao: str) -> str:
     if perfil != "administrador":
         raise HTTPException(status_code=403, detail=f"Somente o perfil Administrador pode {acao}.")
     return str(usuario_row["usuario"] or usuario).strip()
+
+
+def validar_senha_administrativa_clinica(conn: sqlite3.Connection, senha: str) -> None:
+    senha_informada = str(senha or "")
+    administradores = conn.execute(
+        "SELECT senha_hash FROM usuarios WHERE ativo=1 AND lower(COALESCE(perfil, ''))='administrador'"
+    ).fetchall()
+    if not senha_informada or not any(verificar_senha(senha_informada, row["senha_hash"]) for row in administradores):
+        raise HTTPException(status_code=403, detail="Informe uma senha administrativa válida para alterar dados retroativos.")
+
+
+def data_financeira_retroativa(valor: object) -> bool:
+    data_valor = parse_data_contrato(str(valor or ""))
+    return bool(data_valor and data_valor < agora_local().date())
 
 
 def validar_usuario_aprovacao_orcamento(request: Request) -> str:
@@ -9708,6 +9725,8 @@ def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqli
         existente = next((row for row in candidatos if int(row["id"]) not in ids_utilizados), None)
         if existente is not None:
             ids_utilizados.add(int(existente["id"]))
+            if normalizar_texto(existente["status"]) == "pago" or data_financeira_retroativa(existente["vencimento"]):
+                continue
             conn.execute(
                 """
                 UPDATE recebiveis
@@ -9751,7 +9770,7 @@ def sincronizar_recebiveis_contrato(conn: sqlite3.Connection, paciente_row: sqli
             ids_utilizados.add(int(cursor.lastrowid))
     for row in existentes:
         row_id = int(row["id"])
-        if row_id in ids_utilizados or normalizar_texto(row["status"]) == "pago":
+        if row_id in ids_utilizados or normalizar_texto(row["status"]) == "pago" or data_financeira_retroativa(row["vencimento"]):
             continue
         conn.execute("DELETE FROM recebiveis WHERE id=?", (row_id,))
 
@@ -11788,6 +11807,20 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
         if normalizar_texto(status) != "pago":
             data_pagamento = ""
 
+        alteracao_financeira = any((
+            payload.vencimento.strip() and payload.vencimento.strip() != str(atual["vencimento"] or "").strip(),
+            round(float(payload.valor or 0), 2) != round(float(atual["valor"] or 0), 2),
+            payload.forma_pagamento.strip() and payload.forma_pagamento.strip() != str(atual["forma_pagamento"] or "").strip(),
+            normalizar_texto(status) != normalizar_texto(atual["status"]),
+            data_pagamento != str(atual["data_pagamento"] or "").strip(),
+        ))
+        if alteracao_financeira and (
+            data_financeira_retroativa(atual["vencimento"])
+            or data_financeira_retroativa(payload.vencimento)
+            or data_financeira_retroativa(data_pagamento)
+        ):
+            validar_senha_administrativa_clinica(conn, payload.senha_administrativa)
+
         conn.execute(
             """
             UPDATE recebiveis
@@ -11832,6 +11865,13 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
 def atualizar_recebiveis_lote(lote_id: str, payload: RecebivelLotePayload, request: Request):
     conn = conectar()
     try:
+        recebiveis_lote, _contrato_id = carregar_recebiveis_lote_generico(
+            conn, lote_id, payload.paciente_id, payload.paciente_nome, payload.prontuario
+        )
+        tem_data_retroativa = any(data_financeira_retroativa(row["vencimento"]) for row in recebiveis_lote)
+        tem_nova_data_retroativa = any(data_financeira_retroativa(item.vencimento) for item in payload.novas_parcelas)
+        if tem_data_retroativa or tem_nova_data_retroativa or data_financeira_retroativa(payload.primeiro_vencimento):
+            validar_senha_administrativa_clinica(conn, payload.senha_administrativa)
         if payload.suspender_anteriores and not payload.novas_parcelas:
             suspender_recebiveis_lote_generico(
                 conn,
@@ -11879,6 +11919,8 @@ def baixar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: Baix
     conn = conectar()
     try:
         carregar_paciente_por_id(conn, paciente_id)
+        if data_financeira_retroativa(payload.data_pagamento):
+            validar_senha_administrativa_clinica(conn, payload.senha_administrativa)
         atualizado = baixar_recebivel_no_caixa(
             conn,
             paciente_id=paciente_id,
@@ -12934,6 +12976,22 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
             - max(0.0, float(payload.desconto_valor or 0)),
         )
         contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
+        if contrato_anterior is not None and bool(int(contrato_anterior["ja_foi_aprovado"] or 0)):
+            conn.execute(
+                """
+                UPDATE contratos
+                SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?,
+                    forma_pagamento=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?
+                WHERE id=? AND paciente_id=?
+                """,
+                (
+                    contrato_anterior["valor_total"], contrato_anterior["entrada"], contrato_anterior["parcelas"],
+                    contrato_anterior["primeiro_vencimento"], contrato_anterior["data_pagamento_entrada"],
+                    contrato_anterior["forma_pagamento"], contrato_anterior["plano_pagamento_json"],
+                    contrato_anterior["desconto_percentual"], contrato_anterior["desconto_valor"],
+                    contrato_id_salvo, paciente_id,
+                ),
+            )
         data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
         data_orcamento = normalizar_data_contrato_iso(payload.data, "")
         validade_orcamento = normalizar_data_contrato_iso(payload.validade_orcamento, "")
@@ -13038,9 +13096,10 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
                 (contrato_id, paciente_id),
             )
             contrato_atualizado = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
-            if contrato_atualizado is not None:
+            if contrato_atualizado is not None and tipo_movimento != "ALTERACAO":
                 sincronizar_recebiveis_contrato(conn, paciente, contrato_atualizado, contrato_id)
                 sincronizar_financeiro_contrato(conn, paciente, contrato_atualizado, contrato_id)
+            if contrato_atualizado is not None:
                 try:
                     gerar_documento_contrato(conn, paciente, contrato_atualizado, contrato_id)
                 except Exception as exc:
@@ -13060,8 +13119,7 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
                 "UPDATE procedimentos_dente SET status='ORCAMENTO' WHERE contrato_id=? AND paciente_id=?",
                 (contrato_id, paciente_id),
             )
-            conn.execute("DELETE FROM recebiveis WHERE contrato_id=?", (contrato_id,))
-            conn.execute("DELETE FROM financeiro WHERE contrato_id=?", (contrato_id,))
+            # Desaprovar permite o ajuste contratual, mas não apaga a história financeira.
         conn.commit()
         return {"ok": True}
     finally:

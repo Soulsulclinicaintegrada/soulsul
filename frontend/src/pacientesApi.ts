@@ -292,6 +292,7 @@ export type RecebivelAtualizacaoPayload = {
   observacao: string;
   cobranca_realizada?: boolean;
   observacao_cobranca?: string;
+  senha_administrativa?: string;
 };
 
 export type RecebivelLotePayload = {
@@ -305,6 +306,7 @@ export type RecebivelLotePayload = {
   novas_parcelas?: RecebivelRenegociacaoParcelaPayload[];
   suspender_anteriores?: boolean;
   observacao_renegociacao?: string;
+  senha_administrativa?: string;
 };
 
 export type RecebivelRenegociacaoParcelaPayload = {
@@ -320,6 +322,7 @@ export type BaixaRecebivelPayload = {
   conta_caixa: string;
   desconto_valor?: number;
   observacao: string;
+  senha_administrativa?: string;
 };
 
 export type MovimentoCaixaPayload = {

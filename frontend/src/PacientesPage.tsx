@@ -2068,12 +2068,22 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     setSalvandoRecebivel(true);
     setErro(null);
     try {
+      const exigeSenhaRetroativa = Boolean(
+        (recebivelSelecionadoDetalhe?.vencimento && recebivelSelecionadoDetalhe.vencimento < dataHojeIso())
+        || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < dataHojeIso())
+        || (recebivelForm.vencimento && recebivelForm.vencimento < dataHojeIso())
+      );
+      const senhaAdministrativa = exigeSenhaRetroativa
+        ? window.prompt("Alterações retroativas exigem a senha administrativa:")
+        : "";
+      if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       if (recebivelModalModo === "baixa") {
         await baixarRecebivelPacienteApi(pacienteAtivoId, recebivelForm.id, {
           data_pagamento: recebivelForm.dataPagamento || dataHojeIso(),
           forma_pagamento: recebivelForm.formaPagamento || "PIX",
           conta_caixa: recebivelForm.formaPagamento || "PIX",
-          observacao: recebivelForm.observacao || ""
+          observacao: recebivelForm.observacao || "",
+          senha_administrativa: senhaAdministrativa || ""
         });
         setFeedback("Parcela baixada com sucesso.");
         await carregarFicha(pacienteAtivoId);
@@ -2091,7 +2101,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         status: recebivelForm.status || "Aberto",
         data_pagamento: recebivelForm.dataPagamento,
         observacao: recebivelForm.observacao || "",
-        ...payloadOverride
+        ...payloadOverride,
+        senha_administrativa: senhaAdministrativa || ""
       };
       await atualizarRecebivelPacienteApi(pacienteAtivoId, recebivelForm.id, payload);
       setFeedback(payload.status === "Pago" ? "Parcela baixada com sucesso." : "Recebível atualizado com sucesso.");
