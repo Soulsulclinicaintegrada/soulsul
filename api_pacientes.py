@@ -6720,17 +6720,23 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
         paciente_info = pacientes_nome_map.get(paciente_id) if paciente_id > 0 else None
         prontuario = (paciente_info or {}).get("prontuario") or ""
         forma_pagamento = str(row["forma_pagamento"] or "").strip() or "Sem forma de pagamento"
-        detalhes_vendas_mes.append(
-            DashboardIndicadorDetalheItemResposta(
-                titulo=(paciente_info or {}).get("nome") or f"Contrato #{contrato_id}",
-                subtitulo=f"Venda em {formatar_data_br(data_ref)}",
-                meta=(
-                    f"Contrato #{contrato_id}" + (f" · {prontuario}" if prontuario else "") + f" · {forma_pagamento}"
-                ),
-                valor=formatar_moeda_br(float(row["valor_total"] or 0)),
-                status=str(row["status"] or ""),
+        if bool(int(row["incluir_total_vendido"] or 0)):
+            valor_detalhe = float(
+                row["valor_venda_considerado"]
+                if row["valor_venda_considerado"] is not None
+                else row["valor_total"] or 0
             )
-        )
+            detalhes_vendas_mes.append(
+                DashboardIndicadorDetalheItemResposta(
+                    titulo=(paciente_info or {}).get("nome") or f"Contrato #{contrato_id}",
+                    subtitulo=f"Venda em {formatar_data_br(data_ref)}",
+                    meta=(
+                        f"Contrato #{contrato_id}" + (f" · {prontuario}" if prontuario else "") + f" · {forma_pagamento}"
+                    ),
+                    valor=formatar_moeda_br(valor_detalhe),
+                    status=str(row["status"] or ""),
+                )
+            )
         vendas_resumo_mes.append(
             DashboardVendaResumoItemResposta(
                 contratoId=contrato_id,
