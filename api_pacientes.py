@@ -1198,6 +1198,8 @@ def login_educacao(payload: EducacaoLoginPayload):
         senha_valida = row is not None and (verificar_senha(payload.senha, row["senha_hash"]) or str(payload.senha or "").upper() == "SOULSULEDU")
         if row is None or not senha_valida:
             raise HTTPException(status_code=401, detail="Usuário ou senha inválidos.")
+        if not str(row["senha_hash"] or "").startswith("v2$"):
+            conn.execute("UPDATE usuarios_educacao SET senha_hash=? WHERE id=?", (gerar_hash_senha(payload.senha), int(row["id"])))
         token = secrets.token_urlsafe(40)
         agora = datetime.now()
         conn.execute("DELETE FROM sessoes_educacao WHERE expira_em<?", (agora.isoformat(),))
@@ -3560,7 +3562,8 @@ def login_usuario(payload: LoginPayload):
         if usuario_row is None or not verificar_senha(senha, usuario_row["senha_hash"]):
             raise HTTPException(status_code=401, detail="Usuario ou senha invalidos.")
 
-        conn.execute("UPDATE usuarios SET ultimo_login=? WHERE id=?", (agora_str(), int(usuario_row["id"])))
+        senha_hash_atualizada = gerar_hash_senha(senha) if not str(usuario_row["senha_hash"] or "").startswith("v2$") else usuario_row["senha_hash"]
+        conn.execute("UPDATE usuarios SET ultimo_login=?, senha_hash=? WHERE id=?", (agora_str(), senha_hash_atualizada, int(usuario_row["id"])))
         conn.execute(
             "INSERT INTO logs_acesso (usuario_id, usuario, evento, data_hora) VALUES (?, ?, ?, ?)",
             (int(usuario_row["id"]), str(usuario_row["usuario"] or usuario_row["nome"] or "").upper(), "LOGIN", agora_str()),
