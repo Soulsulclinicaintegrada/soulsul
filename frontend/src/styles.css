@@ -531,6 +531,9 @@ textarea::placeholder {
 .activity-alerts-panel { position:absolute; top:50px; right:0; z-index:102; width:min(360px,90vw); overflow:hidden; border:1px solid #ded3c6; border-radius:16px; background:#fffdfa; box-shadow:0 18px 45px rgba(55,45,35,.18); }
 .activity-alerts-panel>header { display:flex; justify-content:space-between; padding:15px 16px; border-bottom:1px solid #eee5dc; }
 .activity-alerts-panel>header span { color:#8a7f74; font-size:11px; }
+.activity-alerts-panel>header>div { display:flex; align-items:center; gap:10px; }
+.activity-alerts-panel>header button { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; border:1px solid #c9bba9; border-radius:8px; background:#fff; color:#4d6657; font-size:9px; font-weight:800; cursor:pointer; }
+.activity-alerts-panel>header button:disabled { opacity:.45; cursor:default; }
 .activity-alerts-panel>div { max-height:360px; overflow:auto; }
 .activity-alerts-panel>div>button { display:flex; width:100%; gap:10px; padding:13px 15px; border:0; border-bottom:1px solid #f0e8df; background:#f7f2e8; text-align:left; cursor:pointer; }
 .activity-alerts-panel>div>button.read { background:#fffdfa; opacity:.72; }
