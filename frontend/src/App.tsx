@@ -177,7 +177,6 @@ function App() {
       const upper = element.value.toLocaleUpperCase("pt-BR");
       if (element.value !== upper) {
         element.value = upper;
-        element.dispatchEvent(new Event("input", { bubbles: true }));
         if (start !== null && end !== null) element.setSelectionRange(start, end);
       }
     };
