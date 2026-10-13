@@ -7,6 +7,7 @@ import sqlite3
 import traceback
 import unicodedata
 import math
+import calendar
 from copy import deepcopy
 from io import BytesIO
 from urllib import error as urllib_error
@@ -2829,6 +2830,8 @@ class AgendaAtividadePayload(BaseModel):
     status: str = "Pendente"
     cor: str = "#c7aa78"
     secreta: bool = False
+    repeticao: str = "NENHUMA"
+    repetir_ate: str = ""
 
 
 class ResponsavelAtividadeResposta(BaseModel):
@@ -4268,6 +4271,23 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
         raise HTTPException(status_code=400, detail="Informe o título da atividade.")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(payload.data_atividade or "")):
         raise HTTPException(status_code=400, detail="Informe uma data válida.")
+    try:
+        data_inicial = date.fromisoformat(payload.data_atividade)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Informe uma data válida.") from exc
+    repeticao = str(payload.repeticao or "NENHUMA").strip().upper()
+    if repeticao not in {"NENHUMA", "DIARIA", "SEMANAL", "MENSAL"}:
+        raise HTTPException(status_code=400, detail="Selecione uma repetição válida.")
+    data_limite = data_inicial
+    if repeticao != "NENHUMA":
+        try:
+            data_limite = date.fromisoformat(str(payload.repetir_ate or ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Informe até quando a atividade deve se repetir.") from exc
+        if data_limite <= data_inicial:
+            raise HTTPException(status_code=400, detail="A data final da repetição deve ser posterior à primeira atividade.")
+        if (data_limite - data_inicial).days > 730:
+            raise HTTPException(status_code=400, detail="A repetição pode abranger no máximo dois anos.")
     conn = conectar()
     try:
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
@@ -4284,20 +4304,40 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
         status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
         cor = payload.cor if re.fullmatch(r"#[0-9a-fA-F]{6}", str(payload.cor or "")) else "#c7aa78"
         momento, nome_usuario = agora_str(), str(usuario["nome"] or usuario["usuario"] or "")
-        cursor = conn.execute(
-            """INSERT INTO agenda_atividades
-               (titulo, descricao, responsavel_id, data_atividade, hora_inicio, hora_fim, prioridade, status, criado_por_id, criado_por, criado_em, atualizado_por, atualizado_em, cor, secreta)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, int(usuario["id"]), nome_usuario, momento, nome_usuario, momento, cor, int(payload.secreta)),
-        )
-        atividade_id = int(cursor.lastrowid)
-        conn.executemany(
-            "INSERT INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
-            [(atividade_id, responsavel) for responsavel in responsaveis_ids],
-        )
-        notificar_atividade(conn, atividade_id, responsaveis_ids, "nova", f"Nova atividade: {titulo}", f"nova-{atividade_id}")
+        datas_atividade = [data_inicial]
+        cursor_data = data_inicial
+        while repeticao != "NENHUMA" and cursor_data < data_limite:
+            if repeticao == "DIARIA":
+                proxima = cursor_data + timedelta(days=1)
+            elif repeticao == "SEMANAL":
+                proxima = cursor_data + timedelta(days=7)
+            else:
+                mes = cursor_data.month + 1
+                ano = cursor_data.year + (1 if mes == 13 else 0)
+                mes = 1 if mes == 13 else mes
+                proxima = date(ano, mes, min(data_inicial.day, calendar.monthrange(ano, mes)[1]))
+            if proxima > data_limite:
+                break
+            datas_atividade.append(proxima)
+            cursor_data = proxima
+        primeiro_id = 0
+        for indice, data_atividade in enumerate(datas_atividade):
+            cursor = conn.execute(
+                """INSERT INTO agenda_atividades
+                   (titulo, descricao, responsavel_id, data_atividade, hora_inicio, hora_fim, prioridade, status, criado_por_id, criado_por, criado_em, atualizado_por, atualizado_em, cor, secreta)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, data_atividade.isoformat(), payload.hora_inicio, payload.hora_fim, prioridade, status, int(usuario["id"]), nome_usuario, momento, nome_usuario, momento, cor, int(payload.secreta)),
+            )
+            atividade_id = int(cursor.lastrowid)
+            if indice == 0:
+                primeiro_id = atividade_id
+            conn.executemany(
+                "INSERT INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
+                [(atividade_id, responsavel) for responsavel in responsaveis_ids],
+            )
+        notificar_atividade(conn, primeiro_id, responsaveis_ids, "nova", f"Nova atividade{' recorrente' if repeticao != 'NENHUMA' else ''}: {titulo}", f"nova-{primeiro_id}")
         conn.commit()
-        row = buscar_atividade_com_responsavel(conn, atividade_id)
+        row = buscar_atividade_com_responsavel(conn, primeiro_id)
         return mapear_atividade(conn, row)
     finally:
         conn.close()

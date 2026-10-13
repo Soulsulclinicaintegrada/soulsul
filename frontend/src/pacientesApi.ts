@@ -1478,6 +1478,8 @@ export type AgendaAtividadePayloadApi = {
   status: string;
   cor: string;
   secreta: boolean;
+  repeticao?: "NENHUMA" | "DIARIA" | "SEMANAL" | "MENSAL" | string;
+  repetir_ate?: string;
 };
 
 export type ResponsavelAtividadeApi = { id: number; nome: string; cor?: string };
