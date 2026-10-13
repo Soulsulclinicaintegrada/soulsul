@@ -1049,6 +1049,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
   const requestInit: RequestInit = {
     ...init,
+    cache: init?.cache ?? (metodo === "GET" ? "no-store" : undefined),
     headers
   };
 

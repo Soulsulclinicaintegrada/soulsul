@@ -1,5 +1,5 @@
 import { Check, ChevronLeft, ChevronRight, Circle, Clock3, LockKeyhole, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { UsuarioSessao } from "./auth";
 import {
   atualizarAtividadeApi,
@@ -89,6 +89,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const carregamentoRef = useRef(0);
   const identificadorUsuario = usuarioLogado.usuario || usuarioLogado.nome;
   const acessoEquipe = String(usuarioLogado.atividadesEscopo || "").toUpperCase() === "EQUIPE" || String(usuarioLogado.perfil).toLowerCase() === "administrador";
   const inicio = inicioSemana(referencia);
@@ -108,6 +109,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   const feriadoReferencia = descricaoFeriado(referencia);
 
   async function carregar() {
+    const carregamentoId = ++carregamentoRef.current;
     setCarregando(true);
     setErro("");
     try {
@@ -115,12 +117,14 @@ export function AtividadesPage({ usuarioLogado }: Props) {
         listarAtividadesApi(dias[0], dias[6], identificadorUsuario),
         listarResponsaveisAtividadesApi(identificadorUsuario)
       ]);
+      if (carregamentoId !== carregamentoRef.current) return;
       setAtividades(lista);
       setUsuarios(equipe);
     } catch (error) {
+      if (carregamentoId !== carregamentoRef.current) return;
       setErro(error instanceof Error ? error.message : "Não foi possível carregar as atividades.");
     } finally {
-      setCarregando(false);
+      if (carregamentoId === carregamentoRef.current) setCarregando(false);
     }
   }
 
@@ -166,8 +170,8 @@ export function AtividadesPage({ usuarioLogado }: Props) {
     setErro("");
     try {
       const salva = editandoId ? await atualizarAtividadeApi(editandoId, form, identificadorUsuario) : await criarAtividadeApi(form, identificadorUsuario);
+      carregamentoRef.current += 1;
       setAtividades((atuais) => editandoId ? atuais.map((item) => item.id === salva.id ? salva : item) : [...atuais, salva]);
-      await carregar();
       setFormAberto(false);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não foi possível salvar a atividade.");
