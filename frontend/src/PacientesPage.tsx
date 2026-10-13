@@ -778,6 +778,34 @@ function formatarDataNascimentoInput(valor: string) {
   return `${digitos.slice(0, 2)}/${digitos.slice(2, 4)}/${digitos.slice(4)}`;
 }
 
+function menorIdadePelaDataNascimento(valor: string) {
+  const match = String(valor || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const nascimento = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  if (
+    nascimento.getFullYear() !== Number(match[3]) ||
+    nascimento.getMonth() !== Number(match[2]) - 1 ||
+    nascimento.getDate() !== Number(match[1])
+  ) return null;
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  if (
+    hoje.getMonth() < nascimento.getMonth() ||
+    (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate())
+  ) idade -= 1;
+  return idade >= 0 && idade < 18;
+}
+
+function atualizarNascimentoPaciente(form: PacienteForm, valor: string): PacienteForm {
+  const dataNascimento = formatarDataNascimentoInput(valor);
+  const menorDetectado = menorIdadePelaDataNascimento(dataNascimento);
+  return {
+    ...form,
+    dataNascimento,
+    menorIdade: menorDetectado ?? form.menorIdade
+  };
+}
+
 function formatarCpfInput(valor: string) {
   const digitos = apenasDigitos(valor).slice(0, 11);
   if (!digitos) return "";
@@ -3233,7 +3261,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           ))}
                         </select>
                       </label>
-                      <label><span>Nascimento</span><input value={editForm.dataNascimento} onChange={(e) => setEditForm({ ...editForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })} /></label>
+                      <label><span>Nascimento</span><input value={editForm.dataNascimento} onChange={(e) => setEditForm(atualizarNascimentoPaciente(editForm, e.target.value))} /></label>
                       <label><span>Menor de idade</span><input type="checkbox" checked={editForm.menorIdade} onChange={(e) => setEditForm(e.target.checked ? { ...editForm, menorIdade: true } : limparCamposResponsavel({ ...editForm, menorIdade: false }))} /></label>
                     </div>
                   </div>
@@ -3265,8 +3293,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   <div className="form-block">
                     <h3>Complementar</h3>
                     <div className="form-grid two">
-                      <label><span>Responsável</span><input value={editForm.responsavel} onChange={(e) => setEditForm({ ...editForm, responsavel: e.target.value })} disabled={!editForm.menorIdade} /></label>
-                      <label><span>CPF do responsável</span><input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: formatarCpfInput(e.target.value) })} disabled={!editForm.menorIdade} /></label>
+                      <label><span>Responsável</span><input value={editForm.responsavel} onChange={(e) => setEditForm({ ...editForm, responsavel: e.target.value })} /></label>
+                      <label><span>CPF do responsável</span><input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: formatarCpfInput(e.target.value) })} /></label>
                       <label className="full"><span>Observações</span><textarea rows={5} value={editForm.observacoes} onChange={(e) => setEditForm({ ...editForm, observacoes: e.target.value })} /></label>
                     </div>
                   </div>
@@ -3753,11 +3781,11 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                     <div className="patient-form-grid two">
                       <label className="patient-line-field">
                         <span>Nome do Representante Legal</span>
-                        <input value={editForm.responsavel} onChange={(e) => setEditForm({ ...editForm, responsavel: e.target.value })} disabled={!editForm.menorIdade} />
+                        <input value={editForm.responsavel} onChange={(e) => setEditForm({ ...editForm, responsavel: e.target.value })} />
                       </label>
                       <label className="patient-line-field">
                         <span>CPF do Representante Legal</span>
-                        <input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: formatarCpfInput(e.target.value) })} disabled={!editForm.menorIdade} />
+                        <input value={editForm.cpfResponsavel} onChange={(e) => setEditForm({ ...editForm, cpfResponsavel: formatarCpfInput(e.target.value) })} />
                       </label>
                     </div>
                   </div>
@@ -4842,7 +4870,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                         ))}
                       </select>
                     </label>
-                    <label><span>Nascimento</span><input value={novoForm.dataNascimento} onChange={(e) => setNovoForm({ ...novoForm, dataNascimento: formatarDataNascimentoInput(e.target.value) })} /></label>
+                    <label><span>Nascimento</span><input value={novoForm.dataNascimento} onChange={(e) => setNovoForm(atualizarNascimentoPaciente(novoForm, e.target.value))} /></label>
                     <label><span>Menor de idade</span><input type="checkbox" checked={novoForm.menorIdade} onChange={(e) => setNovoForm(e.target.checked ? { ...novoForm, menorIdade: true } : limparCamposResponsavel({ ...novoForm, menorIdade: false }))} /></label>
                   </div>
                 </div>
@@ -4874,8 +4902,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   <h3>Complementar</h3>
                   <div className="form-grid two">
                     <label><span>Estado civil</span><input value={novoForm.estadoCivil} onChange={(e) => setNovoForm({ ...novoForm, estadoCivil: e.target.value })} /></label>
-                    <label><span>Responsável</span><input value={novoForm.responsavel} onChange={(e) => setNovoForm({ ...novoForm, responsavel: e.target.value })} disabled={!novoForm.menorIdade} /></label>
-                    <label><span>CPF do responsável</span><input value={novoForm.cpfResponsavel} onChange={(e) => setNovoForm({ ...novoForm, cpfResponsavel: formatarCpfInput(e.target.value) })} disabled={!novoForm.menorIdade} /></label>
+                    <label><span>Responsável</span><input value={novoForm.responsavel} onChange={(e) => setNovoForm({ ...novoForm, responsavel: e.target.value })} /></label>
+                    <label><span>CPF do responsável</span><input value={novoForm.cpfResponsavel} onChange={(e) => setNovoForm({ ...novoForm, cpfResponsavel: formatarCpfInput(e.target.value) })} /></label>
                     <label className="full"><span>Observações</span><textarea rows={5} value={novoForm.observacoes} onChange={(e) => setNovoForm({ ...novoForm, observacoes: e.target.value })} /></label>
                   </div>
                 </div>
