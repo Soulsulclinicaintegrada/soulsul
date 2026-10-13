@@ -4088,7 +4088,11 @@ def responsaveis_da_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> lis
     return [{"id": int(row["responsavel_id"]), "nome": str(row["responsavel_nome"] or "")}]
 
 
-def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendaAtividadeResposta:
+def usuario_row_eh_administrador(usuario: sqlite3.Row) -> bool:
+    return normalizar_texto(str(usuario["perfil"] or "")) == "administrador" or normalizar_texto(str(usuario["cargo"] or "")) == "administrador"
+
+
+def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row, incluir_confirmacoes: bool = False) -> AgendaAtividadeResposta:
     responsaveis = responsaveis_da_atividade(conn, row)
     confirmacoes_rows = conn.execute(
         """SELECT u.id, u.nome,
@@ -4101,7 +4105,7 @@ def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendaAtivid
            GROUP BY u.id, u.nome
            ORDER BY lower(u.nome), u.id""",
         (int(row["id"]),),
-    ).fetchall()
+    ).fetchall() if incluir_confirmacoes else []
     return AgendaAtividadeResposta(
         id=int(row["id"]),
         titulo=corrigir_texto_importado(str(row["titulo"] or "")),
@@ -4259,7 +4263,8 @@ def listar_atividades(request: Request, data_inicio: str = Query(default=""), da
                 ORDER BY a.data_atividade, COALESCE(a.hora_inicio, ''), a.id""",
             tuple(parametros),
         ).fetchall()
-        return [mapear_atividade(conn, row) for row in rows]
+        incluir_confirmacoes = usuario_row_eh_administrador(usuario)
+        return [mapear_atividade(conn, row, incluir_confirmacoes) for row in rows]
     finally:
         conn.close()
 
@@ -4338,7 +4343,7 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
         notificar_atividade(conn, primeiro_id, responsaveis_ids, "nova", f"Nova atividade{' recorrente' if repeticao != 'NENHUMA' else ''}: {titulo}", f"nova-{primeiro_id}")
         conn.commit()
         row = buscar_atividade_com_responsavel(conn, primeiro_id)
-        return mapear_atividade(conn, row)
+        return mapear_atividade(conn, row, usuario_row_eh_administrador(usuario))
     finally:
         conn.close()
 
@@ -4383,7 +4388,7 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
         )
         notificar_atividade(conn, atividade_id, responsaveis_ids, "alteracao", f"Atividade alterada: {titulo}", f"alteracao-{atividade_id}-{momento}")
         conn.commit()
-        return mapear_atividade(conn, buscar_atividade_com_responsavel(conn, atividade_id))
+        return mapear_atividade(conn, buscar_atividade_com_responsavel(conn, atividade_id), usuario_row_eh_administrador(usuario))
     finally:
         conn.close()
 

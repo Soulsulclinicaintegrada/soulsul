@@ -81,6 +81,14 @@ function textoComparacao(valor: string) {
   return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleUpperCase("pt-BR");
 }
 
+function formatarLeitura(valor: string) {
+  const texto = String(valor || "").trim();
+  if (!texto) return "Visto";
+  const correspondencia = texto.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (!correspondencia) return `Visto em ${texto}`;
+  return `Visto em ${correspondencia[3]}/${correspondencia[2]}/${correspondencia[1]} às ${correspondencia[4]}:${correspondencia[5]}`;
+}
+
 function ordenarAtividades(a: AgendaAtividadeApi, b: AgendaAtividadeApi) {
   const ordemPrioridade: Record<string, number> = { URGENTE: 0, ALTA: 1, NORMAL: 2, BAIXA: 3 };
   const prioridadeA = ordemPrioridade[textoComparacao(a.prioridade)] ?? 4;
@@ -109,7 +117,8 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   const [erro, setErro] = useState("");
   const carregamentoRef = useRef(0);
   const identificadorUsuario = usuarioLogado.usuario || usuarioLogado.nome;
-  const acessoEquipe = String(usuarioLogado.atividadesEscopo || "").toUpperCase() === "EQUIPE" || String(usuarioLogado.perfil).toLowerCase() === "administrador";
+  const usuarioEhAdministrador = String(usuarioLogado.perfil || "").toLowerCase() === "administrador" || String(usuarioLogado.cargo || "").toLowerCase() === "administrador";
+  const acessoEquipe = String(usuarioLogado.atividadesEscopo || "").toUpperCase() === "EQUIPE" || usuarioEhAdministrador;
   const inicio = inicioSemana(referencia);
   const dias = useMemo(() => Array.from({ length: 7 }, (_, indice) => adicionarDias(inicio, indice)), [inicio]);
   const diasCalendario = useMemo(() => {
@@ -281,7 +290,7 @@ export function AtividadesPage({ usuarioLogado }: Props) {
               <header><div><i/><strong>{usuario.nome}</strong></div><button onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
               <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} key={item.id}>
                 <div className="activity-card-top"><span>{item.horaInicio ? <><Clock3 size={13}/>{item.horaInicio}{item.horaFim ? `–${item.horaFim}` : ""}</> : "Atividade do dia"}</span><b className="activity-priority-tag">{item.prioridade}</b></div>
-                <strong className="activity-card-title">{item.secreta ? <LockKeyhole size={13}/> : null}{item.titulo}</strong>{acessoEquipe ? <><div className="activity-assignees">{(item.responsaveisIds || [item.responsavelId]).map((id, indice) => <small key={id} style={{ "--person-color": corResponsavel(id) } as CSSProperties}><i/>{item.responsaveisNomes?.[indice] || usuarios.find((usuario) => usuario.id === id)?.nome || item.responsavelNome}</small>)}</div><div className="activity-read-receipts">{(item.confirmacoesLeitura || []).map((confirmacao) => <span key={confirmacao.usuarioId} className={confirmacao.lida ? "read" : "pending"} title={confirmacao.lidaEm || undefined}>{confirmacao.lida ? <Check size={11}/> : <Clock3 size={11}/>} {confirmacao.nome}: {confirmacao.lida ? "Visto" : "Não visualizado"}</span>)}</div></> : null}{item.descricao ? <p>{item.descricao}</p> : null}
+                <strong className="activity-card-title">{item.secreta ? <LockKeyhole size={13}/> : null}{item.titulo}</strong>{acessoEquipe ? <><div className="activity-assignees">{(item.responsaveisIds || [item.responsavelId]).map((id, indice) => <small key={id} style={{ "--person-color": corResponsavel(id) } as CSSProperties}><i/>{item.responsaveisNomes?.[indice] || usuarios.find((usuario) => usuario.id === id)?.nome || item.responsavelNome}</small>)}</div>{usuarioEhAdministrador ? <div className="activity-read-receipts">{(item.confirmacoesLeitura || []).map((confirmacao) => <span key={confirmacao.usuarioId} className={confirmacao.lida ? "read" : "pending"} title={confirmacao.lidaEm || undefined}>{confirmacao.lida ? <Check size={11}/> : <Clock3 size={11}/>} {confirmacao.nome}: {confirmacao.lida ? formatarLeitura(confirmacao.lidaEm) : "Não visualizado"}</span>)}</div> : null}</> : null}{item.descricao ? <p>{item.descricao}</p> : null}
                 <div className="activity-card-actions"><div className="activity-status-buttons" aria-label="Alterar status">{STATUS.map((status) => <button type="button" key={status} className={item.status === status ? "active" : ""} onClick={() => void mudarStatus(item, status)}>{status}</button>)}</div><button onClick={() => abrirEdicao(item)} title="Editar"><Pencil size={14}/></button><button onClick={() => void remover(item)} title="Excluir"><Trash2 size={14}/></button></div>
               </article>)}{feriadoReferencia ? <div className="activities-day-holiday"><strong>Feriado</strong><span>{feriadoReferencia}</span></div> : !itens.length ? <button className="activities-empty" onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }}>+ Adicionar atividade</button> : null}</div>
             </section>;
