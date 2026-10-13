@@ -11796,6 +11796,27 @@ def atualizar_resgate_crm(contrato_id: int, payload: CrmResgateAtualizacaoPayloa
         conn.close()
 
 
+@app.get("/api/pacientes/{paciente_id}/recuperacao-pagamentos")
+def diagnosticar_pagamentos_excluidos(paciente_id: int, request: Request):
+    validar_perfil_administrador(request, acao="consultar a recuperação de pagamentos")
+    conn = conectar()
+    try:
+        carregar_paciente_por_id(conn, paciente_id)
+        rows = conn.execute(
+            """
+            SELECT h.id, h.recebivel_id, h.status, h.observacao, h.criado_por, h.criado_em
+            FROM recebiveis_historico h
+            LEFT JOIN recebiveis r ON r.id=h.recebivel_id
+            WHERE h.paciente_id=? AND r.id IS NULL
+            ORDER BY datetime(COALESCE(h.criado_em, '')), h.id
+            """,
+            (paciente_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
 @app.put("/api/pacientes/{paciente_id}/recebiveis/{recebivel_id}", response_model=RecebivelResumo)
 def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: RecebivelAtualizacaoPayload, request: Request):
     conn = conectar()
