@@ -10517,6 +10517,9 @@ body, body * {
 .activities-team-sidebar h2 { margin:4px 0 0; font-size:20px; }
 .activities-team-sidebar p { margin:6px 0 0; color:#786f65; font-size:12px; }
 .activities-team-sidebar>small { color:#847a70; font-size:10px; line-height:1.45; }
+.activities-own-calendar-note { display:grid; gap:5px; }
+.activities-own-calendar-note>strong { color:#342f2a; font-size:14px; }
+.activities-own-calendar-note>small { color:#847a70; font-size:10px; line-height:1.45; }
 .activities-mini-calendar { display:grid; gap:9px; padding-bottom:15px; border-bottom:1px solid #eee5da; }
 .activities-mini-calendar>header { display:grid; grid-template-columns:34px 1fr 34px; align-items:center; gap:5px; }
 .activities-mini-calendar>header strong { color:#4f4740; font-size:12px; text-align:center; text-transform:capitalize; }
@@ -10559,6 +10562,8 @@ body, body * {
 .activities-people-strip button.active { border-color:var(--person-color,#6f8b79); box-shadow:inset 0 0 0 1px var(--person-color,#6f8b79); color:#292521; }
 .activities-week { display: grid; grid-template-columns: repeat(7, minmax(180px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
 .activities-people-board { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(230px,1fr); min-height:620px; overflow:auto; border:1px solid #e8dfd3; border-radius:17px; background:#fffdfa; }
+.activities-people-board.single { grid-auto-flow:row; grid-template-columns:minmax(0,1fr); }
+.activities-people-board.single .activities-person-column { min-width:0; width:100%; }
 .activities-person-column { --person-color:#789080; min-width:230px; border-right:1px solid #e9e0d5; background:color-mix(in srgb,var(--person-color) 5%,#fffdfa); }
 .activities-person-column:last-child { border-right:0; }
 .activities-person-column>header { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; min-height:58px; padding:10px 13px; border-bottom:1px solid color-mix(in srgb,var(--person-color) 25%,#e8dfd3); background:color-mix(in srgb,var(--person-color) 10%,#fffdfa); }

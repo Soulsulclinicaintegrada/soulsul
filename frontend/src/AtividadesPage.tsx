@@ -268,24 +268,24 @@ export function AtividadesPage({ usuarioLogado, dataInicial = "" }: Props) {
     </header>
 
     <div className="activities-agenda-shell">
-      {acessoEquipe ? <aside className="panel activities-team-sidebar">
+      <aside className="panel activities-team-sidebar">
         <div className="activities-mini-calendar">
           <header><button onClick={() => setReferencia(adicionarMes(referencia, -1))}><ChevronLeft size={16}/></button><strong>{new Date(`${referencia}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</strong><button onClick={() => setReferencia(adicionarMes(referencia, 1))}><ChevronRight size={16}/></button></header>
           <div className="activities-mini-weekdays">{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <span key={`${dia}-${indice}`}>{dia}</span>)}</div>
           <div className="activities-mini-days">{diasCalendario.map((dia) => { const feriado = descricaoFeriado(dia); const classes = [dia === referencia ? "selected" : "", dia === hoje ? "today" : "", dia.slice(0, 7) !== mesReferencia ? "outside" : "", feriado ? "holiday" : ""].filter(Boolean).join(" "); return <button key={dia} title={feriado || undefined} className={classes} onClick={() => setReferencia(dia)}>{Number(dia.slice(-2))}</button>; })}</div>
         </div>
-        <div><span className="panel-kicker">Equipe</span><h2>Administrativo</h2><p>Marque quem deseja visualizar.</p></div>
-        <div className="activities-team-actions"><button onClick={() => setResponsaveisSelecionados(usuarios.map((usuario) => usuario.id))}>Mostrar todos</button><button onClick={() => setResponsaveisSelecionados([])}>Limpar seleção</button></div>
-        <div className="activities-team-list">{usuarios.map((usuario) => <label key={usuario.id} className={responsaveisSelecionados.includes(usuario.id) ? "active" : ""} style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties}><input className="activity-person-color" type="color" value={corResponsavel(usuario.id)} title={`Cor de ${usuario.nome}`} aria-label={`Cor de ${usuario.nome}`} onClick={(event) => event.stopPropagation()} onChange={(event) => void alterarCorResponsavel(usuario.id, event.target.value)}/><input type="checkbox" checked={responsaveisSelecionados.includes(usuario.id)} onChange={() => alternarResponsavelVisivel(usuario.id)}/><span>{usuario.nome}</span></label>)}</div>
-        <small>A inclusão de outras pessoas é definida em Usuários e Cargos → Agenda de atividades.</small>
-      </aside> : null}
+        {acessoEquipe ? <><div><span className="panel-kicker">Equipe</span><h2>Administrativo</h2><p>Marque quem deseja visualizar.</p></div>
+          <div className="activities-team-actions"><button onClick={() => setResponsaveisSelecionados(usuarios.map((usuario) => usuario.id))}>Mostrar todos</button><button onClick={() => setResponsaveisSelecionados([])}>Limpar seleção</button></div>
+          <div className="activities-team-list">{usuarios.map((usuario) => <label key={usuario.id} className={responsaveisSelecionados.includes(usuario.id) ? "active" : ""} style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties}><input className="activity-person-color" type="color" value={corResponsavel(usuario.id)} title={`Cor de ${usuario.nome}`} aria-label={`Cor de ${usuario.nome}`} onClick={(event) => event.stopPropagation()} onChange={(event) => void alterarCorResponsavel(usuario.id, event.target.value)}/><input type="checkbox" checked={responsaveisSelecionados.includes(usuario.id)} onChange={() => alternarResponsavelVisivel(usuario.id)}/><span>{usuario.nome}</span></label>)}</div>
+          <small>A inclusão de outras pessoas é definida em Usuários e Cargos → Agenda de atividades.</small></> : <div className="activities-own-calendar-note"><span className="panel-kicker">Minha agenda</span><strong>{usuarioLogado.nome}</strong><small>Escolha uma data no calendário para consultar suas atividades.</small></div>}
+      </aside>
       <section className="activities-calendar-main">
         <div className="panel activities-toolbar">
           <div className="activities-nav"><button onClick={() => setReferencia(adicionarDias(referencia, -1))}><ChevronLeft size={17}/></button><button onClick={() => setReferencia(hoje)}>Hoje</button><button onClick={() => setReferencia(adicionarDias(referencia, 1))}><ChevronRight size={17}/></button><strong>{new Date(`${referencia}T12:00:00`).toLocaleDateString("pt-BR", { weekday:"long", day: "2-digit", month: "long", year: "numeric" })}</strong></div>
           {feriadoReferencia ? <span className="activities-holiday-label">Feriado · {feriadoReferencia}</span> : null}
         </div>
         {erro && !formAberto ? <div className="crm-inline-alert">{erro}</div> : null}
-        <div className="activities-people-board">
+        <div className={`activities-people-board${usuariosVisiveis.length === 1 ? " single" : ""}`}>
           {usuariosVisiveis.map((usuario) => {
             const itens = visiveis
               .filter((item) => item.dataAtividade === referencia && (item.responsaveisIds || [item.responsavelId]).includes(usuario.id))
