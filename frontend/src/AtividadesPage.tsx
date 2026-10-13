@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, Circle, Clock3, LockKeyhole, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Circle, Clock3, LockKeyhole, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { UsuarioSessao } from "./auth";
 import {
@@ -89,6 +89,17 @@ function formatarLeitura(valor: string) {
   return `Visto em ${correspondencia[3]}/${correspondencia[2]}/${correspondencia[1]} às ${correspondencia[4]}:${correspondencia[5]}`;
 }
 
+function formatarDataAtividade(valor: string) {
+  const correspondencia = String(valor || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return correspondencia ? `${correspondencia[3]}/${correspondencia[2]}/${correspondencia[1]}` : valor;
+}
+
+function formatarExecucaoAtividade(valor: string) {
+  const texto = String(valor || "").trim();
+  const correspondencia = texto.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  return correspondencia ? `${correspondencia[3]}/${correspondencia[2]}/${correspondencia[1]} às ${correspondencia[4]}:${correspondencia[5]}` : formatarDataAtividade(texto);
+}
+
 function ordenarAtividades(a: AgendaAtividadeApi, b: AgendaAtividadeApi) {
   const ordemPrioridade: Record<string, number> = { URGENTE: 0, ALTA: 1, NORMAL: 2, BAIXA: 3 };
   const prioridadeA = ordemPrioridade[textoComparacao(a.prioridade)] ?? 4;
@@ -115,6 +126,9 @@ export function AtividadesPage({ usuarioLogado, dataInicial = "" }: Props) {
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [buscaTarefa, setBuscaTarefa] = useState("");
+  const [resultadosBusca, setResultadosBusca] = useState<AgendaAtividadeApi[]>([]);
+  const [buscandoTarefa, setBuscandoTarefa] = useState(false);
   const carregamentoRef = useRef(0);
   const identificadorUsuario = usuarioLogado.usuario || usuarioLogado.nome;
   const usuarioEhAdministrador = String(usuarioLogado.perfil || "").toLowerCase() === "administrador" || String(usuarioLogado.cargo || "").toLowerCase() === "administrador";
@@ -160,6 +174,24 @@ export function AtividadesPage({ usuarioLogado, dataInicial = "" }: Props) {
   useEffect(() => {
     if (dataInicial) setReferencia(dataInicial);
   }, [dataInicial]);
+
+  useEffect(() => {
+    const termo = buscaTarefa.trim();
+    if (!termo) {
+      setResultadosBusca([]);
+      setBuscandoTarefa(false);
+      return;
+    }
+    let cancelado = false;
+    const timer = window.setTimeout(() => {
+      setBuscandoTarefa(true);
+      void listarAtividadesApi("", "", identificadorUsuario, termo)
+        .then((lista) => { if (!cancelado) setResultadosBusca(lista.sort(ordenarAtividades)); })
+        .catch((error) => { if (!cancelado) setErro(error instanceof Error ? error.message : "Não foi possível pesquisar as tarefas."); })
+        .finally(() => { if (!cancelado) setBuscandoTarefa(false); });
+    }, 300);
+    return () => { cancelado = true; window.clearTimeout(timer); };
+  }, [buscaTarefa, identificadorUsuario]);
 
   useEffect(() => {
     if (!usuarios.length) return;
@@ -266,6 +298,11 @@ export function AtividadesPage({ usuarioLogado, dataInicial = "" }: Props) {
       <div><span className="panel-kicker">Organização da equipe</span><h2>Agenda de atividades</h2><p>{acessoEquipe ? "Acompanhe e distribua as atividades de todos os funcionários." : "Acompanhe e atualize suas atividades."}</p></div>
       <button className="primary-action" onClick={() => abrirNova()}><Plus size={17}/> Nova atividade</button>
     </header>
+
+    <section className="panel activities-search-panel">
+      <label><Search size={17}/><input value={buscaTarefa} onChange={(event) => setBuscaTarefa(event.target.value)} placeholder="Pesquisar uma tarefa pelo título ou descrição"/>{buscaTarefa ? <button type="button" onClick={() => setBuscaTarefa("")} aria-label="Limpar pesquisa"><X size={15}/></button> : null}</label>
+      {buscaTarefa.trim() ? <div className="activities-search-results">{buscandoTarefa ? <p>Pesquisando...</p> : resultadosBusca.length ? resultadosBusca.map((item) => <button type="button" key={item.id} onClick={() => { setReferencia(item.dataAtividade); setBuscaTarefa(""); }}><span><strong>{item.titulo}</strong><small>{item.responsaveisNomes?.join(", ") || item.responsavelNome}</small></span><span><b>{item.status}</b><small>{item.status === "Concluída" ? `Executada em ${formatarExecucaoAtividade(item.concluidaEm || item.atualizadoEm)}` : `Prevista para ${formatarDataAtividade(item.dataAtividade)}`}</small></span></button>) : <p>Nenhuma tarefa encontrada.</p>}</div> : null}
+    </section>
 
     <div className="activities-agenda-shell">
       <aside className="panel activities-team-sidebar">

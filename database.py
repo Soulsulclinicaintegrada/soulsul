@@ -1336,6 +1336,7 @@ def inicializar_banco():
     )
     garantir_coluna(conn, "agenda_atividades", "cor TEXT DEFAULT '#c7aa78'")
     garantir_coluna(conn, "agenda_atividades", "secreta INTEGER DEFAULT 0")
+    garantir_coluna(conn, "agenda_atividades", "concluida_em TEXT")
 
     conn.execute(
         """

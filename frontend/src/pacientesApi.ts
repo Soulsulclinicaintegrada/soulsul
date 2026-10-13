@@ -1461,6 +1461,7 @@ export type AgendaAtividadeApi = {
   criadoEm: string;
   atualizadoPor: string;
   atualizadoEm: string;
+  concluidaEm: string;
   cor: string;
   secreta: boolean;
   confirmacoesLeitura: Array<{ usuarioId: number; nome: string; lida: boolean; lidaEm: string }>;
@@ -1497,8 +1498,12 @@ export async function atualizarCorResponsavelAtividadesApi(usuarioId: number, co
   return fetchJson<ResponsavelAtividadeApi>(`${API_BASE_URL}/api/atividades/responsaveis/${usuarioId}/cor`, { method: "PATCH", headers: cabecalhoUsuarioAtividades(identificadorUsuario), body: JSON.stringify({ cor }) });
 }
 
-export async function listarAtividadesApi(dataInicio: string, dataFim: string, identificadorUsuario: string) {
-  return fetchJson<AgendaAtividadeApi[]>(`${API_BASE_URL}/api/atividades?data_inicio=${encodeURIComponent(dataInicio)}&data_fim=${encodeURIComponent(dataFim)}`, { headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
+export async function listarAtividadesApi(dataInicio: string, dataFim: string, identificadorUsuario: string, busca = "") {
+  const parametros = new URLSearchParams();
+  if (dataInicio) parametros.set("data_inicio", dataInicio);
+  if (dataFim) parametros.set("data_fim", dataFim);
+  if (busca.trim()) parametros.set("q", busca.trim());
+  return fetchJson<AgendaAtividadeApi[]>(`${API_BASE_URL}/api/atividades?${parametros.toString()}`, { headers: cabecalhoUsuarioAtividades(identificadorUsuario) });
 }
 
 export async function criarAtividadeApi(payload: AgendaAtividadePayloadApi, identificadorUsuario: string) {

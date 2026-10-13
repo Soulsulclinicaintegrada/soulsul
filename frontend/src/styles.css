@@ -10550,6 +10550,19 @@ body, body * {
 .activities-hero h2 { margin: 4px 0; font-size: 24px; }
 .activities-hero p { margin: 0; color: var(--muted, #786f64); }
 .activities-hero .primary-action { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.activities-search-panel { position:relative; z-index:4; padding:12px 14px; }
+.activities-search-panel>label { display:flex; align-items:center; gap:9px; min-height:44px; padding:0 11px; border:1px solid #ddd2c4; border-radius:12px; background:#fff; color:#7b7065; }
+.activities-search-panel>label input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:#332e29; }
+.activities-search-panel>label button { display:grid; place-items:center; width:30px; height:30px; padding:0; border:0; border-radius:8px; background:#f5efe7; color:#6d6257; cursor:pointer; }
+.activities-search-results { position:absolute; top:calc(100% - 4px); left:14px; right:14px; max-height:360px; overflow:auto; border:1px solid #ded3c6; border-radius:0 0 14px 14px; background:#fffdfa; box-shadow:0 18px 38px rgba(55,45,35,.16); }
+.activities-search-results>button { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:18px; width:100%; padding:12px 14px; border:0; border-bottom:1px solid #eee5dc; background:#fffdfa; color:#403a34; text-align:left; cursor:pointer; }
+.activities-search-results>button:hover { background:#f7f2ea; }
+.activities-search-results>button>span { display:grid; gap:4px; }
+.activities-search-results>button>span:last-child { justify-items:end; text-align:right; }
+.activities-search-results strong { font-size:12px; }
+.activities-search-results b { color:#6f8b79; font-size:10px; text-transform:uppercase; }
+.activities-search-results small { color:#857a70; font-size:10px; }
+.activities-search-results>p { margin:0; padding:18px; color:#857a70; font-size:11px; text-align:center; }
 .activities-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; }
 .activities-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .activities-nav button, .activities-day > header button { display: inline-grid; place-items: center; min-height: 36px; padding: 0 13px; border: 1px solid #dfd3c2; border-radius: 11px; background: #fffdfa; color: #2d2925; cursor: pointer; }

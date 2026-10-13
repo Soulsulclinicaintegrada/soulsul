@@ -2863,6 +2863,7 @@ class AgendaAtividadeResposta(BaseModel):
     criadoEm: str = ""
     atualizadoPor: str = ""
     atualizadoEm: str = ""
+    concluidaEm: str = ""
     cor: str = "#c7aa78"
     secreta: bool = False
     confirmacoesLeitura: list[dict] = Field(default_factory=list)
@@ -4127,6 +4128,7 @@ def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row, incluir_confirm
         criadoEm=str(row["criado_em"] or ""),
         atualizadoPor=str(row["atualizado_por"] or ""),
         atualizadoEm=str(row["atualizado_em"] or ""),
+        concluidaEm=str(row["concluida_em"] or (row["atualizado_em"] if str(row["status"] or "") == "Concluída" else "") or ""),
         cor=str(row["cor"] or "#c7aa78"),
         secreta=bool(row["secreta"]),
         confirmacoesLeitura=[
@@ -4258,7 +4260,7 @@ def atualizar_cor_responsavel_atividades(usuario_id: int, payload: ResponsavelAt
 
 
 @app.get("/api/atividades", response_model=list[AgendaAtividadeResposta])
-def listar_atividades(request: Request, data_inicio: str = Query(default=""), data_fim: str = Query(default="")):
+def listar_atividades(request: Request, data_inicio: str = Query(default=""), data_fim: str = Query(default=""), q: str = Query(default="")):
     conn = conectar()
     try:
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
@@ -4269,6 +4271,10 @@ def listar_atividades(request: Request, data_inicio: str = Query(default=""), da
         if data_fim:
             filtros.append("a.data_atividade<=?")
             parametros.append(data_fim)
+        busca = str(q or "").strip()
+        if busca:
+            filtros.append("(lower(a.titulo) LIKE lower(?) OR lower(COALESCE(a.descricao,'')) LIKE lower(?))")
+            parametros.extend([f"%{busca}%", f"%{busca}%"])
         filtros.append("(COALESCE(a.secreta,0)=0 OR a.criado_por_id=? OR EXISTS (SELECT 1 FROM agenda_atividade_responsaveis ars WHERE ars.atividade_id=a.id AND ars.usuario_id=?))")
         parametros.extend([int(usuario["id"]), int(usuario["id"])])
         if not acesso_equipe:
@@ -4396,9 +4402,10 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
         status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
         cor = payload.cor if re.fullmatch(r"#[0-9a-fA-F]{6}", str(payload.cor or "")) else "#c7aa78"
         nome_usuario, momento = str(usuario["nome"] or usuario["usuario"] or ""), agora_str()
+        concluida_em = str(atual["concluida_em"] or "") if status == "Concluída" and str(atual["status"] or "") == "Concluída" else momento if status == "Concluída" else None
         conn.execute(
-            """UPDATE agenda_atividades SET titulo=?, descricao=?, responsavel_id=?, data_atividade=?, hora_inicio=?, hora_fim=?, prioridade=?, status=?, atualizado_por=?, atualizado_em=?, cor=?, secreta=? WHERE id=?""",
-            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, nome_usuario, momento, cor, int(payload.secreta), atividade_id),
+            """UPDATE agenda_atividades SET titulo=?, descricao=?, responsavel_id=?, data_atividade=?, hora_inicio=?, hora_fim=?, prioridade=?, status=?, atualizado_por=?, atualizado_em=?, cor=?, secreta=?, concluida_em=? WHERE id=?""",
+            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, nome_usuario, momento, cor, int(payload.secreta), concluida_em, atividade_id),
         )
         conn.execute("DELETE FROM agenda_atividade_responsaveis WHERE atividade_id=?", (atividade_id,))
         conn.executemany(
