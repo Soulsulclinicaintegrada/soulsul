@@ -267,6 +267,7 @@ class AgendamentoResposta(BaseModel):
     trabalhoTipo: str | None = None
     ordemServicoId: int | None = None
     ordemServicoDocumentoNome: str | None = None
+    ordemServicoStatus: str = ""
     trabalhoNaClinica: bool = False
     elementoArcada: str | None = None
     recorrenciaGrupo: str | None = None
@@ -310,6 +311,7 @@ class GuiaEmitidaItem(BaseModel):
     elementoArcada: str = ""
     dataEmissao: str = ""
     etapasResumo: str = ""
+    status: str = "Emitida"
 
 
 class PacienteContextoResposta(BaseModel):
@@ -871,14 +873,16 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
     contrato_id = row_val(row, "contrato_id")
     ordem_servico_id = row_val(row, "ordem_servico_id")
     trabalho_na_clinica = False
+    ordem_servico_status = ""
     if ordem_servico_id:
         ordem_servico = conn.execute(
             "SELECT status FROM ordens_servico_protetico WHERE id=?",
             (int(ordem_servico_id),),
         ).fetchone()
+        ordem_servico_status = str(ordem_servico["status"] or "Emitida") if ordem_servico else ""
         trabalho_na_clinica = bool(
             ordem_servico
-            and str(ordem_servico["status"] or "").strip() == "Pronto e na clínica"
+            and ordem_servico_status.strip() == "Pronto e na clínica"
         )
     tratamento_suspenso, _mensagem_suspensao = obter_suspensao_tratamento_paciente(
         conn,
@@ -921,6 +925,7 @@ def mapear_agendamento(conn: sqlite3.Connection, row: sqlite3.Row) -> Agendament
         trabalhoTipo=row_val(row, "trabalho_tipo", "") or "",
         ordemServicoId=ordem_servico_id,
         ordemServicoDocumentoNome=row_val(row, "ordem_servico_documento_nome", "") or "",
+        ordemServicoStatus=ordem_servico_status,
         trabalhoNaClinica=trabalho_na_clinica,
         elementoArcada=row_val(row, "elemento_arcada", "") or "",
         recorrenciaGrupo=row_val(row, "recorrencia_grupo", "") or "",
@@ -1476,6 +1481,7 @@ def buscar_contexto_paciente(paciente_id: int, data_agendamento: str = Query(def
                 os.documento_nome,
                 os.elemento_arcada,
                 os.criado_em,
+                os.status,
                 COALESCE(
                     (
                         SELECT GROUP_CONCAT(
@@ -1506,6 +1512,7 @@ def buscar_contexto_paciente(paciente_id: int, data_agendamento: str = Query(def
                 elementoArcada=str(row["elemento_arcada"] or ""),
                 dataEmissao=formatar_data_br_valor(row["criado_em"]),
                 etapasResumo=str(row["etapas_resumo"] or ""),
+                status=str(row["status"] or "Emitida"),
             )
             for row in guias_rows
         ]

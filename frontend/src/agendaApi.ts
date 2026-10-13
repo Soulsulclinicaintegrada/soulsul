@@ -67,6 +67,7 @@ export type AgendaApiAgendamento = {
   trabalhoTipo?: string;
   ordemServicoId?: number | null;
   ordemServicoDocumentoNome?: string;
+  ordemServicoStatus?: string;
   trabalhoNaClinica?: boolean;
   elementoArcada?: string;
   recorrenciaGrupo?: string;
@@ -176,6 +177,7 @@ export type AgendaPacienteContexto = {
     elementoArcada?: string;
     dataEmissao?: string;
     etapasResumo?: string;
+    status?: string;
   }>;
 };
 
@@ -518,7 +520,8 @@ export async function buscarContextoPacienteAgenda(
             etapasResumo: (item.etapas || [])
               .map((etapa) => etapa.etapa === "Outro" ? etapa.descricao_outro || "Outro" : etapa.etapa)
               .filter(Boolean)
-              .join(" | ")
+              .join(" | "),
+            status: item.status || "Emitida"
           }))
         };
       } catch {
@@ -570,7 +573,8 @@ export async function buscarContextoPacienteAgenda(
       etapasResumo: (item.etapas || [])
         .map((etapa) => etapa.etapa === "Outro" ? etapa.descricao_outro || "Outro" : etapa.etapa)
         .filter(Boolean)
-        .join(" | ")
+        .join(" | "),
+      status: item.status || "Emitida"
     }));
   } catch {
     guiasEmitidas = [];

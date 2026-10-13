@@ -303,11 +303,13 @@ function descricaoGuiaAgenda(guia: {
   etapasResumo?: string;
   dataEmissao?: string;
   elementoArcada?: string;
+  status?: string;
 }) {
   const partes = [
     guia.etapasResumo || guia.procedimentoNome || "Guia",
     guia.dataEmissao ? `Emissão ${guia.dataEmissao}` : "",
-    guia.elementoArcada ? `Elementos ${guia.elementoArcada}` : ""
+    guia.elementoArcada ? `Elementos ${guia.elementoArcada}` : "",
+    `Status ${guia.status || "Emitida"}`
   ].filter((item) => String(item || "").trim());
   return partes.join(" · ");
 }
@@ -750,7 +752,7 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [pacienteBloqueadoAtendimento, setPacienteBloqueadoAtendimento] = useState(false);
   const [mensagemBloqueioPaciente, setMensagemBloqueioPaciente] = useState("");
   const [pacienteTratamentoSuspenso, setPacienteTratamentoSuspenso] = useState(false);
-  const [guiasEmitidasPaciente, setGuiasEmitidasPaciente] = useState<Array<{ id: number; procedimentoNome: string; retornoSolicitado?: string; documentoNome: string; elementoArcada?: string; dataEmissao?: string; etapasResumo?: string }>>([]);
+  const [guiasEmitidasPaciente, setGuiasEmitidasPaciente] = useState<Array<{ id: number; procedimentoNome: string; retornoSolicitado?: string; documentoNome: string; elementoArcada?: string; dataEmissao?: string; etapasResumo?: string; status?: string }>>([]);
   const [procedimentosSelecionados, setProcedimentosSelecionados] = useState<ProcedimentoSelecionado[]>([]);
   const [procedimentoContratoSelecionado, setProcedimentoContratoSelecionado] = useState("");
   const [procedimentoManual, setProcedimentoManual] = useState("");
@@ -2522,7 +2524,7 @@ function atualizarConfigProfissionalDia(
                         <span className="agenda-event-dot" style={{ background: corStatusAgendamento(evento.status) }} />
                         <div className="agenda-event-card-copy">
                           <strong title={evento.paciente}>{evento.paciente}</strong>
-                          {evento.trabalhoNaClinica && !eventoMinimo ? <span className="agenda-work-ready-label">Trabalho na clínica</span> : null}
+                          {evento.ordemServicoStatus && !eventoMinimo ? <span className="agenda-work-ready-label">Guia: {evento.ordemServicoStatus}</span> : null}
                           {mostrarProcedimento ? <span title={procedimentoPrincipal}>{procedimentoPrincipal}</span> : null}
                         </div>
                       </button>
@@ -2650,7 +2652,7 @@ function atualizarConfigProfissionalDia(
                           void abrirEdicaoAgendamento(evento);
                         }}
                       >
-                        <span title={`${evento.paciente}${evento.trabalhoNaClinica ? " · Trabalho na clínica" : ""}`}>{evento.trabalhoNaClinica ? "✓ " : ""}{resumoEventoAgenda(evento.paciente)}</span>
+                        <span title={`${evento.paciente}${evento.ordemServicoStatus ? ` · Guia: ${evento.ordemServicoStatus}` : ""}`}>{evento.trabalhoNaClinica ? "✓ " : ""}{resumoEventoAgenda(evento.paciente)}</span>
                       </button>
                     );
                   });
@@ -2875,6 +2877,7 @@ function atualizarConfigProfissionalDia(
             <div><strong>Procedimentos:</strong> {detalheAtivo.procedimentos.join(", ")}</div>
             <div><strong>Trabalho:</strong> {detalheAtivo.trabalhoTipo || "Não informado"}</div>
             <div><strong>Guia emitida:</strong> {detalheAtivo.ordemServicoDocumentoNome || "Sem guia vinculada"}</div>
+            {detalheAtivo.ordemServicoId ? <div><strong>Status da guia:</strong> {detalheAtivo.ordemServicoStatus || "Emitida"}</div> : null}
             {detalheAtivo.trabalhoNaClinica ? <div className="agenda-work-ready-detail"><Check size={15}/><strong>Trabalho na clínica</strong></div> : null}
             <div><strong>Dente / arcada:</strong> {detalheAtivo.elementoArcada || "Não informado"}</div>
             <div><strong>Marcadores:</strong> {(detalheAtivo.marcadores ?? []).join(", ") || "Sem marcadores"}</div>

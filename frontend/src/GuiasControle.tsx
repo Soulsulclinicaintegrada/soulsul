@@ -26,6 +26,12 @@ function formatarDataRetorno(valor?: string) {
   return ano && mes && dia ? `${dia}/${mes}/${ano}` : valor;
 }
 
+function formatarAgendamento(data?: string, hora?: string) {
+  if (!data) return "Ainda não agendada";
+  const dataFormatada = data.includes("-") ? formatarDataRetorno(data) : data;
+  return `${dataFormatada}${hora ? `, ${hora}` : ""}`;
+}
+
 function dataLocalIso(data: Date) {
   const ano = data.getFullYear();
   const mes = String(data.getMonth() + 1).padStart(2, "0");
@@ -198,7 +204,8 @@ export function GuiasControle() {
         <div className="guide-card-top"><span className="guide-id">GUIA #{guia.id}</span><span className="guide-current-status">{guia.status || "Emitida"}</span></div>
         <h3>{guia.pacienteNome || "Paciente"}</h3><p className="guide-record">Prontuário {guia.prontuario || "não informado"}</p>
         <div className="guide-procedure"><strong>{guia.procedimentoNome}</strong><span>{guia.elementoArcada || "Elemento não informado"}</span></div>
-        <div className="guide-meta"><CalendarDays size={15}/><span><strong>Retorno solicitado:</strong> {formatarDataRetorno(guia.retornoSolicitado)}</span></div>
+        <div className="guide-meta"><CalendarDays size={15}/><span><strong>Data solicitada:</strong> {formatarDataRetorno(guia.retornoSolicitado)}</span></div>
+        <div className="guide-meta"><CalendarDays size={15}/><span><strong>Data agendada com o paciente:</strong> {formatarAgendamento(guia.dataAgendada, guia.horaAgendada)}</span></div>
         {guia.laboratorioNome ? <div className="guide-meta"><FlaskConical size={15}/><span>{guia.laboratorioNome}</span></div> : null}
         <div className="guide-meta"><Clock3 size={15}/><span>{formatarData(guia.statusAtualizadoEm || guia.criadoEm)}{guia.statusAtualizadoPor ? ` · ${guia.statusAtualizadoPor}` : ""}</span></div>
         <div className="guide-card-buttons"><button className="primary-action" onClick={() => abrirMovimento(guia)}>Movimentar</button><button className="ghost-action" onClick={() => setHistorico(historico === guia.id ? null : guia.id)}><History size={15}/> Histórico</button></div>

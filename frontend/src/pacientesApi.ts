@@ -196,6 +196,8 @@ export type OrdemServicoResumoApi = {
   elementoArcada?: string;
   cargaImediata?: boolean;
   retornoSolicitado?: string;
+  dataAgendada?: string;
+  horaAgendada?: string;
   documentoNome?: string;
   observacao?: string;
   criadoPor?: string;

@@ -2661,6 +2661,8 @@ class OrdemServicoResumoResposta(BaseModel):
     elementoArcada: str = ""
     cargaImediata: bool = False
     retornoSolicitado: str = ""
+    dataAgendada: str = ""
+    horaAgendada: str = ""
     documentoNome: str = ""
     observacao: str = ""
     criadoPor: str = ""
@@ -4847,6 +4849,16 @@ def mapear_ordem_servico_controle(conn: sqlite3.Connection, ordem: sqlite3.Row) 
     if ordem["laboratorio_id"] is not None:
         laboratorio = conn.execute("SELECT nome FROM guia_laboratorios WHERE id=?", (int(ordem["laboratorio_id"]),)).fetchone()
     movimento_atual = movimentos[0] if movimentos else None
+    agendamento = conn.execute(
+        """
+        SELECT COALESCE(NULLIF(data_agendamento, ''), data) AS data_agendada,
+               COALESCE(hora_inicio, '') AS hora_agendada
+        FROM agendamentos
+        WHERE ordem_servico_id=? AND lower(COALESCE(status, '')) NOT LIKE 'cancel%'
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(ordem["id"]),),
+    ).fetchone()
     status_atual = str(movimento_atual["status_novo"] or ordem["status"] or "Emitida") if movimento_atual else str(ordem["status"] or "Emitida")
     status_atualizado_por = str(movimento_atual["criado_por"] or ordem["status_atualizado_por"] or "") if movimento_atual else str(ordem["status_atualizado_por"] or "")
     status_atualizado_em = str(movimento_atual["criado_em"] or ordem["status_atualizado_em"] or ordem["criado_em"] or "") if movimento_atual else str(ordem["status_atualizado_em"] or ordem["criado_em"] or "")
@@ -4861,6 +4873,8 @@ def mapear_ordem_servico_controle(conn: sqlite3.Connection, ordem: sqlite3.Row) 
         elementoArcada=corrigir_texto_importado(str(ordem["elemento_arcada"] or "")),
         cargaImediata=bool(ordem["carga_imediata"] or 0),
         retornoSolicitado=str(ordem["retorno_solicitado"] or ""),
+        dataAgendada=str(agendamento["data_agendada"] or "") if agendamento else "",
+        horaAgendada=str(agendamento["hora_agendada"] or "") if agendamento else "",
         documentoNome=str(ordem["documento_nome"] or ""),
         observacao=corrigir_texto_importado(str(ordem["observacao"] or "")),
         criadoPor=corrigir_texto_importado(str(ordem["criado_por"] or "")),
