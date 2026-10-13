@@ -12,7 +12,7 @@ import { GuiasPage } from "./GuiasPage";
 import { ImportacoesPage } from "./ImportacoesPage";
 import { menuItems, type MenuKey } from "./mockData";
 import { PacientesPage } from "./PacientesPage";
-import { listarNotificacoesAtividadesApi, listarUsuariosApi, loginApi, marcarNotificacaoAtividadeLidaApi, trocarSenhaApi, type AtividadeNotificacaoApi, type UsuarioResumoApi } from "./pacientesApi";
+import { limparNotificacoesAtividadesApi, listarNotificacoesAtividadesApi, listarUsuariosApi, loginApi, marcarNotificacaoAtividadeLidaApi, trocarSenhaApi, type AtividadeNotificacaoApi, type UsuarioResumoApi } from "./pacientesApi";
 import {
   arquivarChecklistApi,
   atualizarChecklistApi,
@@ -182,6 +182,8 @@ function App() {
   const [avisos, setAvisos] = useState<AtividadeNotificacaoApi[]>([]);
   const [avisosAbertos, setAvisosAbertos] = useState(false);
   const [marcandoTodosAvisos, setMarcandoTodosAvisos] = useState(false);
+  const [limpandoAvisos, setLimpandoAvisos] = useState(false);
+  const [dataAgendaAtividades, setDataAgendaAtividades] = useState("");
   const [usuariosSistema, setUsuariosSistema] = useState<UsuarioResumoApi[]>([]);
   const [usuarioLoginDigitado, setUsuarioLoginDigitado] = useState("");
   const [senhaLogin, setSenhaLogin] = useState("");
@@ -231,6 +233,25 @@ function App() {
       setAvisos((atuais) => atuais.map((item) => ({ ...item, lida: true })));
     } finally {
       setMarcandoTodosAvisos(false);
+    }
+  }
+
+  async function abrirAviso(aviso: AtividadeNotificacaoApi) {
+    if (!aviso.lida) await lerAviso(aviso);
+    if (aviso.dataAtividade) setDataAgendaAtividades(aviso.dataAtividade);
+    setMenuAtivo("Atividades");
+    setAvisosAbertos(false);
+    setSidebarOverlayAberta(false);
+  }
+
+  async function limparTodosAvisos() {
+    if (!usuarioLogado || !avisos.length || limpandoAvisos) return;
+    setLimpandoAvisos(true);
+    try {
+      await limparNotificacoesAtividadesApi(usuarioLogado.usuario || usuarioLogado.nome);
+      setAvisos([]);
+    } finally {
+      setLimpandoAvisos(false);
     }
   }
   const menuDisponivel = useMemo(
@@ -630,7 +651,7 @@ function App() {
     }
     if (menuAtivo === "Financeiro") return <FinanceiroPage usuarioLogado={usuarioLogado} />;
     if (menuAtivo === "Tabelas") return <ImportacoesPage />;
-    if (menuAtivo === "Atividades") return <AtividadesPage usuarioLogado={usuarioLogado!} />;
+    if (menuAtivo === "Atividades") return <AtividadesPage usuarioLogado={usuarioLogado!} dataInicial={dataAgendaAtividades} />;
     if (menuAtivo === "Usuários") return <UsuariosPage />;
     return null;
   };
@@ -1221,8 +1242,8 @@ function App() {
               <button type="button" className="activity-alerts-button" aria-label="Avisos" onClick={() => setAvisosAbertos((atual) => !atual)}>
                 <Bell size={18}/>{avisosNaoLidos ? <b>{avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}</b> : null}
               </button>
-              {avisosAbertos ? <div className="activity-alerts-panel"><header><strong>Avisos</strong><div><span>{avisosNaoLidos} não lido{avisosNaoLidos === 1 ? "" : "s"}</span><button type="button" onClick={() => void lerTodosAvisos()} disabled={!avisosNaoLidos || marcandoTodosAvisos}><CheckCheck size={13}/>{marcandoTodosAvisos ? "Lendo..." : "Ler todos"}</button></div></header>
-                <div>{avisos.length ? avisos.map((aviso) => <button key={aviso.id} className={aviso.lida ? "read" : ""} onClick={() => void lerAviso(aviso)}><i/><span><strong>{aviso.mensagem}</strong><small>{aviso.criadoEm ? new Date(aviso.criadoEm.replace(" ", "T")).toLocaleString("pt-BR", { dateStyle:"short", timeStyle:"short" }) : "Agora"}</small></span></button>) : <p>Nenhum aviso.</p>}</div>
+              {avisosAbertos ? <div className="activity-alerts-panel"><header><strong>Avisos</strong><div><span>{avisosNaoLidos} não lido{avisosNaoLidos === 1 ? "" : "s"}</span><button type="button" onClick={() => void lerTodosAvisos()} disabled={!avisosNaoLidos || marcandoTodosAvisos}><CheckCheck size={13}/>{marcandoTodosAvisos ? "Lendo..." : "Ler todos"}</button><button type="button" className="clear-all" onClick={() => void limparTodosAvisos()} disabled={!avisos.length || limpandoAvisos}><Trash2 size={13}/>{limpandoAvisos ? "Limpando..." : "Limpar tudo"}</button></div></header>
+                <div>{avisos.length ? avisos.map((aviso) => <button key={aviso.id} className={aviso.lida ? "read" : ""} onClick={() => void abrirAviso(aviso)}><i/><span><strong>{aviso.mensagem}</strong><small>{aviso.criadoEm ? new Date(aviso.criadoEm.replace(" ", "T")).toLocaleString("pt-BR", { dateStyle:"short", timeStyle:"short" }) : "Agora"}</small></span></button>) : <p>Nenhum aviso.</p>}</div>
               </div> : null}
             </div> : null}
             <div className="header-user">

@@ -13,7 +13,7 @@ import {
   type ResponsavelAtividadeApi
 } from "./pacientesApi";
 
-type Props = { usuarioLogado: UsuarioSessao };
+type Props = { usuarioLogado: UsuarioSessao; dataInicial?: string };
 
 const STATUS = ["Pendente", "Em andamento", "Concluída", "Cancelada"];
 const PRIORIDADES = ["Baixa", "Normal", "Alta", "Urgente"];
@@ -103,9 +103,9 @@ function ordenarAtividades(a: AgendaAtividadeApi, b: AgendaAtividadeApi) {
   return porHorario || a.id - b.id;
 }
 
-export function AtividadesPage({ usuarioLogado }: Props) {
+export function AtividadesPage({ usuarioLogado, dataInicial = "" }: Props) {
   const hoje = dataIso(new Date());
-  const [referencia, setReferencia] = useState(hoje);
+  const [referencia, setReferencia] = useState(dataInicial || hoje);
   const [atividades, setAtividades] = useState<AgendaAtividadeApi[]>([]);
   const [usuarios, setUsuarios] = useState<ResponsavelAtividadeApi[]>([]);
   const [responsaveisSelecionados, setResponsaveisSelecionados] = useState<number[]>([]);
@@ -156,6 +156,10 @@ export function AtividadesPage({ usuarioLogado }: Props) {
   }
 
   useEffect(() => { void carregar(); }, [inicio, acessoEquipe]);
+
+  useEffect(() => {
+    if (dataInicial) setReferencia(dataInicial);
+  }, [dataInicial]);
 
   useEffect(() => {
     if (!usuarios.length) return;

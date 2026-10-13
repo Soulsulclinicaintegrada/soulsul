@@ -2873,6 +2873,7 @@ class AtividadeNotificacaoResposta(BaseModel):
     mensagem: str
     lida: bool = False
     criadoEm: str = ""
+    dataAtividade: str = ""
 
 
 class PlanoTratamentoPassoPayload(BaseModel):
@@ -4173,10 +4174,13 @@ def listar_notificacoes_atividades(request: Request):
             notificar_atividade(conn, int(atividade["id"]), [int(usuario["id"])], "horario", f"Chegou o horário de: {atividade['titulo']}", f"horario-{atividade['id']}-{hoje}")
         conn.commit()
         rows = conn.execute(
-            "SELECT * FROM agenda_atividade_notificacoes WHERE usuario_id=? ORDER BY lida, id DESC LIMIT 40",
+            """SELECT n.*, COALESCE(a.data_atividade, '') AS data_atividade
+               FROM agenda_atividade_notificacoes n
+               LEFT JOIN agenda_atividades a ON a.id=n.atividade_id
+               WHERE n.usuario_id=? ORDER BY n.lida, n.id DESC LIMIT 40""",
             (int(usuario["id"]),),
         ).fetchall()
-        return [AtividadeNotificacaoResposta(id=int(row["id"]), atividadeId=row["atividade_id"], tipo=str(row["tipo"]), mensagem=str(row["mensagem"]), lida=bool(row["lida"]), criadoEm=str(row["criado_em"] or "")) for row in rows]
+        return [AtividadeNotificacaoResposta(id=int(row["id"]), atividadeId=row["atividade_id"], tipo=str(row["tipo"]), mensagem=str(row["mensagem"]), lida=bool(row["lida"]), criadoEm=str(row["criado_em"] or ""), dataAtividade=str(row["data_atividade"] or "")) for row in rows]
     finally:
         conn.close()
 
@@ -4190,6 +4194,18 @@ def marcar_notificacao_lida(notificacao_id: int, request: Request):
             "UPDATE agenda_atividade_notificacoes SET lida=1, lida_em=COALESCE(lida_em, ?) WHERE id=? AND usuario_id=?",
             (agora_str(), notificacao_id, int(usuario["id"])),
         )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/atividades/notificacoes")
+def limpar_notificacoes_atividades(request: Request):
+    conn = conectar()
+    try:
+        usuario, _ = validar_acesso_atividades(conn, request)
+        conn.execute("DELETE FROM agenda_atividade_notificacoes WHERE usuario_id=?", (int(usuario["id"]),))
         conn.commit()
         return {"ok": True}
     finally:
