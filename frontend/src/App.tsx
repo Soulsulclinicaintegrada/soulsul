@@ -167,23 +167,6 @@ function App() {
     document.title = emEducacao ? "Soul Sul Educação" : "Soul Sul Clínica";
   }, []);
 
-  useEffect(() => {
-    const upperCaseInput = (event: Event) => {
-      const element = event.target;
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
-      if (element instanceof HTMLInputElement && !["text", "email", "search", "tel"].includes(element.type)) return;
-      const start = element.selectionStart;
-      const end = element.selectionEnd;
-      const upper = element.value.toLocaleUpperCase("pt-BR");
-      if (element.value !== upper) {
-        element.value = upper;
-        if (start !== null && end !== null) element.setSelectionRange(start, end);
-      }
-    };
-    document.addEventListener("input", upperCaseInput, true);
-    return () => document.removeEventListener("input", upperCaseInput, true);
-  }, []);
-
   const [menuAtivo, setMenuAtivo] = useState<MenuKey>("Agenda");
   const [buscaGlobal, setBuscaGlobal] = useState("");
   const [sidebarOverlayAberta, setSidebarOverlayAberta] = useState(false);
