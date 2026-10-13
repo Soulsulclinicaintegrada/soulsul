@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, Clock3, FlaskConical, History, Plus, Settings2 } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, FlaskConical, History, Plus, Search, Settings2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { listarAgendamentosAgenda, type AgendaApiAgendamento } from "./agendaApi";
 import {
@@ -55,11 +55,16 @@ function instanteAgendamento(agendamento: AgendaApiAgendamento) {
   return new Date(ano, mes - 1, dia, hora || 0, minuto || 0).getTime();
 }
 
+function normalizarBusca(valor?: string) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
 export function GuiasControle() {
   const [guias, setGuias] = useState<OrdemServicoResumoApi[]>([]);
   const [agendaProxima, setAgendaProxima] = useState<AgendaApiAgendamento[]>([]);
   const [laboratorios, setLaboratorios] = useState<GuiaLaboratorioApi[]>([]);
   const [agrupamento, setAgrupamento] = useState<"status" | "laboratorio">("status");
+  const [buscaPaciente, setBuscaPaciente] = useState("");
   const [configurando, setConfigurando] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
@@ -93,19 +98,25 @@ export function GuiasControle() {
 
   useEffect(() => { carregar(); }, []);
 
+  const guiasFiltradas = useMemo(() => {
+    const termo = normalizarBusca(buscaPaciente);
+    if (!termo) return guias;
+    return guias.filter((guia) => normalizarBusca(guia.pacienteNome).includes(termo) || normalizarBusca(guia.prontuario).includes(termo));
+  }, [buscaPaciente, guias]);
+
   const colunas = useMemo(() => agrupamento === "status"
-    ? STATUS.map((nome) => ({ chave: nome, nome, itens: guias.filter((guia) => (guia.status || "Emitida") === nome) }))
-    : [...laboratorios.filter((lab) => lab.ativo).map((lab) => ({ chave: String(lab.id), nome: lab.nome, itens: guias.filter((guia) => guia.laboratorioId === lab.id) })),
-      { chave: "sem", nome: "Sem laboratório", itens: guias.filter((guia) => !guia.laboratorioId) }],
-  [agrupamento, guias, laboratorios]);
+    ? STATUS.map((nome) => ({ chave: nome, nome, itens: guiasFiltradas.filter((guia) => (guia.status || "Emitida") === nome) }))
+    : [...laboratorios.filter((lab) => lab.ativo).map((lab) => ({ chave: String(lab.id), nome: lab.nome, itens: guiasFiltradas.filter((guia) => guia.laboratorioId === lab.id) })),
+      { chave: "sem", nome: "Sem laboratório", itens: guiasFiltradas.filter((guia) => !guia.laboratorioId) }],
+  [agrupamento, guiasFiltradas, laboratorios]);
 
   const trabalhosProximos = useMemo(() => {
-    const guiasPorId = new Map(guias.map((guia) => [guia.id, guia]));
+    const guiasPorId = new Map(guiasFiltradas.map((guia) => [guia.id, guia]));
     return agendaProxima
       .filter((agendamento) => Boolean(agendamento.ordemServicoId && guiasPorId.has(agendamento.ordemServicoId)))
       .map((agendamento) => ({ agendamento, guia: guiasPorId.get(agendamento.ordemServicoId!)! }))
       .sort((a, b) => instanteAgendamento(a.agendamento) - instanteAgendamento(b.agendamento));
-  }, [agendaProxima, guias]);
+  }, [agendaProxima, guiasFiltradas]);
 
   function abrirMovimento(guia: OrdemServicoResumoApi) {
     setMovendo(guia.id);
@@ -153,6 +164,14 @@ export function GuiasControle() {
         <button className="ghost-action" onClick={() => setConfigurando((valor) => !valor)}><Settings2 size={16}/> Laboratórios</button>
       </div>
     </header>
+    <section className="panel guide-patient-search">
+      <label>
+        <Search size={18}/>
+        <input value={buscaPaciente} onChange={(event) => setBuscaPaciente(event.target.value)} placeholder="Pesquisar paciente por nome ou prontuário" aria-label="Pesquisar paciente nas guias"/>
+        {buscaPaciente ? <button type="button" onClick={() => setBuscaPaciente("")} aria-label="Limpar pesquisa"><X size={17}/></button> : null}
+      </label>
+      <span>{guiasFiltradas.length} guia{guiasFiltradas.length === 1 ? "" : "s"} encontrada{guiasFiltradas.length === 1 ? "" : "s"}</span>
+    </section>
     {erro ? <div className="crm-inline-alert">{erro}</div> : null}
     {feedback ? <div className="dashboard-note success">{feedback}</div> : null}
     <section className="panel guide-upcoming-panel">
