@@ -2052,15 +2052,6 @@ class BaixaRecebivelPayload(BaseModel):
     senha_administrativa: str = ""
 
 
-class RecuperacaoPagamentoItemPayload(BaseModel):
-    recebivel_id: int
-    data_pagamento: str
-
-
-class RecuperacaoPagamentosPayload(BaseModel):
-    itens: list[RecuperacaoPagamentoItemPayload] = Field(default_factory=list)
-
-
 class MovimentoCaixaPayload(BaseModel):
     origem: str = ""
     descricao: str = ""
@@ -11801,67 +11792,6 @@ def atualizar_resgate_crm(contrato_id: int, payload: CrmResgateAtualizacaoPayloa
         if item is None:
             raise HTTPException(status_code=404, detail="Resgate não encontrado após atualização.")
         return item
-    finally:
-        conn.close()
-
-
-@app.get("/api/pacientes/{paciente_id}/recuperacao-pagamentos")
-def diagnosticar_pagamentos_excluidos(paciente_id: int, request: Request):
-    validar_perfil_administrador(request, acao="consultar a recuperação de pagamentos")
-    conn = conectar()
-    try:
-        carregar_paciente_por_id(conn, paciente_id)
-        rows = conn.execute(
-            """
-            SELECT h.id, h.recebivel_id, h.status, h.observacao, h.criado_por, h.criado_em
-            FROM recebiveis_historico h
-            LEFT JOIN recebiveis r ON r.id=h.recebivel_id
-            WHERE h.paciente_id=? AND r.id IS NULL
-            ORDER BY datetime(COALESCE(h.criado_em, '')), h.id
-            """,
-            (paciente_id,),
-        ).fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
-
-
-@app.post("/api/pacientes/{paciente_id}/recuperacao-pagamentos")
-def recuperar_pagamentos_excluidos(paciente_id: int, payload: RecuperacaoPagamentosPayload, request: Request):
-    usuario = validar_perfil_administrador(request, acao="recuperar pagamentos excluídos")
-    conn = conectar()
-    try:
-        carregar_paciente_por_id(conn, paciente_id)
-        recuperados = []
-        for item in payload.itens:
-            recebivel = carregar_recebivel_paciente(conn, paciente_id, item.recebivel_id)
-            if normalizar_texto(recebivel["status"]) == "pago":
-                continue
-            data_pagamento = normalizar_data_contrato_iso(item.data_pagamento, "")
-            if not data_pagamento:
-                raise HTTPException(status_code=400, detail=f"Data inválida para o recebível {item.recebivel_id}.")
-            atualizado = baixar_recebivel_no_caixa(
-                conn,
-                paciente_id=paciente_id,
-                recebivel_id=item.recebivel_id,
-                data_pagamento=data_pagamento,
-                forma_pagamento=str(recebivel["forma_pagamento"] or "PIX"),
-                conta_caixa="SICOOB" if normalizar_texto(recebivel["forma_pagamento"]) in {"pix", "boleto"} else "CAIXA",
-                desconto_valor=0,
-                observacao="Pagamento restaurado após correção de alteração contratual.",
-            )
-            registrar_historico_cobranca_recebivel(
-                conn,
-                recebivel_id=item.recebivel_id,
-                paciente_id=paciente_id,
-                status="Pago",
-                observacao="Pagamento restaurado após correção de alteração contratual.",
-                cobrado=True,
-                criado_por=usuario,
-            )
-            recuperados.append({"id": int(atualizado["id"]), "dataPagamento": data_pagamento})
-        conn.commit()
-        return {"ok": True, "recuperados": recuperados}
     finally:
         conn.close()
 
