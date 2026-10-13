@@ -8697,6 +8697,8 @@ def carregar_procedimentos_documento_contrato(conn: sqlite3.Connection, contrato
         procedimento = str(grupo["procedimento"] or "")
         regioes = regioes_por_procedimento.get(chave, [])
         regioes_texto = regioes_texto_por_procedimento.get(chave, [])
+        if not regioes and not regioes_texto:
+            continue
         sufixo = ""
         if regioes_texto:
             somente_elementos = all(str(item).isdigit() for item in regioes_texto)
@@ -13092,7 +13094,10 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
                 (usuario_aprovador or "JULIANA", agora_str(), incluir_venda, contar_venda, valor_considerado, tipo_movimento, contrato_id, paciente_id),
             )
             conn.execute(
-                "UPDATE procedimentos_dente SET status='CONTRATADO' WHERE contrato_id=? AND paciente_id=?",
+                """UPDATE procedimentos_dente
+                   SET status='CONTRATADO'
+                   WHERE contrato_id=? AND paciente_id=?
+                     AND upper(trim(COALESCE(status, ''))) <> 'EXCLUIDO'""",
                 (contrato_id, paciente_id),
             )
             contrato_atualizado = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
