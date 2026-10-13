@@ -499,6 +499,8 @@ textarea::placeholder {
 }
 
 .topbar {
+  position: relative;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -523,10 +525,10 @@ textarea::placeholder {
 .checklist-topbar-button {
   white-space: nowrap;
 }
-.activity-alerts-wrap { position:relative; }
+.activity-alerts-wrap { position:relative; z-index:101; }
 .activity-alerts-button { position:relative; display:grid; place-items:center; width:42px; height:42px; border:1px solid #ded3c6; border-radius:12px; background:#fffdfa; color:#4c443d; cursor:pointer; }
 .activity-alerts-button b { position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 4px; border-radius:9px; background:#a7473e; color:white; font-size:10px; line-height:18px; }
-.activity-alerts-panel { position:absolute; top:50px; right:0; z-index:80; width:min(360px,90vw); overflow:hidden; border:1px solid #ded3c6; border-radius:16px; background:#fffdfa; box-shadow:0 18px 45px rgba(55,45,35,.18); }
+.activity-alerts-panel { position:absolute; top:50px; right:0; z-index:102; width:min(360px,90vw); overflow:hidden; border:1px solid #ded3c6; border-radius:16px; background:#fffdfa; box-shadow:0 18px 45px rgba(55,45,35,.18); }
 .activity-alerts-panel>header { display:flex; justify-content:space-between; padding:15px 16px; border-bottom:1px solid #eee5dc; }
 .activity-alerts-panel>header span { color:#8a7f74; font-size:11px; }
 .activity-alerts-panel>div { max-height:360px; overflow:auto; }
