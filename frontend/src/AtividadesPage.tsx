@@ -77,6 +77,24 @@ function payloadVazio(usuarioId: number, data: string): AgendaAtividadePayloadAp
   return { titulo: "", descricao: "", responsavel_id: usuarioId, responsaveis_ids: [usuarioId], data_atividade: data, hora_inicio: "", hora_fim: "", prioridade: "Normal", status: "Pendente", cor: "#c7aa78", secreta: false };
 }
 
+function textoComparacao(valor: string) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleUpperCase("pt-BR");
+}
+
+function ordenarAtividades(a: AgendaAtividadeApi, b: AgendaAtividadeApi) {
+  const ordemPrioridade: Record<string, number> = { URGENTE: 0, ALTA: 1, NORMAL: 2, BAIXA: 3 };
+  const prioridadeA = ordemPrioridade[textoComparacao(a.prioridade)] ?? 4;
+  const prioridadeB = ordemPrioridade[textoComparacao(b.prioridade)] ?? 4;
+  if (prioridadeA !== prioridadeB) return prioridadeA - prioridadeB;
+  const emissorA = ["JULIANA", "ELIANE"].includes(textoComparacao(a.criadoPor)) ? 0 : 1;
+  const emissorB = ["JULIANA", "ELIANE"].includes(textoComparacao(b.criadoPor)) ? 0 : 1;
+  if (emissorA !== emissorB) return emissorA - emissorB;
+  const horarioA = a.horaInicio || "99:99";
+  const horarioB = b.horaInicio || "99:99";
+  const porHorario = horarioA.localeCompare(horarioB);
+  return porHorario || a.id - b.id;
+}
+
 export function AtividadesPage({ usuarioLogado }: Props) {
   const hoje = dataIso(new Date());
   const [referencia, setReferencia] = useState(hoje);
@@ -255,7 +273,9 @@ export function AtividadesPage({ usuarioLogado }: Props) {
         {erro && !formAberto ? <div className="crm-inline-alert">{erro}</div> : null}
         <div className="activities-people-board">
           {usuariosVisiveis.map((usuario) => {
-            const itens = visiveis.filter((item) => item.dataAtividade === referencia && (item.responsaveisIds || [item.responsavelId]).includes(usuario.id));
+            const itens = visiveis
+              .filter((item) => item.dataAtividade === referencia && (item.responsaveisIds || [item.responsavelId]).includes(usuario.id))
+              .sort(ordenarAtividades);
             return <section className="activities-person-column" style={{ "--person-color": corResponsavel(usuario.id) } as CSSProperties} key={usuario.id}>
               <header><div><i/><strong>{usuario.nome}</strong></div><button onClick={() => { setEditandoId(null); setForm({ ...payloadVazio(usuario.id, referencia), responsaveis_ids:[usuario.id] }); setFormAberto(true); setErro(""); }} aria-label={`Adicionar atividade para ${usuario.nome}`}><Plus size={15}/></button></header>
               <div className="activities-day-list">{itens.map((item) => <article className={`activity-card priority-${item.prioridade.toLowerCase()} status-${item.status.toLowerCase().replaceAll(" ", "-")}`} key={item.id}>
