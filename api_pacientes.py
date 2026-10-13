@@ -2052,6 +2052,15 @@ class BaixaRecebivelPayload(BaseModel):
     senha_administrativa: str = ""
 
 
+class RecuperacaoPagamentoItemPayload(BaseModel):
+    recebivel_id: int
+    data_pagamento: str
+
+
+class RecuperacaoPagamentosPayload(BaseModel):
+    itens: list[RecuperacaoPagamentoItemPayload] = Field(default_factory=list)
+
+
 class MovimentoCaixaPayload(BaseModel):
     origem: str = ""
     descricao: str = ""
@@ -11813,6 +11822,46 @@ def diagnosticar_pagamentos_excluidos(paciente_id: int, request: Request):
             (paciente_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/pacientes/{paciente_id}/recuperacao-pagamentos")
+def recuperar_pagamentos_excluidos(paciente_id: int, payload: RecuperacaoPagamentosPayload, request: Request):
+    usuario = validar_perfil_administrador(request, acao="recuperar pagamentos excluídos")
+    conn = conectar()
+    try:
+        carregar_paciente_por_id(conn, paciente_id)
+        recuperados = []
+        for item in payload.itens:
+            recebivel = carregar_recebivel_paciente(conn, paciente_id, item.recebivel_id)
+            if normalizar_texto(recebivel["status"]) == "pago":
+                continue
+            data_pagamento = normalizar_data_contrato_iso(item.data_pagamento, "")
+            if not data_pagamento:
+                raise HTTPException(status_code=400, detail=f"Data inválida para o recebível {item.recebivel_id}.")
+            atualizado = baixar_recebivel_no_caixa(
+                conn,
+                paciente_id=paciente_id,
+                recebivel_id=item.recebivel_id,
+                data_pagamento=data_pagamento,
+                forma_pagamento=str(recebivel["forma_pagamento"] or "PIX"),
+                conta_caixa=str(recebivel["forma_pagamento"] or "CAIXA"),
+                desconto_valor=0,
+                observacao="Pagamento restaurado após correção de alteração contratual.",
+            )
+            registrar_historico_cobranca_recebivel(
+                conn,
+                recebivel_id=item.recebivel_id,
+                paciente_id=paciente_id,
+                status="Pago",
+                observacao="Pagamento restaurado após correção de alteração contratual.",
+                cobrado=True,
+                criado_por=usuario,
+            )
+            recuperados.append({"id": int(atualizado["id"]), "dataPagamento": data_pagamento})
+        conn.commit()
+        return {"ok": True, "recuperados": recuperados}
     finally:
         conn.close()
 
