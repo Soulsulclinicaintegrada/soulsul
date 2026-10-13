@@ -11846,7 +11846,7 @@ def recuperar_pagamentos_excluidos(paciente_id: int, payload: RecuperacaoPagamen
                 recebivel_id=item.recebivel_id,
                 data_pagamento=data_pagamento,
                 forma_pagamento=str(recebivel["forma_pagamento"] or "PIX"),
-                conta_caixa=str(recebivel["forma_pagamento"] or "CAIXA"),
+                conta_caixa="SICOOB" if normalizar_texto(recebivel["forma_pagamento"]) in {"pix", "boleto"} else "CAIXA",
                 desconto_valor=0,
                 observacao="Pagamento restaurado após correção de alteração contratual.",
             )
