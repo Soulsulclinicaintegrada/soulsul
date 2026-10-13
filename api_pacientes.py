@@ -61,7 +61,7 @@ except ImportError:  # pragma: no cover
 from database import (
     DB_PATH,
     EDUCACAO_ADMIN_USUARIO,
-    SENHA_PADRAO_USUARIOS,
+    SENHA_PADRAO_CLINICA,
     conectar,
     corrigir_texto_importado,
     garantir_coluna,
@@ -3820,7 +3820,7 @@ def redefinir_senha_usuario(usuario_id: int, request: Request):
         if usuario_row is None:
             raise HTTPException(status_code=404, detail="Usuario nao encontrado.")
 
-        novo_hash = gerar_hash_senha(SENHA_PADRAO_USUARIOS)
+        novo_hash = gerar_hash_senha(SENHA_PADRAO_CLINICA)
         conn.execute(
             """
             UPDATE usuarios
@@ -3897,7 +3897,7 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
                 nome,
                 usuario_login,
                 nome_agenda.upper(),
-                gerar_hash_senha(SENHA_PADRAO_USUARIOS),
+                gerar_hash_senha(SENHA_PADRAO_CLINICA),
                 perfil,
                 cargo,
                 agenda_escopo,

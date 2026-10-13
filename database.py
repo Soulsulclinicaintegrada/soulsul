@@ -13,6 +13,7 @@ DB_PATH = os.getenv("DB_PATH", "clinica.db")
 USUARIO_ADMIN_INICIAL = os.getenv("ADMIN_INICIAL_USUARIO", "admin")
 SENHA_ADMIN_INICIAL = os.getenv("ADMIN_INICIAL_SENHA", "admin123")
 SENHA_PADRAO_USUARIOS = os.getenv("SENHA_PADRAO_USUARIOS", "soulsuledu")
+SENHA_PADRAO_CLINICA = os.getenv("SENHA_PADRAO_CLINICA", "soulsul")
 CRIAR_USUARIOS_PADRAO = os.getenv("CRIAR_USUARIOS_PADRAO", "1").strip().lower() in {"1", "true", "sim", "yes"}
 EDUCACAO_ADMIN_USUARIO = os.getenv("EDUCACAO_ADMIN_USUARIO", "").strip()
 EDUCACAO_ADMIN_SENHA = os.getenv("EDUCACAO_ADMIN_SENHA", "").strip()
@@ -300,7 +301,7 @@ def garantir_usuarios_padrao(conn):
                 (
                     usuario["nome"],
                     usuario["usuario"],
-                    gerar_hash_senha(SENHA_PADRAO_USUARIOS),
+                    gerar_hash_senha(SENHA_PADRAO_CLINICA),
                     usuario["perfil"],
                     usuario["cargo"],
                     usuario["agenda_escopo"],
