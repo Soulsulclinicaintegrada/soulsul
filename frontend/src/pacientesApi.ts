@@ -250,6 +250,9 @@ export type ContratoResumoApi = {
   status?: string;
   aprovadoPor?: string;
   dataAprovacao?: string;
+  jaFoiAprovado?: boolean;
+  tipoMovimentoVenda?: string;
+  valorVendaConsiderado?: number | null;
   procedimentos: string[];
 };
 
@@ -1592,11 +1595,12 @@ export async function alterarStatusOrcamentoPacienteApi(
   pacienteId: number,
   contratoId: number,
   status: "APROVADO" | "EM_ABERTO",
-  aprovadoPor = nomeUsuarioCabecalho() || "JULIANA"
+  aprovadoPor = nomeUsuarioCabecalho() || "JULIANA",
+  reaprovacao?: { tipo: "ALTERACAO" | "NOVA" | "ACRESCIMO"; valorAcrescimo?: number }
 ) {
   return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}/status`, {
     method: "PUT",
-    body: JSON.stringify({ status, aprovado_por: aprovadoPor })
+    body: JSON.stringify({ status, aprovado_por: aprovadoPor, tipo_reaprovacao: reaprovacao?.tipo || "", valor_acrescimo: reaprovacao?.valorAcrescimo || 0 })
   });
 }
 

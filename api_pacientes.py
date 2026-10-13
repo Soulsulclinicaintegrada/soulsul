@@ -1884,6 +1884,9 @@ class ContratoResumo(BaseModel):
     status: str = "EM_ABERTO"
     aprovadoPor: str = ""
     dataAprovacao: str = ""
+    jaFoiAprovado: bool = False
+    tipoMovimentoVenda: str = "NOVA"
+    valorVendaConsiderado: float | None = None
     procedimentos: list[str] = Field(default_factory=list)
 
 
@@ -2560,6 +2563,8 @@ class OrcamentoCriadoResposta(BaseModel):
 class OrcamentoStatusPayload(BaseModel):
     status: str
     aprovado_por: str = ""
+    tipo_reaprovacao: str = ""
+    valor_acrescimo: float = 0
 
 
 class OrcamentoHistoricoItemResposta(BaseModel):
@@ -6638,7 +6643,9 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
     contratos_rows = conn.execute(
         """
         SELECT id, paciente_id, valor_total, data_criacao, data_aprovacao, status, forma_pagamento,
-               COALESCE(incluir_total_vendido, 1) AS incluir_total_vendido
+               COALESCE(incluir_total_vendido, 1) AS incluir_total_vendido,
+               COALESCE(contar_quantidade_venda, 1) AS contar_quantidade_venda,
+               valor_venda_considerado
         FROM contratos
         """
     ).fetchall()
@@ -6768,9 +6775,12 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
             )
         )
 
-    vendas_mes_qtd = len(vendas_mes_rows)
+    vendas_mes_qtd = sum(
+        1 for row in vendas_mes_rows
+        if bool(int(row["incluir_total_vendido"] or 0)) and bool(int(row["contar_quantidade_venda"] or 0))
+    )
     vendas_mes_valor = sum(
-        float(row["valor_total"] or 0)
+        float(row["valor_venda_considerado"] if row["valor_venda_considerado"] is not None else row["valor_total"] or 0)
         for row in vendas_mes_rows
         if bool(int(row["incluir_total_vendido"] or 0))
     )
@@ -7032,7 +7042,7 @@ def dados_dashboard(conn: sqlite3.Connection) -> DashboardPainelResposta:
                 continue
             if not bool(int(row["incluir_total_vendido"] or 0)):
                 continue
-            total_mes += float(row["valor_total"] or 0)
+            total_mes += float(row["valor_venda_considerado"] if row["valor_venda_considerado"] is not None else row["valor_total"] or 0)
         serie_vendas.append(total_mes)
 
     vendido_mes = serie_vendas[mes_atual - 1] if 0 < mes_atual <= len(serie_vendas) else 0.0
@@ -10939,6 +10949,9 @@ def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -
             status=str(row["status"] or "EM_ABERTO"),
             aprovadoPor=str(row["aprovado_por"] or ""),
             dataAprovacao=formatar_data_br_valor(row["data_aprovacao"]),
+            jaFoiAprovado=bool(int(row["ja_foi_aprovado"] or 0)),
+            tipoMovimentoVenda=str(row["tipo_movimento_venda"] or "NOVA"),
+            valorVendaConsiderado=float(row["valor_venda_considerado"]) if row["valor_venda_considerado"] is not None else None,
             procedimentos=carregar_procedimentos_contrato(conn, int(row["id"])),
         )
         for row in contratos_rows
@@ -11840,8 +11853,8 @@ def _comissao_forma(forma: str) -> float:
     return 0.0
 
 
-def _calcular_comissao_contrato(row: sqlite3.Row) -> float:
-    valor_total = float(row["valor_total"] or 0)
+def _calcular_comissao_contrato(row: sqlite3.Row, valor_base: float | None = None) -> float:
+    valor_total = float(valor_base if valor_base is not None else row["valor_total"] or 0)
     try:
         plano = json.loads(str(row["plano_pagamento_json"] or "[]"))
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -11892,6 +11905,8 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
     for contrato in contratos:
         if contrato_eh_permuta(contrato):
             continue
+        if not bool(int(contrato["incluir_total_vendido"] or 0)):
+            continue
         fechamento = parse_data_contrato(str(contrato["data_aprovacao"] or "")) or parse_data_contrato(str(contrato["data_criacao"] or ""))
         if not fechamento or fechamento < inicio or fechamento > fim:
             continue
@@ -11917,13 +11932,14 @@ def carregar_relatorio_comissoes(conn: sqlite3.Connection, inicio: date, fim: da
         pago = bool(str(contrato["data_pagamento_entrada"] or "").strip()) or bool(conn.execute(
             "SELECT 1 FROM recebiveis WHERE contrato_id=? AND lower(COALESCE(status,''))='pago' LIMIT 1", (contrato["id"],)
         ).fetchone())
-        total = _calcular_comissao_contrato(contrato) if pago else 0.0
+        valor_venda = float(contrato["valor_venda_considerado"] if contrato["valor_venda_considerado"] is not None else contrato["valor_total"] or 0)
+        total = _calcular_comissao_contrato(contrato, valor_venda) if pago else 0.0
         dados_ausentes = primeiro is None or fechamento_agenda is None
         mesma_pessoa = normalizar_texto(captacao) == normalizar_texto(resgate) and captacao not in {"Não localizado", "Não registrado"}
         vendas.append(ComissaoVendaItemResposta(
             contratoId=crm_int(contrato["id"]), pacienteId=paciente_id or None,
             paciente=str(contrato["paciente_nome"] or f"Paciente #{paciente_id}"), dataFechamento=formatar_data_br(fechamento),
-            valorContrato=round(float(contrato["valor_total"] or 0), 2), formaPagamento=str(contrato["forma_pagamento"] or ""),
+            valorContrato=round(valor_venda, 2), formaPagamento=str(contrato["forma_pagamento"] or ""),
             primeiroAgendamento=formatar_data_br(parse_data_contrato(str(primeiro["data"] or ""))) if primeiro else "",
             primeiroAgendador=agendador(primeiro),
             avaliacaoComparecida=formatar_data_br(parse_data_contrato(str(avaliacao_comparecida["data"] or ""))) if avaliacao_comparecida else "",
@@ -12893,9 +12909,24 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
         usuario_aprovador = validar_usuario_aprovacao_orcamento(request)
 
         if status == "APROVADO":
+            reaprovacao = bool(int(contrato["ja_foi_aprovado"] or 0))
+            tipo_reaprovacao = normalizar_texto(payload.tipo_reaprovacao).upper().replace(" ", "_")
+            if reaprovacao and tipo_reaprovacao not in {"ALTERACAO", "NOVA", "ACRESCIMO"}:
+                raise HTTPException(status_code=409, detail="Informe se a reaprovação é alteração contratual, nova venda ou acréscimo.")
+            incluir_venda, contar_venda, valor_considerado, tipo_movimento = 1, 1, None, "NOVA"
+            if reaprovacao and tipo_reaprovacao == "ALTERACAO":
+                incluir_venda, contar_venda, valor_considerado, tipo_movimento = 0, 0, 0.0, "ALTERACAO"
+            elif reaprovacao and tipo_reaprovacao == "ACRESCIMO":
+                if float(payload.valor_acrescimo or 0) <= 0:
+                    raise HTTPException(status_code=400, detail="Informe o valor positivo do acréscimo.")
+                incluir_venda, contar_venda, valor_considerado, tipo_movimento = 1, 0, round(float(payload.valor_acrescimo), 2), "ACRESCIMO"
+            elif reaprovacao and tipo_reaprovacao == "NOVA":
+                incluir_venda, contar_venda, valor_considerado, tipo_movimento = 1, 1, None, "NOVA"
             conn.execute(
-                "UPDATE contratos SET status='APROVADO', aprovado_por=?, data_aprovacao=? WHERE id=? AND paciente_id=?",
-                (usuario_aprovador or "JULIANA", agora_str(), contrato_id, paciente_id),
+                """UPDATE contratos SET status='APROVADO', aprovado_por=?, data_aprovacao=?, ja_foi_aprovado=1,
+                   incluir_total_vendido=?, contar_quantidade_venda=?, valor_venda_considerado=?, tipo_movimento_venda=?
+                   WHERE id=? AND paciente_id=?""",
+                (usuario_aprovador or "JULIANA", agora_str(), incluir_venda, contar_venda, valor_considerado, tipo_movimento, contrato_id, paciente_id),
             )
             conn.execute(
                 "UPDATE procedimentos_dente SET status='CONTRATADO' WHERE contrato_id=? AND paciente_id=?",

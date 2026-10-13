@@ -1053,6 +1053,9 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const [buscaOdontogramaClinico, setBuscaOdontogramaClinico] = useState("");
   const [salvandoOrcamento, setSalvandoOrcamento] = useState(false);
   const [confirmarDesaprovarId, setConfirmarDesaprovarId] = useState<number | null>(null);
+  const [reaprovarOrcamentoId, setReaprovarOrcamentoId] = useState<number | null>(null);
+  const [tipoReaprovacao, setTipoReaprovacao] = useState<"ALTERACAO" | "NOVA" | "ACRESCIMO">("ALTERACAO");
+  const [valorAcrescimoReaprovacao, setValorAcrescimoReaprovacao] = useState("");
   const [alterandoStatusOrcamentoId, setAlterandoStatusOrcamentoId] = useState<number | null>(null);
   const [menuOrcamentoAberto, setMenuOrcamentoAberto] = useState(false);
   const [modoReordenarOrcamento, setModoReordenarOrcamento] = useState(false);
@@ -2922,7 +2925,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     }
   }
 
-  async function aprovarOrcamento(contratoId: number) {
+  async function aprovarOrcamento(contratoId: number, reaprovacao?: { tipo: "ALTERACAO" | "NOVA" | "ACRESCIMO"; valorAcrescimo?: number }) {
     if (!pacienteAtivoId) return;
     if (!usuarioPodeEditarOrcamento) {
       setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
@@ -2932,16 +2935,34 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setErro("Somente Juliana e Eliane com permissão de edição em Financeiro/Orçamentos podem aprovar orçamentos.");
       return;
     }
+    const contrato = ficha?.contratos.find((item) => item.id === contratoId);
+    if (contrato?.jaFoiAprovado && !reaprovacao) {
+      setReaprovarOrcamentoId(contratoId);
+      setTipoReaprovacao("ALTERACAO");
+      setValorAcrescimoReaprovacao("");
+      return;
+    }
     try {
       setAlterandoStatusOrcamentoId(contratoId);
-      await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, contratoId, "APROVADO");
-      setFeedback("Orçamento aprovado.");
+      await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, contratoId, "APROVADO", undefined, reaprovacao);
+      setReaprovarOrcamentoId(null);
+      setFeedback(reaprovacao?.tipo === "ALTERACAO" ? "Orçamento reaprovado como alteração contratual, sem entrar nas vendas ou comissões." : reaprovacao?.tipo === "ACRESCIMO" ? "Acréscimo aprovado e contabilizado somente pelo valor informado." : "Orçamento aprovado como nova venda.");
       await carregarFicha(pacienteAtivoId);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao aprovar orçamento.");
     } finally {
       setAlterandoStatusOrcamentoId(null);
     }
+  }
+
+  async function confirmarReaprovacao() {
+    if (!reaprovarOrcamentoId) return;
+    const valorAcrescimo = parseMoeda(valorAcrescimoReaprovacao);
+    if (tipoReaprovacao === "ACRESCIMO" && valorAcrescimo <= 0) {
+      setErro("Informe o valor do acréscimo para continuar.");
+      return;
+    }
+    await aprovarOrcamento(reaprovarOrcamentoId, { tipo: tipoReaprovacao, valorAcrescimo });
   }
 
   async function desaprovarOrcamento() {
@@ -5479,6 +5500,23 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 {!orcamentoBloqueado ? <button type="button" className="primary-action" onClick={confirmarModalPagamento}>OK</button> : null}
               </div>
             </footer>
+          </article>
+        </div>
+      ) : null}
+
+      {reaprovarOrcamentoId ? (
+        <div className="overlay" role="presentation">
+          <article className="modal-shell modal-shell-confirm budget-reapproval-modal">
+            <header className="modal-header"><div><span className="page-eyebrow">Reaprovação</span><h2>Como esta alteração deve entrar nas vendas?</h2></div><button type="button" className="icon-only" onClick={() => setReaprovarOrcamentoId(null)}><X size={20}/></button></header>
+            <div className="modal-body confirm-modal-body">
+              <div className="budget-reapproval-options">
+                <button type="button" className={tipoReaprovacao === "ALTERACAO" ? "active" : ""} onClick={() => setTipoReaprovacao("ALTERACAO")}><strong>Apenas alteração contratual</strong><span>Não soma valor, quantidade de vendas nem comissão.</span></button>
+                <button type="button" className={tipoReaprovacao === "NOVA" ? "active" : ""} onClick={() => setTipoReaprovacao("NOVA")}><strong>Nova venda</strong><span>Conta o valor total do contrato e uma nova venda.</span></button>
+                <button type="button" className={tipoReaprovacao === "ACRESCIMO" ? "active" : ""} onClick={() => setTipoReaprovacao("ACRESCIMO")}><strong>Acréscimo ao contrato</strong><span>Soma somente o valor novo, sem contar outro contrato.</span></button>
+              </div>
+              {tipoReaprovacao === "ACRESCIMO" ? <label className="budget-reapproval-value"><span>Valor do acréscimo</span><input value={valorAcrescimoReaprovacao} onChange={(e) => setValorAcrescimoReaprovacao(formatarMoedaInput(e.target.value))} placeholder="R$ 0,00" inputMode="numeric"/></label> : null}
+            </div>
+            <footer className="modal-footer"><div className="sticky-actions"><button type="button" className="ghost-action" onClick={() => setReaprovarOrcamentoId(null)}>Cancelar</button><button type="button" className="primary-action" onClick={() => void confirmarReaprovacao()} disabled={alterandoStatusOrcamentoId === reaprovarOrcamentoId}>Confirmar reaprovação</button></div></footer>
           </article>
         </div>
       ) : null}

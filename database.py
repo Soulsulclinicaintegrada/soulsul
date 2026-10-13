@@ -1724,6 +1724,14 @@ def inicializar_banco():
     garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
     garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
     garantir_coluna(conn, "contratos", "incluir_total_vendido INTEGER DEFAULT 1")
+    garantir_coluna(conn, "contratos", "ja_foi_aprovado INTEGER DEFAULT 0")
+    garantir_coluna(conn, "contratos", "tipo_movimento_venda TEXT DEFAULT 'NOVA'")
+    garantir_coluna(conn, "contratos", "valor_venda_considerado REAL")
+    garantir_coluna(conn, "contratos", "contar_quantidade_venda INTEGER DEFAULT 1")
+    conn.execute(
+        """UPDATE contratos SET ja_foi_aprovado=1
+           WHERE lower(COALESCE(status,'')) IN ('aprovado','aprovada','convertido')"""
+    )
     garantir_coluna(conn, "pacientes", "criado_em TEXT")
     garantir_coluna(conn, "pacientes", "numero TEXT")
     garantir_coluna(conn, "pacientes", "bairro TEXT")
