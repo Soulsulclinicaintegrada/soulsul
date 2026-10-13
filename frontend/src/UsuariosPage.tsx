@@ -520,10 +520,9 @@ export function UsuariosPage() {
     }
   }
 
-  async function salvarControlesAtividades(parcial: Partial<Pick<UsuarioPermissao, "atividadesAcesso" | "atividadesAgendaDisponivel" | "atividadesEscopo">>) {
+  async function salvarControlesAtividades() {
     if (!usuarioSelecionado || salvandoPerfil) return;
-    const proximo = { ...usuarioSelecionado, ...parcial };
-    atualizarUsuarioSelecionado(parcial);
+    const proximo = usuarioSelecionado;
     try {
       setSalvandoPerfil(true);
       setFeedbackPerfil("Salvando configuração da agenda de atividades...");
@@ -818,7 +817,7 @@ export function UsuariosPage() {
                     <select
                       value={usuarioSelecionado.atividadesAcesso ? "Sim" : "Nao"}
                       disabled={salvandoPerfil}
-                      onChange={(e) => void salvarControlesAtividades({ atividadesAcesso: e.target.value === "Sim" })}
+                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesAcesso: e.target.value === "Sim" })}
                     >
                       <option value="Sim">Sim</option>
                       <option value="Nao">Não</option>
@@ -829,7 +828,7 @@ export function UsuariosPage() {
                     <select
                       value={usuarioSelecionado.atividadesAgendaDisponivel ? "Sim" : "Nao"}
                       disabled={salvandoPerfil}
-                      onChange={(e) => void salvarControlesAtividades({ atividadesAgendaDisponivel: e.target.value === "Sim" })}
+                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesAgendaDisponivel: e.target.value === "Sim" })}
                     >
                       <option value="Sim">Sim</option>
                       <option value="Nao">Não</option>
@@ -840,7 +839,7 @@ export function UsuariosPage() {
                     <select
                       value={usuarioSelecionado.atividadesEscopo}
                       disabled={salvandoPerfil || !usuarioSelecionado.atividadesAcesso}
-                      onChange={(e) => void salvarControlesAtividades({ atividadesEscopo: e.target.value as AtividadesEscopo })}
+                      onChange={(e) => atualizarUsuarioSelecionado({ atividadesEscopo: e.target.value as AtividadesEscopo })}
                     >
                       <option value="PROPRIAS">Somente as próprias</option>
                       <option value="EQUIPE">Toda a equipe</option>
@@ -848,6 +847,9 @@ export function UsuariosPage() {
                   </label>
                 </div>
                 <div className="users-template-actions">
+                  <button type="button" className="primary-action" onClick={() => void salvarControlesAtividades()} disabled={salvandoPerfil}>
+                    {salvandoPerfil ? "Salvando..." : "Salvar agenda de atividades"}
+                  </button>
                   <button type="button" className="primary-action" onClick={salvarPerfilUsuarioSelecionado} disabled={salvandoPerfil}>
                     {salvandoPerfil ? "Salvando..." : "Salvar dados"}
                   </button>
