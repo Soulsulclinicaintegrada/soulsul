@@ -1321,11 +1321,15 @@ def inicializar_banco():
             criado_em TEXT,
             atualizado_por TEXT DEFAULT '',
             atualizado_em TEXT,
+            cor TEXT DEFAULT '#c7aa78',
+            secreta INTEGER DEFAULT 0,
             FOREIGN KEY (responsavel_id) REFERENCES usuarios(id),
             FOREIGN KEY (criado_por_id) REFERENCES usuarios(id)
         )
         """
     )
+    garantir_coluna(conn, "agenda_atividades", "cor TEXT DEFAULT '#c7aa78'")
+    garantir_coluna(conn, "agenda_atividades", "secreta INTEGER DEFAULT 0")
 
     conn.execute(
         """

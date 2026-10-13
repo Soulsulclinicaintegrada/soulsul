@@ -2822,6 +2822,8 @@ class AgendaAtividadePayload(BaseModel):
     hora_fim: str = ""
     prioridade: str = "Normal"
     status: str = "Pendente"
+    cor: str = "#c7aa78"
+    secreta: bool = False
 
 
 class ResponsavelAtividadeResposta(BaseModel):
@@ -2846,6 +2848,8 @@ class AgendaAtividadeResposta(BaseModel):
     criadoEm: str = ""
     atualizadoPor: str = ""
     atualizadoEm: str = ""
+    cor: str = "#c7aa78"
+    secreta: bool = False
     confirmacoesLeitura: list[dict] = Field(default_factory=list)
 
 
@@ -4102,6 +4106,8 @@ def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendaAtivid
         criadoEm=str(row["criado_em"] or ""),
         atualizadoPor=str(row["atualizado_por"] or ""),
         atualizadoEm=str(row["atualizado_em"] or ""),
+        cor=str(row["cor"] or "#c7aa78"),
+        secreta=bool(row["secreta"]),
         confirmacoesLeitura=[
             {
                 "usuarioId": int(item["id"]),
@@ -4204,6 +4210,8 @@ def listar_atividades(request: Request, data_inicio: str = Query(default=""), da
         if data_fim:
             filtros.append("a.data_atividade<=?")
             parametros.append(data_fim)
+        filtros.append("(COALESCE(a.secreta,0)=0 OR a.criado_por_id=? OR EXISTS (SELECT 1 FROM agenda_atividade_responsaveis ars WHERE ars.atividade_id=a.id AND ars.usuario_id=?))")
+        parametros.extend([int(usuario["id"]), int(usuario["id"])])
         if not acesso_equipe:
             filtros.append("(a.responsavel_id=? OR EXISTS (SELECT 1 FROM agenda_atividade_responsaveis ar WHERE ar.atividade_id=a.id AND ar.usuario_id=?))")
             parametros.append(int(usuario["id"]))
@@ -4241,12 +4249,13 @@ def criar_atividade(payload: AgendaAtividadePayload, request: Request):
             raise HTTPException(status_code=400, detail="Selecione apenas funcionários ativos.")
         prioridade = payload.prioridade if payload.prioridade in PRIORIDADE_ATIVIDADE_VALIDAS else "Normal"
         status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
+        cor = payload.cor if re.fullmatch(r"#[0-9a-fA-F]{6}", str(payload.cor or "")) else "#c7aa78"
         momento, nome_usuario = agora_str(), str(usuario["nome"] or usuario["usuario"] or "")
         cursor = conn.execute(
             """INSERT INTO agenda_atividades
-               (titulo, descricao, responsavel_id, data_atividade, hora_inicio, hora_fim, prioridade, status, criado_por_id, criado_por, criado_em, atualizado_por, atualizado_em)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, int(usuario["id"]), nome_usuario, momento, nome_usuario, momento),
+               (titulo, descricao, responsavel_id, data_atividade, hora_inicio, hora_fim, prioridade, status, criado_por_id, criado_por, criado_em, atualizado_por, atualizado_em, cor, secreta)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, int(usuario["id"]), nome_usuario, momento, nome_usuario, momento, cor, int(payload.secreta)),
         )
         atividade_id = int(cursor.lastrowid)
         conn.executemany(
@@ -4270,6 +4279,8 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
         if atual is None:
             raise HTTPException(status_code=404, detail="Atividade não encontrada.")
         responsaveis_atuais = [int(item["id"]) for item in responsaveis_da_atividade(conn, atual)]
+        if bool(atual["secreta"]) and int(atual["criado_por_id"] or 0) != int(usuario["id"]) and int(usuario["id"]) not in responsaveis_atuais:
+            raise HTTPException(status_code=404, detail="Atividade não encontrada.")
         if not acesso_equipe and int(usuario["id"]) not in responsaveis_atuais:
             raise HTTPException(status_code=403, detail="Você só pode alterar suas atividades.")
         responsaveis_ids = list(dict.fromkeys(int(item) for item in (payload.responsaveis_ids or [payload.responsavel_id or atual["responsavel_id"]]) if int(item) > 0))
@@ -4286,10 +4297,11 @@ def atualizar_atividade(atividade_id: int, payload: AgendaAtividadePayload, requ
             raise HTTPException(status_code=400, detail="Informe o título da atividade.")
         prioridade = payload.prioridade if payload.prioridade in PRIORIDADE_ATIVIDADE_VALIDAS else "Normal"
         status = payload.status if payload.status in STATUS_ATIVIDADE_VALIDOS else "Pendente"
+        cor = payload.cor if re.fullmatch(r"#[0-9a-fA-F]{6}", str(payload.cor or "")) else "#c7aa78"
         nome_usuario, momento = str(usuario["nome"] or usuario["usuario"] or ""), agora_str()
         conn.execute(
-            """UPDATE agenda_atividades SET titulo=?, descricao=?, responsavel_id=?, data_atividade=?, hora_inicio=?, hora_fim=?, prioridade=?, status=?, atualizado_por=?, atualizado_em=? WHERE id=?""",
-            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, nome_usuario, momento, atividade_id),
+            """UPDATE agenda_atividades SET titulo=?, descricao=?, responsavel_id=?, data_atividade=?, hora_inicio=?, hora_fim=?, prioridade=?, status=?, atualizado_por=?, atualizado_em=?, cor=?, secreta=? WHERE id=?""",
+            (titulo, corrigir_texto_importado(payload.descricao), responsavel_id, payload.data_atividade, payload.hora_inicio, payload.hora_fim, prioridade, status, nome_usuario, momento, cor, int(payload.secreta), atividade_id),
         )
         conn.execute("DELETE FROM agenda_atividade_responsaveis WHERE atividade_id=?", (atividade_id,))
         conn.executemany(
@@ -4312,6 +4324,8 @@ def excluir_atividade(atividade_id: int, request: Request):
         if atividade is None:
             raise HTTPException(status_code=404, detail="Atividade não encontrada.")
         responsaveis_ids = [int(item["id"]) for item in responsaveis_da_atividade(conn, atividade)]
+        if bool(atividade["secreta"]) and int(atividade["criado_por_id"] or 0) != int(usuario["id"]) and int(usuario["id"]) not in responsaveis_ids:
+            raise HTTPException(status_code=404, detail="Atividade não encontrada.")
         if not acesso_equipe and int(usuario["id"]) not in responsaveis_ids:
             raise HTTPException(status_code=403, detail="Você só pode excluir suas atividades.")
         conn.execute("DELETE FROM agenda_atividade_responsaveis WHERE atividade_id=?", (atividade_id,))
