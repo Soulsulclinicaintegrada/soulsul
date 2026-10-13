@@ -2846,6 +2846,7 @@ class AgendaAtividadeResposta(BaseModel):
     criadoEm: str = ""
     atualizadoPor: str = ""
     atualizadoEm: str = ""
+    confirmacoesLeitura: list[dict] = Field(default_factory=list)
 
 
 class AtividadeNotificacaoResposta(BaseModel):
@@ -4072,6 +4073,18 @@ def responsaveis_da_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> lis
 
 def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendaAtividadeResposta:
     responsaveis = responsaveis_da_atividade(conn, row)
+    confirmacoes_rows = conn.execute(
+        """SELECT u.id, u.nome,
+                  MAX(COALESCE(n.lida, 0)) AS lida,
+                  MAX(CASE WHEN COALESCE(n.lida, 0)=1 THEN COALESCE(n.lida_em, '') ELSE '' END) AS lida_em
+           FROM agenda_atividade_responsaveis ar
+           JOIN usuarios u ON u.id=ar.usuario_id
+           LEFT JOIN agenda_atividade_notificacoes n ON n.atividade_id=ar.atividade_id AND n.usuario_id=ar.usuario_id
+           WHERE ar.atividade_id=?
+           GROUP BY u.id, u.nome
+           ORDER BY lower(u.nome), u.id""",
+        (int(row["id"]),),
+    ).fetchall()
     return AgendaAtividadeResposta(
         id=int(row["id"]),
         titulo=corrigir_texto_importado(str(row["titulo"] or "")),
@@ -4089,6 +4102,15 @@ def mapear_atividade(conn: sqlite3.Connection, row: sqlite3.Row) -> AgendaAtivid
         criadoEm=str(row["criado_em"] or ""),
         atualizadoPor=str(row["atualizado_por"] or ""),
         atualizadoEm=str(row["atualizado_em"] or ""),
+        confirmacoesLeitura=[
+            {
+                "usuarioId": int(item["id"]),
+                "nome": corrigir_texto_importado(str(item["nome"] or "")),
+                "lida": bool(item["lida"]),
+                "lidaEm": str(item["lida_em"] or ""),
+            }
+            for item in confirmacoes_rows
+        ],
     )
 
 
@@ -4141,7 +4163,10 @@ def marcar_notificacao_lida(notificacao_id: int, request: Request):
     conn = conectar()
     try:
         usuario, _ = validar_acesso_atividades(conn, request)
-        conn.execute("UPDATE agenda_atividade_notificacoes SET lida=1 WHERE id=? AND usuario_id=?", (notificacao_id, int(usuario["id"])))
+        conn.execute(
+            "UPDATE agenda_atividade_notificacoes SET lida=1, lida_em=COALESCE(lida_em, ?) WHERE id=? AND usuario_id=?",
+            (agora_str(), notificacao_id, int(usuario["id"])),
+        )
         conn.commit()
         return {"ok": True}
     finally:

@@ -1347,9 +1347,11 @@ def inicializar_banco():
             mensagem TEXT NOT NULL,
             chave TEXT NOT NULL UNIQUE,
             lida INTEGER DEFAULT 0,
-            criado_em TEXT
+            criado_em TEXT,
+            lida_em TEXT
         )"""
     )
+    garantir_coluna(conn, "agenda_atividade_notificacoes", "lida_em TEXT")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS sistema_migracoes (

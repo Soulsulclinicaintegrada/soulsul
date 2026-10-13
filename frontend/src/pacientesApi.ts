@@ -1457,6 +1457,7 @@ export type AgendaAtividadeApi = {
   criadoEm: string;
   atualizadoPor: string;
   atualizadoEm: string;
+  confirmacoesLeitura: Array<{ usuarioId: number; nome: string; lida: boolean; lidaEm: string }>;
 };
 
 export type AgendaAtividadePayloadApi = {

@@ -10591,6 +10591,10 @@ body, body * {
 .activity-assignee-picker label { --person-color:#789080; display:inline-flex; grid-template-columns:none; align-items:center; gap:7px; padding:8px 10px; border:1px solid #dfd6ca; border-radius:999px; background:#fff; color:#514a43; font-size:12px; cursor:pointer; }
 .activity-assignee-picker label:has(input:checked) { border-color:var(--person-color); box-shadow:inset 0 0 0 1px var(--person-color); }
 .activity-assignee-picker input { width:14px; min-height:auto; margin:0; accent-color:var(--person-color); }
+.activity-read-receipts { display:flex; flex-wrap:wrap; gap:5px; }
+.activity-read-receipts span { display:inline-flex; align-items:center; gap:4px; padding:4px 7px; border:1px solid #e0d5c8; border-radius:999px; font-size:9px; font-weight:700; }
+.activity-read-receipts span.read { border-color:#a9c3b3; background:#edf5f0; color:#3e6952; }
+.activity-read-receipts span.pending { border-color:#e0c6a4; background:#fff7eb; color:#8b622c; }
 .activity-modal-actions { display: flex; gap: 10px; margin-top: 18px; }
 .activity-modal-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 16px; border: 1px solid #d9cebf; border-radius: 11px; background: #fff; cursor: pointer; }
 .activity-modal-actions .primary-action { border-color: #6f8b79; background: #6f8b79; color: #fff; }
