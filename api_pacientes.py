@@ -4212,6 +4212,76 @@ def notificar_atividade(conn: sqlite3.Connection, atividade_id: int, usuarios_id
     )
 
 
+def duplicar_pendencias_atividades_ate_hoje(conn: sqlite3.Connection) -> int:
+    hoje = agora_local().date()
+    total_criadas = 0
+    while True:
+        pendencias = conn.execute(
+            """
+            SELECT a.*
+            FROM agenda_atividades a
+            WHERE a.data_atividade < ?
+              AND lower(COALESCE(a.status, '')) NOT IN ('concluída', 'concluida', 'cancelada')
+              AND NOT EXISTS (
+                  SELECT 1 FROM agenda_atividades seguinte
+                  WHERE seguinte.continuidade_de_id=a.id
+              )
+            ORDER BY a.data_atividade, a.id
+            """,
+            (hoje.isoformat(),),
+        ).fetchall()
+        if not pendencias:
+            break
+        criadas_na_rodada = 0
+        for pendencia in pendencias:
+            try:
+                data_origem = date.fromisoformat(str(pendencia["data_atividade"] or ""))
+            except ValueError:
+                continue
+            data_seguinte = data_origem + timedelta(days=1)
+            momento = agora_str()
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO agenda_atividades
+                   (titulo, descricao, responsavel_id, data_atividade, hora_inicio, hora_fim,
+                    prioridade, status, criado_por_id, criado_por, criado_em, atualizado_por,
+                    atualizado_em, cor, secreta, concluida_em, continuidade_de_id, gerada_por_pendencia)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'Pendente', ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1)""",
+                (
+                    pendencia["titulo"], pendencia["descricao"], pendencia["responsavel_id"],
+                    data_seguinte.isoformat(), pendencia["hora_inicio"], pendencia["hora_fim"],
+                    pendencia["prioridade"], pendencia["criado_por_id"], pendencia["criado_por"],
+                    momento, "SISTEMA", momento, pendencia["cor"], pendencia["secreta"],
+                    int(pendencia["id"]),
+                ),
+            )
+            if not cursor.rowcount:
+                continue
+            nova_id = int(cursor.lastrowid)
+            responsaveis = conn.execute(
+                "SELECT usuario_id FROM agenda_atividade_responsaveis WHERE atividade_id=?",
+                (int(pendencia["id"]),),
+            ).fetchall()
+            responsaveis_ids = [int(item["usuario_id"]) for item in responsaveis] or [int(pendencia["responsavel_id"])]
+            conn.executemany(
+                "INSERT OR IGNORE INTO agenda_atividade_responsaveis (atividade_id, usuario_id) VALUES (?, ?)",
+                [(nova_id, usuario_id) for usuario_id in responsaveis_ids],
+            )
+            notificar_atividade(
+                conn,
+                nova_id,
+                responsaveis_ids,
+                "pendencia",
+                f"Atividade pendente transferida: {pendencia['titulo']}",
+                f"pendencia-{int(pendencia['id'])}-{data_seguinte.isoformat()}",
+            )
+            total_criadas += 1
+            criadas_na_rodada += 1
+        conn.commit()
+        if not criadas_na_rodada:
+            break
+    return total_criadas
+
+
 @app.get("/api/atividades/notificacoes", response_model=list[AtividadeNotificacaoResposta])
 def listar_notificacoes_atividades(request: Request):
     conn = conectar()
@@ -4315,6 +4385,7 @@ def listar_atividades(request: Request, data_inicio: str = Query(default=""), da
     conn = conectar()
     try:
         usuario, acesso_equipe = validar_acesso_atividades(conn, request)
+        duplicar_pendencias_atividades_ate_hoje(conn)
         filtros, parametros = [], []
         if data_inicio:
             filtros.append("a.data_atividade>=?")

@@ -1337,6 +1337,8 @@ def inicializar_banco():
     garantir_coluna(conn, "agenda_atividades", "cor TEXT DEFAULT '#c7aa78'")
     garantir_coluna(conn, "agenda_atividades", "secreta INTEGER DEFAULT 0")
     garantir_coluna(conn, "agenda_atividades", "concluida_em TEXT")
+    garantir_coluna(conn, "agenda_atividades", "continuidade_de_id INTEGER")
+    garantir_coluna(conn, "agenda_atividades", "gerada_por_pendencia INTEGER DEFAULT 0")
 
     conn.execute(
         """
@@ -1948,6 +1950,7 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_usuarios_usuario ON usuarios(usuario)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_data ON agenda_atividades(data_atividade, hora_inicio)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividades_responsavel ON agenda_atividades(responsavel_id, data_atividade)")
+    garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_agenda_atividades_continuidade ON agenda_atividades(continuidade_de_id) WHERE continuidade_de_id IS NOT NULL")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_agenda_atividade_responsaveis_usuario ON agenda_atividade_responsaveis(usuario_id, atividade_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_atividade_notificacoes_usuario ON agenda_atividade_notificacoes(usuario_id, lida, criado_em)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_acoes_usuario_data_hora ON acoes_usuario(data_hora)")
