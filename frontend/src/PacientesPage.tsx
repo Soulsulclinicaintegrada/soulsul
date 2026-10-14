@@ -2069,7 +2069,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     setRecebivelForm({
       ...recebivelParaForm(item),
       status: "Pago",
-      dataPagamento: dataBrParaIso(item.dataPagamento) || dataHojeIso(),
+      dataPagamento: dataHojeIso(),
       formaPagamento: item.formaPagamento || "PIX"
     });
     setModalRecebivelAberto(true);
@@ -2091,15 +2091,29 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     });
   }
 
+  function marcarRecebivelPagoHoje() {
+    if (!recebivelForm) return;
+    setRecebivelModalModo("baixa");
+    setRecebivelForm({
+      ...recebivelForm,
+      status: "Pago",
+      dataPagamento: dataHojeIso()
+    });
+  }
+
   async function salvarRecebivel(payloadOverride?: Partial<RecebivelAtualizacaoPayload>) {
     if (!pacienteAtivoId || !recebivelForm) return;
     setSalvandoRecebivel(true);
     setErro(null);
     try {
-      const exigeSenhaRetroativa = !usuarioPodeAprovarOrcamento && Boolean(
-        (recebivelSelecionadoDetalhe?.vencimento && recebivelSelecionadoDetalhe.vencimento < dataHojeIso())
-        || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < dataHojeIso())
-        || (recebivelForm.vencimento && recebivelForm.vencimento < dataHojeIso())
+      const exigeSenhaRetroativa = !usuarioPodeAprovarOrcamento && (
+        recebivelModalModo === "baixa"
+          ? Boolean(recebivelForm.dataPagamento && recebivelForm.dataPagamento < dataHojeIso())
+          : Boolean(
+            (recebivelSelecionadoDetalhe?.vencimento && recebivelSelecionadoDetalhe.vencimento < dataHojeIso())
+            || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < dataHojeIso())
+            || (recebivelForm.vencimento && recebivelForm.vencimento < dataHojeIso())
+          )
       );
       const senhaAdministrativa = exigeSenhaRetroativa
         ? window.prompt("Alterações retroativas exigem a senha administrativa:")
@@ -4743,7 +4757,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Atrasado")}>Marcar atrasado</button>
                   <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Suspenso")}>Suspender</button>
                   <button type="button" className="ghost-action compact" onClick={() => aplicarStatusRecebivel("Cancelado")}>Cancelar</button>
-                  <button type="button" className="primary-action compact" onClick={() => aplicarStatusRecebivel("Pago")}>Marcar pago hoje</button>
+                  <button type="button" className="primary-action compact" onClick={marcarRecebivelPagoHoje}>Marcar pago hoje</button>
                 </div>
               ) : null}
 
