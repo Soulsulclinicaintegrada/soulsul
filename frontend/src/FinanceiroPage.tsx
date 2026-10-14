@@ -794,10 +794,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setErro(null);
     try {
       const hoje = new Date().toISOString().slice(0, 10);
-      const senhaAdministrativa = caixaForm.dataMovimento < hoje
+      const exigeSenhaRetroativa = caixaForm.dataMovimento < hoje && !perfilAdministrador;
+      const senhaAdministrativa = exigeSenhaRetroativa
         ? window.prompt("Baixa retroativa: informe a senha administrativa:")
         : "";
-      if (caixaForm.dataMovimento < hoje && senhaAdministrativa === null) return;
+      if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       for (const item of recebiveisSelecionadosDetalhe) {
         if (!item.pacienteId) continue;
         await baixarRecebivelPacienteApi(item.pacienteId, item.id, {
@@ -879,7 +880,7 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setErro(null);
     const vencimentoOriginal = dataBrParaIso(item.vencimento) || String(item.vencimento || "");
     const hoje = new Date().toISOString().slice(0, 10);
-    const exigeSenhaRetroativa = vencimentoOriginal < hoje || recebivelForm.vencimento < hoje || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < hoje);
+    const exigeSenhaRetroativa = !perfilAdministrador && (vencimentoOriginal < hoje || recebivelForm.vencimento < hoje || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < hoje));
     const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Alteração retroativa: informe a senha administrativa:") : "";
     if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
     const payload: RecebivelAtualizacaoPayload = {
@@ -927,7 +928,7 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     try {
       const hoje = new Date().toISOString().slice(0, 10);
       const vencimentoOriginal = dataBrParaIso(atual.vencimento) || String(atual.vencimento || "");
-      const exigeSenhaRetroativa = vencimentoOriginal < hoje || formLinha.vencimento < hoje || (formLinha.dataPagamento && formLinha.dataPagamento < hoje);
+      const exigeSenhaRetroativa = !perfilAdministrador && (vencimentoOriginal < hoje || formLinha.vencimento < hoje || (formLinha.dataPagamento && formLinha.dataPagamento < hoje));
       const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Alteração retroativa: informe a senha administrativa:") : "";
       if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       await atualizarRecebivelPacienteApi(atual.pacienteId, recebivelId, {
@@ -1034,7 +1035,7 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setErro(null);
     try {
       const hoje = new Date().toISOString().slice(0, 10);
-      const exigeSenhaRetroativa = recebiveisDoLote.some((item) => (dataBrParaIso(item.vencimento) || String(item.vencimento || "")) < hoje)
+      const exigeSenhaRetroativa = !perfilAdministrador && recebiveisDoLote.some((item) => (dataBrParaIso(item.vencimento) || String(item.vencimento || "")) < hoje)
         || renegociacaoParcelas.some((item) => item.vencimento < hoje);
       const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Renegociação com parcelas retroativas: informe a senha administrativa:") : "";
       if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
@@ -1080,7 +1081,7 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     setErro(null);
     try {
       const hoje = new Date().toISOString().slice(0, 10);
-      const exigeSenhaRetroativa = recebiveisDoLote.some((item) => (dataBrParaIso(item.vencimento) || String(item.vencimento || "")) < hoje);
+      const exigeSenhaRetroativa = !perfilAdministrador && recebiveisDoLote.some((item) => (dataBrParaIso(item.vencimento) || String(item.vencimento || "")) < hoje);
       const senhaAdministrativa = exigeSenhaRetroativa ? window.prompt("Suspensão com parcelas retroativas: informe a senha administrativa:") : "";
       if (exigeSenhaRetroativa && senhaAdministrativa === null) return;
       const loteDestino = loteSelecionado.contratoId ? String(loteSelecionado.contratoId) : loteSelecionado.loteId;

@@ -2096,7 +2096,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     setSalvandoRecebivel(true);
     setErro(null);
     try {
-      const exigeSenhaRetroativa = Boolean(
+      const exigeSenhaRetroativa = !usuarioPodeAprovarOrcamento && Boolean(
         (recebivelSelecionadoDetalhe?.vencimento && recebivelSelecionadoDetalhe.vencimento < dataHojeIso())
         || (recebivelForm.dataPagamento && recebivelForm.dataPagamento < dataHojeIso())
         || (recebivelForm.vencimento && recebivelForm.vencimento < dataHojeIso())

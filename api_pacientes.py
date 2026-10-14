@@ -3052,6 +3052,18 @@ def validar_senha_administrativa_clinica(conn: sqlite3.Connection, senha: str) -
         raise HTTPException(status_code=403, detail="Informe uma senha administrativa válida para alterar dados retroativos.")
 
 
+def validar_autorizacao_financeira_retroativa(
+    conn: sqlite3.Connection,
+    request: Request,
+    senha: str,
+) -> None:
+    identificador = usuario_request(request)
+    usuario = buscar_usuario_por_identificador(conn, identificador) if identificador else None
+    if usuario is not None and normalizar_texto(str(usuario["perfil"] or "")) == "administrador":
+        return
+    validar_senha_administrativa_clinica(conn, senha)
+
+
 def data_financeira_retroativa(valor: object) -> bool:
     data_valor = parse_data_contrato(str(valor or ""))
     return bool(data_valor and data_valor < agora_local().date())
@@ -11835,7 +11847,7 @@ def atualizar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: R
             or data_financeira_retroativa(payload.vencimento)
             or data_financeira_retroativa(data_pagamento)
         ):
-            validar_senha_administrativa_clinica(conn, payload.senha_administrativa)
+            validar_autorizacao_financeira_retroativa(conn, request, payload.senha_administrativa)
 
         conn.execute(
             """
@@ -11887,7 +11899,7 @@ def atualizar_recebiveis_lote(lote_id: str, payload: RecebivelLotePayload, reque
         tem_data_retroativa = any(data_financeira_retroativa(row["vencimento"]) for row in recebiveis_lote)
         tem_nova_data_retroativa = any(data_financeira_retroativa(item.vencimento) for item in payload.novas_parcelas)
         if tem_data_retroativa or tem_nova_data_retroativa or data_financeira_retroativa(payload.primeiro_vencimento):
-            validar_senha_administrativa_clinica(conn, payload.senha_administrativa)
+            validar_autorizacao_financeira_retroativa(conn, request, payload.senha_administrativa)
         if payload.suspender_anteriores and not payload.novas_parcelas:
             suspender_recebiveis_lote_generico(
                 conn,
@@ -11936,7 +11948,7 @@ def baixar_recebivel_paciente(paciente_id: int, recebivel_id: int, payload: Baix
     try:
         carregar_paciente_por_id(conn, paciente_id)
         if data_financeira_retroativa(payload.data_pagamento):
-            validar_senha_administrativa_clinica(conn, payload.senha_administrativa)
+            validar_autorizacao_financeira_retroativa(conn, request, payload.senha_administrativa)
         atualizado = baixar_recebivel_no_caixa(
             conn,
             paciente_id=paciente_id,
