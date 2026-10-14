@@ -3038,7 +3038,8 @@ def validar_perfil_administrador(request: Request, *, acao: str) -> str:
     finally:
         conn.close()
     perfil = normalizar_texto(str(usuario_row["perfil"] or "")) if usuario_row is not None else ""
-    if perfil != "administrador":
+    cargo = normalizar_texto(str(usuario_row["cargo"] or "")) if usuario_row is not None else ""
+    if perfil != "administrador" and cargo != "administrador":
         raise HTTPException(status_code=403, detail=f"Somente o perfil Administrador pode {acao}.")
     return str(usuario_row["usuario"] or usuario).strip()
 
@@ -3059,7 +3060,10 @@ def validar_autorizacao_financeira_retroativa(
 ) -> None:
     identificador = usuario_request(request)
     usuario = buscar_usuario_por_identificador(conn, identificador) if identificador else None
-    if usuario is not None and normalizar_texto(str(usuario["perfil"] or "")) == "administrador":
+    if usuario is not None and (
+        normalizar_texto(str(usuario["perfil"] or "")) == "administrador"
+        or normalizar_texto(str(usuario["cargo"] or "")) == "administrador"
+    ):
         return
     validar_senha_administrativa_clinica(conn, senha)
 
@@ -3228,7 +3232,11 @@ async def auditoria_middleware(request: Request, call_next):
 
     rota = request.url.path
     metodo = request.method.upper()
-    rota_financeira_mutavel = (
+    rota_recebiveis_com_autorizacao_propria = (
+        (rota.startswith("/api/pacientes/") and "/recebiveis/" in rota)
+        or rota.startswith("/api/financeiro/recebiveis/lote/")
+    )
+    rota_financeira_mutavel = not rota_recebiveis_com_autorizacao_propria and (
         rota.startswith("/api/financeiro/")
         or (rota.startswith("/api/pacientes/") and "/recebiveis/" in rota)
     )
@@ -3256,6 +3264,9 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
     cargo = str(usuario_row["cargo"] or "Profissional")
     perfil = str(usuario_row["perfil"] or "Usuario")
     modulos_padrao, abas_padrao, _ = permissoes_padrao_backend(cargo, perfil)
+    modulos = json_dict_seguro(usuario_row["modulos_json"], modulos_padrao)
+    if normalizar_texto(perfil) != "administrador" and normalizar_texto(cargo) != "administrador":
+        modulos["Usuarios"] = "Sem acesso"
     return LoginResposta(
         id=int(usuario_row["id"]),
         nome=str(usuario_row["nome"] or ""),
@@ -3268,7 +3279,7 @@ def detalhar_usuario_login(usuario_row: sqlite3.Row) -> LoginResposta:
         atividadesAgendaDisponivel=bool(int(usuario_row["atividades_agenda_disponivel"] or 0)),
         atividadesEscopo=str(usuario_row["atividades_escopo"] or "PROPRIAS"),
         nomeAgenda=str(usuario_row["nome_agenda"] or usuario_row["nome"] or "").upper(),
-        modulos=json_dict_seguro(usuario_row["modulos_json"], modulos_padrao),
+        modulos=modulos,
         pacientesAbas=json_dict_seguro(usuario_row["pacientes_abas_json"], abas_padrao),
         precisaTrocarSenha=bool(int(usuario_row["precisa_trocar_senha"] or 0)),
     )
@@ -3511,6 +3522,8 @@ def normalizar_payload_permissoes(
     for modulo, nivel in (modulos_payload or {}).items():
         if modulo in modulos and str(nivel or "").strip():
             modulos[modulo] = str(nivel)
+    if normalizar_texto(perfil) != "administrador" and normalizar_texto(cargo) != "administrador":
+        modulos["Usuarios"] = "Sem acesso"
     abas = dict(abas_padrao)
     for aba, nivel in (pacientes_abas_payload or {}).items():
         if aba in abas and str(nivel or "").strip():
@@ -3522,6 +3535,9 @@ def mapear_usuario_resumo(usuario_row: sqlite3.Row) -> UsuarioResumoResposta:
     cargo = str(usuario_row["cargo"] or "Profissional")
     perfil = str(usuario_row["perfil"] or "Usuario")
     modulos_padrao, abas_padrao, _ = permissoes_padrao_backend(cargo, perfil)
+    modulos = json_dict_seguro(usuario_row["modulos_json"], modulos_padrao)
+    if normalizar_texto(perfil) != "administrador" and normalizar_texto(cargo) != "administrador":
+        modulos["Usuarios"] = "Sem acesso"
     return UsuarioResumoResposta(
         id=int(usuario_row["id"]),
         nome=str(usuario_row["nome"] or ""),
@@ -3536,7 +3552,7 @@ def mapear_usuario_resumo(usuario_row: sqlite3.Row) -> UsuarioResumoResposta:
         atividadesEscopo=str(usuario_row["atividades_escopo"] or "PROPRIAS"),
         status="Ativo" if bool(int(usuario_row["ativo"] or 0)) else "Inativo",
         ultimoAcesso=str(usuario_row["ultimo_login"] or "-"),
-        modulos=json_dict_seguro(usuario_row["modulos_json"], modulos_padrao),
+        modulos=modulos,
         pacientesAbas=json_dict_seguro(usuario_row["pacientes_abas_json"], abas_padrao),
     )
 
@@ -3838,6 +3854,7 @@ def arquivar_item_checklist(checklist_id: int, request: Request):
 
 @app.post("/api/usuarios/{usuario_id}/redefinir-senha", response_model=LoginResposta)
 def redefinir_senha_usuario(usuario_id: int, request: Request):
+    validar_perfil_administrador(request, acao="redefinir senhas de usuarios")
     conn = conectar()
     try:
         usuario_row = conn.execute(
@@ -3895,6 +3912,7 @@ def listar_usuarios():
 
 @app.post("/api/usuarios", response_model=UsuarioResumoResposta)
 def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
+    validar_perfil_administrador(request, acao="criar usuarios")
     nome = corrigir_texto_importado(str(payload.nome or "").strip())
     cargo = corrigir_texto_importado(str(payload.cargo or "").strip()) or "Profissional"
     perfil = corrigir_texto_importado(str(payload.perfil or "").strip()) or ("Administrador" if cargo == "Administrador" else "Usuario")
@@ -3971,6 +3989,7 @@ def criar_usuario(payload: UsuarioCriacaoPayload, request: Request):
 
 @app.put("/api/usuarios/{usuario_id}", response_model=UsuarioResumoResposta)
 def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, request: Request):
+    validar_perfil_administrador(request, acao="alterar usuarios e permissoes")
     nome = corrigir_texto_importado(str(payload.nome or "").strip())
     nome_agenda = corrigir_texto_importado(str(payload.nome_agenda or "").strip())
     usuario_login = normalizar_texto(str(payload.usuario or "").strip()).replace(" ", "")
@@ -4065,6 +4084,7 @@ def atualizar_usuario(usuario_id: int, payload: UsuarioAtualizacaoPayload, reque
 
 @app.patch("/api/usuarios/{usuario_id}/atividades", response_model=UsuarioResumoResposta)
 def atualizar_controles_atividades_usuario(usuario_id: int, payload: UsuarioAtividadesPayload, request: Request):
+    validar_perfil_administrador(request, acao="alterar permissoes de usuarios")
     escopo = "EQUIPE" if str(payload.atividades_escopo or "").strip().upper() == "EQUIPE" else "PROPRIAS"
     conn = conectar()
     try:
@@ -4473,6 +4493,7 @@ def excluir_atividade(atividade_id: int, request: Request):
 
 @app.delete("/api/usuarios/{usuario_id}")
 def excluir_usuario(usuario_id: int, request: Request):
+    validar_perfil_administrador(request, acao="desativar usuarios")
     conn = conectar()
     try:
         usuario_row = conn.execute(

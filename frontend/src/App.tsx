@@ -158,6 +158,12 @@ function mesclarPermissoes(
     ])
   );
 
+  const perfilAdministrador = [sessao?.perfil, sessao?.cargo]
+    .some((valor) => normalizarBusca(valor) === "administrador");
+  if (!perfilAdministrador) {
+    modulos.Usuarios = "Sem acesso";
+  }
+
   return { modulos, pacientesAbas };
 }
 
