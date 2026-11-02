@@ -1759,6 +1759,10 @@ export function urlExportarCaixaExcel() {
   return `${API_BASE_URL}/api/financeiro/caixa/export.xlsx`;
 }
 
+export function urlExportarRelatorioPagamentosNf(ano = new Date().getFullYear()) {
+  return `${API_BASE_URL}/api/financeiro/relatorio-pagamentos-nf/export.xlsx?ano=${encodeURIComponent(String(ano))}`;
+}
+
 export function urlExportarSistemaExcel() {
   return `${API_BASE_URL}/api/sistema/export.xlsx`;
 }

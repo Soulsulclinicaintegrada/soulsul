@@ -35,7 +35,8 @@ import {
   type RecebivelResumoApi,
   atualizarRecebivelPacienteApi,
   urlReciboManual,
-  urlExportarCaixaExcel
+  urlExportarCaixaExcel,
+  urlExportarRelatorioPagamentosNf
 } from "./pacientesApi";
 
 type AbaFinanceiro = "caixa" | "recebiveis" | "cobrancas" | "individual" | "lote" | "pagar" | "novo_pagar" | "recibo" | "metas" | "notas_fiscais" | "comissoes";
@@ -1312,6 +1313,11 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
           <button type="button" className={aba === "metas" ? "active" : ""} onClick={() => setAba("metas")}>Metas</button>
           <button type="button" className={aba === "notas_fiscais" ? "active" : ""} onClick={() => setAba("notas_fiscais")}>NF emitidas</button>
           <button type="button" className={aba === "comissoes" ? "active" : ""} onClick={() => setAba("comissoes")}>Comissões</button>
+        </div>
+        <div className="finance-form-actions finance-report-actions">
+          <a className="primary-action" href={urlExportarRelatorioPagamentosNf()} download>
+            Baixar pagamentos para NF ({new Date().getFullYear()})
+          </a>
         </div>
 
         {erro ? <div className="finance-inline-error">{erro}</div> : null}

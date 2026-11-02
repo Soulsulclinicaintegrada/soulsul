@@ -7536,6 +7536,114 @@ def caixa_diario_para_excel_bytes(conn: sqlite3.Connection, financeiro_rows: lis
     return buffer.getvalue()
 
 
+def relatorio_pagamentos_nf_excel_bytes(conn: sqlite3.Connection, ano: int) -> bytes | None:
+    if Workbook is None or Alignment is None or Font is None or PatternFill is None:
+        return None
+    rows = conn.execute(
+        """
+        SELECT r.id, r.paciente_id,
+               COALESCE(NULLIF(TRIM(p.nome), ''), NULLIF(TRIM(r.paciente_nome), ''), 'Paciente não identificado') AS paciente,
+               COALESCE(NULLIF(TRIM(p.prontuario), ''), NULLIF(TRIM(r.prontuario), ''), '') AS prontuario,
+               COALESCE(TRIM(p.cpf), '') AS cpf, COALESCE(TRIM(p.responsavel), '') AS responsavel,
+               COALESCE(TRIM(p.cpf_responsavel), '') AS cpf_responsavel, r.data_pagamento,
+               CAST(r.valor AS REAL) AS valor, COALESCE(TRIM(r.forma_pagamento), '') AS forma_pagamento,
+               r.contrato_id, r.parcela_numero, COALESCE(TRIM(r.vencimento), '') AS vencimento,
+               COALESCE(TRIM(r.observacao), '') AS observacao
+        FROM recebiveis r LEFT JOIN pacientes p ON p.id=r.paciente_id
+        WHERE LOWER(TRIM(COALESCE(r.status, '')))='pago'
+          AND (SUBSTR(TRIM(COALESCE(r.data_pagamento, '')), 1, 4)=?
+               OR SUBSTR(TRIM(COALESCE(r.data_pagamento, '')), 7, 4)=?)
+        ORDER BY paciente, r.id
+        """,
+        (str(ano), str(ano)),
+    ).fetchall()
+    if not rows:
+        return None
+
+    def data_relatorio(valor: object) -> date | None:
+        texto = str(valor or "").strip()[:10]
+        for formato in ("%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(texto, formato).date()
+            except ValueError:
+                pass
+        return None
+
+    def chave_paciente(row: sqlite3.Row) -> str:
+        if row["paciente_id"]:
+            return f"id:{int(row['paciente_id'])}"
+        return f"nome:{str(row['paciente'] or '').strip().casefold()}|{str(row['prontuario'] or '').strip()}"
+
+    pacientes: dict[str, dict[str, object]] = {}
+    meses: dict[str, dict[str, object]] = {}
+    for row in rows:
+        data_ref = data_relatorio(row["data_pagamento"])
+        valor = round(float(row["valor"] or 0), 2)
+        paciente_chave = chave_paciente(row)
+        item = pacientes.setdefault(paciente_chave, {
+            "paciente": str(row["paciente"] or "").strip(), "prontuario": str(row["prontuario"] or "").strip(),
+            "cpf": str(row["cpf"] or "").strip(), "responsavel": str(row["responsavel"] or "").strip(),
+            "cpf_responsavel": str(row["cpf_responsavel"] or "").strip(), "quantidade": 0,
+            "primeiro": data_ref, "ultimo": data_ref, "total": 0.0,
+        })
+        item["quantidade"] = int(item["quantidade"]) + 1
+        item["total"] = round(float(item["total"]) + valor, 2)
+        if data_ref and (item["primeiro"] is None or data_ref < item["primeiro"]): item["primeiro"] = data_ref
+        if data_ref and (item["ultimo"] is None or data_ref > item["ultimo"]): item["ultimo"] = data_ref
+        if data_ref:
+            mes = data_ref.strftime("%Y-%m")
+            mensal = meses.setdefault(mes, {"pagamentos": 0, "pacientes": set(), "total": 0.0})
+            mensal["pagamentos"] = int(mensal["pagamentos"]) + 1
+            mensal["pacientes"].add(paciente_chave)
+            mensal["total"] = round(float(mensal["total"]) + valor, 2)
+
+    wb = Workbook()
+    ws = wb.active; ws.title = "Resumo por paciente"
+    detalhe = wb.create_sheet("Pagamentos")
+    fonte_titulo = Font(name="Arial", size=16, bold=True, color="23372D")
+    fonte_cabecalho = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    preenchimento_cabecalho = PatternFill("solid", fgColor="2F4A3C")
+    moeda = '"R$" #,##0.00'
+    resumo = sorted(pacientes.values(), key=lambda item: str(item["paciente"]).casefold())
+
+    ws.merge_cells("A2:L2"); ws["A2"] = f"Pagamentos recebidos em {ano}"; ws["A2"].font = fonte_titulo
+    ws.merge_cells("A3:L3"); ws["A3"] = "Conferência de emissão de nota fiscal por paciente"
+    indicadores = ["Pacientes", len(resumo), "Pagamentos", len(rows), "Total recebido", round(sum(float(row["valor"] or 0) for row in rows), 2)]
+    for coluna, valor in enumerate(indicadores, 1): ws.cell(6, coluna, valor)
+    ws["F6"].number_format = moeda
+    ws.merge_cells("N2:Q2"); ws["N2"] = "Resumo mensal"; ws["N2"].font = Font(name="Arial", size=12, bold=True, color="23372D")
+    for coluna, titulo in enumerate(["Mês", "Pagamentos", "Pacientes", "Total recebido"], 14): ws.cell(3, coluna, titulo)
+    for linha, mes in enumerate(sorted(meses), 4):
+        item = meses[mes]
+        ws.cell(linha, 14, datetime.strptime(mes, "%Y-%m").date()).number_format = "MMM/YYYY"
+        ws.cell(linha, 15, item["pagamentos"]); ws.cell(linha, 16, len(item["pacientes"])); ws.cell(linha, 17, item["total"]).number_format = moeda
+    cabecalhos = ["Paciente", "Prontuário", "CPF do paciente", "Responsável financeiro", "CPF do responsável", "Qtd. pagamentos", "Primeiro pagamento", "Último pagamento", "Total pago", "Situação da NF", "Nº da NF", "Observação fiscal"]
+    for coluna, titulo in enumerate(cabecalhos, 1): ws.cell(8, coluna, titulo)
+    for linha, item in enumerate(resumo, 9):
+        valores = [item["paciente"], item["prontuario"], item["cpf"], item["responsavel"], item["cpf_responsavel"], item["quantidade"], item["primeiro"], item["ultimo"], item["total"], "Pendente", "", ""]
+        for coluna, valor in enumerate(valores, 1): ws.cell(linha, coluna, valor)
+        ws.cell(linha, 7).number_format = "DD/MM/YYYY"; ws.cell(linha, 8).number_format = "DD/MM/YYYY"; ws.cell(linha, 9).number_format = moeda
+    ws.auto_filter.ref = f"A8:L{8 + len(resumo)}"; ws.freeze_panes = "B9"; ws.sheet_view.showGridLines = False
+
+    detalhe.merge_cells("A2:N2"); detalhe["A2"] = f"Detalhamento dos pagamentos recebidos em {ano}"; detalhe["A2"].font = fonte_titulo
+    cabecalhos_detalhe = ["ID do recebível", "Paciente", "Prontuário", "CPF do paciente", "Responsável financeiro", "CPF do responsável", "Data do pagamento", "Valor pago", "Forma de pagamento", "Contrato", "Parcela", "Vencimento", "Observação", "Mês"]
+    for coluna, titulo in enumerate(cabecalhos_detalhe, 1): detalhe.cell(5, coluna, titulo)
+    for linha, row in enumerate(rows, 6):
+        data_ref = data_relatorio(row["data_pagamento"])
+        valores = [str(row["id"]), row["paciente"], row["prontuario"], row["cpf"], row["responsavel"], row["cpf_responsavel"], data_ref, round(float(row["valor"] or 0), 2), row["forma_pagamento"], "" if row["contrato_id"] is None else str(row["contrato_id"]), row["parcela_numero"], data_relatorio(row["vencimento"]), row["observacao"], data_ref.replace(day=1) if data_ref else None]
+        for coluna, valor in enumerate(valores, 1): detalhe.cell(linha, coluna, valor)
+        detalhe.cell(linha, 7).number_format = "DD/MM/YYYY"; detalhe.cell(linha, 8).number_format = moeda; detalhe.cell(linha, 12).number_format = "DD/MM/YYYY"; detalhe.cell(linha, 14).number_format = "MMM/YYYY"
+    detalhe.auto_filter.ref = f"A5:N{5 + len(rows)}"; detalhe.freeze_panes = "C6"; detalhe.sheet_view.showGridLines = False
+
+    for planilha, linha_cabecalho, total_colunas in ((ws, 8, 12), (detalhe, 5, 14)):
+        for celula in planilha[linha_cabecalho][:total_colunas]:
+            celula.fill = preenchimento_cabecalho; celula.font = fonte_cabecalho; celula.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        planilha.row_dimensions[linha_cabecalho].height = 34
+    for coluna, largura in enumerate([31, 15, 18, 27, 18, 14, 17, 17, 16, 17, 15, 30], 1): ws.column_dimensions[openpyxl_column_name(coluna)].width = largura
+    for coluna, largura in enumerate([16, 31, 15, 18, 27, 18, 17, 16, 20, 16, 10, 15, 52, 13], 1): detalhe.column_dimensions[openpyxl_column_name(coluna)].width = largura
+    buffer = BytesIO(); wb.save(buffer); return buffer.getvalue()
+
+
 def openpyxl_column_name(index: int) -> str:
     resultado = ""
     atual = index
@@ -12571,6 +12679,20 @@ def exportar_caixa_excel():
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="{nome}"'},
         )
+    finally:
+        conn.close()
+
+
+@app.get("/api/financeiro/relatorio-pagamentos-nf/export.xlsx")
+def exportar_relatorio_pagamentos_nf(ano: int | None = Query(None, ge=2000, le=2100)):
+    ano_referencia = ano or agora_local().year
+    conn = conectar()
+    try:
+        conteudo = relatorio_pagamentos_nf_excel_bytes(conn, ano_referencia)
+        if not conteudo:
+            raise HTTPException(status_code=404, detail=f"Nao ha pagamentos baixados em {ano_referencia}.")
+        nome = f"relatorio_pagamentos_nf_{ano_referencia}.xlsx"
+        return Response(content=conteudo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
     finally:
         conn.close()
 
