@@ -334,6 +334,8 @@ def garantir_colunas_pacientes_api() -> None:
         garantir_coluna(conn, "contratos", "crm_observacao_contato TEXT")
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_em TEXT")
         garantir_coluna(conn, "contratos", "crm_ultimo_contato_por TEXT")
+        garantir_coluna(conn, "contratos", "nf_solicitada INTEGER DEFAULT 0")
+        garantir_coluna(conn, "notas_fiscais_emitidas", "contrato_id INTEGER")
         garantir_coluna(conn, "crm_pacientes", "origem_cancelado INTEGER DEFAULT 0")
         garantir_coluna(conn, "crm_pacientes", "cancelado_em TEXT")
         garantir_coluna(conn, "procedimentos_contrato", "profissional_snapshot TEXT")
@@ -487,6 +489,8 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_paciente_id ON contratos(paciente_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_data_retorno_crm ON contratos(data_retorno_crm)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_crm_status ON contratos(crm_status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contratos_nf_solicitada ON contratos(nf_solicitada, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notas_fiscais_contrato ON notas_fiscais_emitidas(contrato_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_contatos_historico_contrato_id ON crm_contatos_historico(contrato_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_conversas_paciente_id ON crm_conversas(paciente_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_conversas_crm_id ON crm_conversas(crm_id)")
@@ -1890,6 +1894,7 @@ class ContratoResumo(BaseModel):
     jaFoiAprovado: bool = False
     tipoMovimentoVenda: str = "NOVA"
     valorVendaConsiderado: float | None = None
+    nfSolicitada: bool = False
     procedimentos: list[str] = Field(default_factory=list)
 
 
@@ -2125,6 +2130,7 @@ class MetaMensalResumo(BaseModel):
 
 
 class NotaFiscalEmitidaPayload(BaseModel):
+    contrato_id: int | None = None
     competencia: str = ""
     data_emissao: str = ""
     data_recebimento: str = ""
@@ -2141,6 +2147,7 @@ class NotaFiscalEmitidaPayload(BaseModel):
 
 class NotaFiscalEmitidaResumo(BaseModel):
     id: int
+    contratoId: int | None = None
     competencia: str = ""
     dataEmissao: str = ""
     dataRecebimento: str = ""
@@ -2160,6 +2167,18 @@ class NotaFiscalEmitidaResumo(BaseModel):
     conciliado: bool = False
     criadoEm: str = ""
     atualizadoEm: str = ""
+
+
+class NotaFiscalAEmitirResumo(BaseModel):
+    contratoId: int
+    pacienteId: int
+    paciente: str = ""
+    prontuario: str = ""
+    valor: str = ""
+    valorNumero: float = 0
+    dataOrcamento: str = ""
+    statusOrcamento: str = ""
+    procedimentos: str = ""
 
 
 class DashboardIndicadorResposta(BaseModel):
@@ -2558,6 +2577,7 @@ class OrcamentoPacientePayload(BaseModel):
     forma_pagamento: str = ""
     parcelas: int = 1
     entrada: bool = False
+    nf_solicitada: bool | None = None
     plano_pagamento: list[ParcelaPagamentoPayload] = Field(default_factory=list)
     itens: list[OrcamentoItemPayload] = Field(default_factory=list)
 
@@ -2598,6 +2618,7 @@ class OrcamentoDetalheResposta(BaseModel):
     formaPagamento: str = ""
     parcelas: int = 1
     entrada: bool = False
+    nfSolicitada: bool = False
     planoPagamento: list[ParcelaPagamentoPayload] = Field(default_factory=list)
     itens: list[OrcamentoItemPayload] = Field(default_factory=list)
     historico: list[OrcamentoHistoricoItemResposta] = Field(default_factory=list)
@@ -5542,6 +5563,7 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         formaPagamento=str(contrato["forma_pagamento"] or ""),
         parcelas=int(contrato["parcelas"] or 1),
         entrada=float(contrato["entrada"] or 0) > 0,
+        nfSolicitada=bool(int(contrato["nf_solicitada"] or 0)),
         planoPagamento=plano_pagamento,
         itens=itens,
         historico=historico,
@@ -5756,6 +5778,8 @@ def salvar_orcamento_paciente(
     payload: OrcamentoPacientePayload,
     contrato_id: int | None = None,
 ) -> int:
+    if payload.nf_solicitada is None:
+        raise HTTPException(status_code=400, detail="Informe obrigatoriamente se o orçamento precisa de NF.")
     itens_validos = []
     for item in payload.itens:
         regioes_validas = [regiao for regiao in item.regioes if str(regiao.regiao or "").strip()]
@@ -5793,9 +5817,9 @@ def salvar_orcamento_paciente(
             """
             INSERT INTO contratos (
                 paciente_id, valor_total, entrada, parcelas, primeiro_vencimento, data_pagamento_entrada,
-                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento, data_retorno_crm
+                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento, data_retorno_crm, nf_solicitada
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paciente_id,
@@ -5815,6 +5839,7 @@ def salvar_orcamento_paciente(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
+                int(bool(payload.nf_solicitada)),
             ),
         )
         contrato_id = int(cursor.lastrowid)
@@ -5826,7 +5851,7 @@ def salvar_orcamento_paciente(
         conn.execute(
             """
             UPDATE contratos
-            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?, data_retorno_crm=?
+            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?, data_retorno_crm=?, nf_solicitada=?
             WHERE id=? AND paciente_id=?
             """,
             (
@@ -5846,6 +5871,7 @@ def salvar_orcamento_paciente(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
+                int(bool(payload.nf_solicitada)),
                 contrato_id,
                 paciente_id,
             ),
@@ -5893,6 +5919,8 @@ def salvar_orcamento_paciente_com_pagamento(
     payload: OrcamentoPacientePayload,
     contrato_id: int | None = None,
 ) -> int:
+    if payload.nf_solicitada is None:
+        raise HTTPException(status_code=400, detail="Informe obrigatoriamente se o orçamento precisa de NF.")
     itens_validos = []
     for item in payload.itens:
         regioes_validas = [regiao for regiao in item.regioes if str(regiao.regiao or "").strip()]
@@ -5930,9 +5958,9 @@ def salvar_orcamento_paciente_com_pagamento(
             """
             INSERT INTO contratos (
                 paciente_id, valor_total, entrada, parcelas, primeiro_vencimento, data_pagamento_entrada,
-                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento, data_retorno_crm
+                forma_pagamento, hash_importacao, data_criacao, status, observacoes, clinica_snapshot, criado_por_snapshot, tabela_snapshot, plano_pagamento_json, desconto_percentual, desconto_valor, validade_orcamento, data_retorno_crm, nf_solicitada
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'EM_ABERTO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paciente_id,
@@ -5952,6 +5980,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
+                int(bool(payload.nf_solicitada)),
             ),
         )
         contrato_id = int(cursor.lastrowid)
@@ -5963,7 +5992,7 @@ def salvar_orcamento_paciente_com_pagamento(
         conn.execute(
             """
             UPDATE contratos
-            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?, data_retorno_crm=?
+            SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?, forma_pagamento=?, data_criacao=?, observacoes=?, clinica_snapshot=?, criado_por_snapshot=?, tabela_snapshot=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?, validade_orcamento=?, data_retorno_crm=?, nf_solicitada=?
             WHERE id=? AND paciente_id=?
             """,
             (
@@ -5983,6 +6012,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
+                int(bool(payload.nf_solicitada)),
                 contrato_id,
                 paciente_id,
             ),
@@ -6791,6 +6821,7 @@ def mapear_nota_fiscal_emitida(row: sqlite3.Row) -> NotaFiscalEmitidaResumo:
     conciliado = abs(diferenca) < 0.01
     return NotaFiscalEmitidaResumo(
         id=int(row["id"]),
+        contratoId=int(row["contrato_id"]) if row["contrato_id"] is not None else None,
         competencia=str(row["competencia"] or ""),
         dataEmissao=formatar_data_br_valor(row["data_emissao"]),
         dataRecebimento=formatar_data_br_valor(row["data_recebimento"]),
@@ -11304,6 +11335,7 @@ def montar_ficha_paciente(conn: sqlite3.Connection, paciente_row: sqlite3.Row) -
             jaFoiAprovado=bool(int(row["ja_foi_aprovado"] or 0)),
             tipoMovimentoVenda=str(row["tipo_movimento_venda"] or "NOVA"),
             valorVendaConsiderado=float(row["valor_venda_considerado"]) if row["valor_venda_considerado"] is not None else None,
+            nfSolicitada=bool(int(row["nf_solicitada"] or 0)),
             procedimentos=carregar_procedimentos_contrato(conn, int(row["id"])),
         )
         for row in contratos_rows
@@ -12446,6 +12478,45 @@ def listar_notas_fiscais_emitidas():
         conn.close()
 
 
+@app.get("/api/financeiro/notas-fiscais/a-emitir", response_model=list[NotaFiscalAEmitirResumo])
+def listar_notas_fiscais_a_emitir():
+    conn = conectar()
+    try:
+        rows = conn.execute(
+            """
+            SELECT c.id AS contrato_id, c.paciente_id, c.valor_total, c.data_criacao, c.status,
+                   p.nome AS paciente, p.prontuario,
+                   COALESCE(GROUP_CONCAT(DISTINCT pc.procedimento), '') AS procedimentos
+            FROM contratos c
+            JOIN pacientes p ON p.id=c.paciente_id
+            LEFT JOIN procedimentos_contrato pc ON pc.contrato_id=c.id
+            WHERE COALESCE(c.nf_solicitada, 0)=1
+              AND NOT EXISTS (
+                  SELECT 1 FROM notas_fiscais_emitidas nf
+                  WHERE nf.contrato_id=c.id AND lower(COALESCE(nf.status, ''))<>'cancelada'
+              )
+            GROUP BY c.id, c.paciente_id, c.valor_total, c.data_criacao, c.status, p.nome, p.prontuario
+            ORDER BY COALESCE(c.data_criacao, '') DESC, c.id DESC
+            """
+        ).fetchall()
+        return [
+            NotaFiscalAEmitirResumo(
+                contratoId=int(row["contrato_id"]),
+                pacienteId=int(row["paciente_id"]),
+                paciente=str(row["paciente"] or ""),
+                prontuario=formatar_prontuario_valor(row["prontuario"]),
+                valor=formatar_moeda_br(float(row["valor_total"] or 0)),
+                valorNumero=float(row["valor_total"] or 0),
+                dataOrcamento=formatar_data_br_valor(row["data_criacao"]),
+                statusOrcamento=str(row["status"] or "EM_ABERTO"),
+                procedimentos=str(row["procedimentos"] or ""),
+            )
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
 @app.post("/api/financeiro/notas-fiscais", response_model=NotaFiscalEmitidaResumo)
 def criar_nota_fiscal_emitida(payload: NotaFiscalEmitidaPayload):
     conn = conectar()
@@ -12455,8 +12526,8 @@ def criar_nota_fiscal_emitida(payload: NotaFiscalEmitidaPayload):
             INSERT INTO notas_fiscais_emitidas (
                 competencia, data_emissao, data_recebimento, numero_nf, serie, cliente,
                 descricao, conta_destino, valor_nf, valor_recebido, status, observacao,
-                criado_em, atualizado_em
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                contrato_id, criado_em, atualizado_em
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.competencia.strip(),
@@ -12471,6 +12542,7 @@ def criar_nota_fiscal_emitida(payload: NotaFiscalEmitidaPayload):
                 float(payload.valor_recebido or 0),
                 payload.status.strip() or "Pendente",
                 payload.observacao.strip(),
+                payload.contrato_id,
                 agora_str(),
                 agora_str(),
             ),
@@ -12495,7 +12567,7 @@ def atualizar_nota_fiscal_emitida(nota_id: int, payload: NotaFiscalEmitidaPayloa
             """
             UPDATE notas_fiscais_emitidas
             SET competencia=?, data_emissao=?, data_recebimento=?, numero_nf=?, serie=?, cliente=?,
-                descricao=?, conta_destino=?, valor_nf=?, valor_recebido=?, status=?, observacao=?, atualizado_em=?
+                descricao=?, conta_destino=?, valor_nf=?, valor_recebido=?, status=?, observacao=?, contrato_id=?, atualizado_em=?
             WHERE id=?
             """,
             (
@@ -12511,6 +12583,7 @@ def atualizar_nota_fiscal_emitida(nota_id: int, payload: NotaFiscalEmitidaPayloa
                 float(payload.valor_recebido or 0),
                 payload.status.strip() or "Pendente",
                 payload.observacao.strip(),
+                payload.contrato_id if payload.contrato_id is not None else row["contrato_id"],
                 agora_str(),
                 int(nota_id),
             ),

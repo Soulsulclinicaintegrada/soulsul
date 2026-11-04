@@ -255,6 +255,7 @@ export type ContratoResumoApi = {
   jaFoiAprovado?: boolean;
   tipoMovimentoVenda?: string;
   valorVendaConsiderado?: number | null;
+  nfSolicitada?: boolean;
   procedimentos: string[];
 };
 
@@ -431,6 +432,7 @@ export type MetaMensalPayload = {
 
 export type NotaFiscalEmitidaApi = {
   id: number;
+  contratoId?: number | null;
   competencia: string;
   dataEmissao: string;
   dataRecebimento: string;
@@ -453,6 +455,7 @@ export type NotaFiscalEmitidaApi = {
 };
 
 export type NotaFiscalEmitidaPayload = {
+  contrato_id?: number | null;
   competencia: string;
   data_emissao: string;
   data_recebimento: string;
@@ -465,6 +468,18 @@ export type NotaFiscalEmitidaPayload = {
   valor_recebido: number;
   status: string;
   observacao: string;
+};
+
+export type NotaFiscalAEmitirApi = {
+  contratoId: number;
+  pacienteId: number;
+  paciente: string;
+  prontuario: string;
+  valor: string;
+  valorNumero: number;
+  dataOrcamento: string;
+  statusOrcamento: string;
+  procedimentos: string;
 };
 
 export type SaldoContaPayload = {
@@ -688,6 +703,7 @@ export type OrcamentoPacientePayload = {
   forma_pagamento?: string;
   parcelas?: number;
   entrada?: boolean;
+  nf_solicitada: boolean;
   plano_pagamento?: ParcelaPagamentoApi[];
   itens: OrcamentoItemPayload[];
 };
@@ -721,6 +737,7 @@ export type OrcamentoDetalheApi = {
   formaPagamento?: string;
   parcelas?: number;
   entrada?: boolean;
+  nfSolicitada?: boolean;
   planoPagamento?: ParcelaPagamentoApi[];
   itens: OrcamentoItemPayload[];
   historico?: OrcamentoHistoricoItemApi[];
@@ -1691,6 +1708,10 @@ export async function atualizarMetaFinanceiraApi(ano: number, mes: number, paylo
 
 export async function listarNotasFiscaisEmitidasApi() {
   return fetchJson<NotaFiscalEmitidaApi[]>(`${API_BASE_URL}/api/financeiro/notas-fiscais`);
+}
+
+export async function listarNotasFiscaisAEmitirApi() {
+  return fetchJson<NotaFiscalAEmitirApi[]>(`${API_BASE_URL}/api/financeiro/notas-fiscais/a-emitir`);
 }
 
 export async function criarNotaFiscalEmitidaApi(payload: NotaFiscalEmitidaPayload) {

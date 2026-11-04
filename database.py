@@ -772,7 +772,8 @@ def inicializar_banco():
             crm_status TEXT,
             crm_observacao_contato TEXT,
             crm_ultimo_contato_em TEXT,
-            crm_ultimo_contato_por TEXT
+            crm_ultimo_contato_por TEXT,
+            nf_solicitada INTEGER DEFAULT 0
         )
         """
     )
@@ -1484,6 +1485,7 @@ def inicializar_banco():
             valor_recebido REAL DEFAULT 0,
             status TEXT DEFAULT 'Pendente',
             observacao TEXT,
+            contrato_id INTEGER,
             criado_em TEXT,
             atualizado_em TEXT
         )
@@ -1712,6 +1714,7 @@ def inicializar_banco():
     garantir_coluna(conn, "notas_fiscais_emitidas", "valor_recebido REAL DEFAULT 0")
     garantir_coluna(conn, "notas_fiscais_emitidas", "status TEXT DEFAULT 'Pendente'")
     garantir_coluna(conn, "notas_fiscais_emitidas", "observacao TEXT")
+    garantir_coluna(conn, "notas_fiscais_emitidas", "contrato_id INTEGER")
     garantir_coluna(conn, "notas_fiscais_emitidas", "criado_em TEXT")
     garantir_coluna(conn, "notas_fiscais_emitidas", "atualizado_em TEXT")
     garantir_coluna(conn, "contratos", "data_criacao TEXT")
@@ -1738,6 +1741,7 @@ def inicializar_banco():
     garantir_coluna(conn, "contratos", "tipo_movimento_venda TEXT DEFAULT 'NOVA'")
     garantir_coluna(conn, "contratos", "valor_venda_considerado REAL")
     garantir_coluna(conn, "contratos", "contar_quantidade_venda INTEGER DEFAULT 1")
+    garantir_coluna(conn, "contratos", "nf_solicitada INTEGER DEFAULT 0")
     conn.execute(
         """UPDATE contratos SET ja_foi_aprovado=1
            WHERE lower(COALESCE(status,'')) IN ('aprovado','aprovada','convertido')"""
@@ -1989,6 +1993,8 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_plano_tratamento_passos_procedimento ON plano_tratamento_passos(plano_procedimento_id, ordem, id)")
     garantir_indice(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_metas_mensais_ano_mes ON metas_mensais(ano, mes)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_notas_fiscais_competencia ON notas_fiscais_emitidas(competencia, data_emissao)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_notas_fiscais_contrato ON notas_fiscais_emitidas(contrato_id)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_nf_solicitada ON contratos(nf_solicitada, status)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_turmas_treinamento ON turmas_treinamento(treinamento_id, data_inicio)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_matriculas_aluno ON matriculas_treinamento(aluno_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_matriculas_turma ON matriculas_treinamento(turma_id)")

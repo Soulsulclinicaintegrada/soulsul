@@ -16,6 +16,7 @@ import {
   criarMovimentoCaixaApi,
   excluirMovimentoCaixaApi,
   listarMetasFinanceirasApi,
+  listarNotasFiscaisAEmitirApi,
   listarNotasFiscaisEmitidasApi,
   listarRecibosManuaisApi,
   painelFinanceiroApi,
@@ -28,6 +29,7 @@ import {
   type MovimentoCaixaResumoApi,
   type NotaFiscalEmitidaApi,
   type NotaFiscalEmitidaPayload,
+  type NotaFiscalAEmitirApi,
   type ReciboManualApi,
   type ReciboManualPayload,
   type RecebivelRenegociacaoParcelaPayload,
@@ -152,6 +154,7 @@ type MetaForm = {
 
 type NotaFiscalForm = {
   id?: number;
+  contratoId?: number | null;
   competencia: string;
   dataEmissao: string;
   dataRecebimento: string;
@@ -237,6 +240,7 @@ const META_FORM_INICIAL: MetaForm = {
 };
 
 const NOTA_FISCAL_INICIAL: NotaFiscalForm = {
+  contratoId: null,
   competencia: new Date().toISOString().slice(0, 7),
   dataEmissao: new Date().toISOString().slice(0, 10),
   dataRecebimento: "",
@@ -363,6 +367,7 @@ function metaParaForm(item: MetaMensalApi): MetaForm {
 function notaFiscalParaForm(item: NotaFiscalEmitidaApi): NotaFiscalForm {
   return {
     id: item.id,
+    contratoId: item.contratoId ?? null,
     competencia: item.competencia || "",
     dataEmissao: dataBrParaIso(item.dataEmissao),
     dataRecebimento: dataBrParaIso(item.dataRecebimento),
@@ -425,22 +430,25 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
   const [metasMensais, setMetasMensais] = useState<MetaMensalApi[]>([]);
   const [metaForm, setMetaForm] = useState<MetaForm>(META_FORM_INICIAL);
   const [notasFiscais, setNotasFiscais] = useState<NotaFiscalEmitidaApi[]>([]);
+  const [notasFiscaisAEmitir, setNotasFiscaisAEmitir] = useState<NotaFiscalAEmitirApi[]>([]);
   const [notaFiscalForm, setNotaFiscalForm] = useState<NotaFiscalForm>(NOTA_FISCAL_INICIAL);
 
   async function carregarPainel() {
     setCarregando(true);
     setErro(null);
     try {
-      const [resposta, recibos, metas, notas] = await Promise.all([
+      const [resposta, recibos, metas, notas, notasAEmitir] = await Promise.all([
         painelFinanceiroApi(),
         listarRecibosManuaisApi(),
         listarMetasFinanceirasApi(metasAno),
-        listarNotasFiscaisEmitidasApi()
+        listarNotasFiscaisEmitidasApi(),
+        listarNotasFiscaisAEmitirApi()
       ]);
       setPainel(resposta);
       setRecibosManuais(recibos);
       setMetasMensais(metas);
       setNotasFiscais(notas);
+      setNotasFiscaisAEmitir(notasAEmitir);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao carregar financeiro.");
     } finally {
@@ -1243,11 +1251,24 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
     }
   }
 
+  function prepararEmissaoNota(item: NotaFiscalAEmitirApi) {
+    setNotaFiscalForm({
+      ...NOTA_FISCAL_INICIAL,
+      contratoId: item.contratoId,
+      cliente: item.paciente,
+      descricao: item.procedimentos || `Contrato #${item.contratoId}`,
+      valorNf: item.valor,
+      observacao: `Origem: orçamento #${item.contratoId}${item.prontuario ? ` · prontuário ${item.prontuario}` : ""}`
+    });
+    window.setTimeout(() => document.getElementById("nf-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
   async function salvarNotaFiscal() {
     setSalvando(true);
     setErro(null);
     try {
       const payload: NotaFiscalEmitidaPayload = {
+        contrato_id: notaFiscalForm.contratoId ?? null,
         competencia: notaFiscalForm.competencia,
         data_emissao: notaFiscalForm.dataEmissao,
         data_recebimento: notaFiscalForm.dataRecebimento,
@@ -1267,7 +1288,9 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
         await criarNotaFiscalEmitidaApi(payload);
       }
       setNotaFiscalForm(NOTA_FISCAL_INICIAL);
-      setNotasFiscais(await listarNotasFiscaisEmitidasApi());
+      const [emitidas, aEmitir] = await Promise.all([listarNotasFiscaisEmitidasApi(), listarNotasFiscaisAEmitirApi()]);
+      setNotasFiscais(emitidas);
+      setNotasFiscaisAEmitir(aEmitir);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao salvar nota fiscal.");
     } finally {
@@ -1311,7 +1334,7 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
           <button type="button" className={aba === "novo_pagar" ? "active" : ""} onClick={() => setAba("novo_pagar")}>Novo a pagar</button>
           <button type="button" className={aba === "recibo" ? "active" : ""} onClick={() => setAba("recibo")}>Recibo</button>
           <button type="button" className={aba === "metas" ? "active" : ""} onClick={() => setAba("metas")}>Metas</button>
-          <button type="button" className={aba === "notas_fiscais" ? "active" : ""} onClick={() => setAba("notas_fiscais")}>NF emitidas</button>
+          <button type="button" className={aba === "notas_fiscais" ? "active" : ""} onClick={() => setAba("notas_fiscais")}>NF</button>
           <button type="button" className={aba === "comissoes" ? "active" : ""} onClick={() => setAba("comissoes")}>Comissões</button>
         </div>
         <div className="finance-form-actions finance-report-actions">
@@ -1796,8 +1819,30 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
 
         {!carregando && aba === "notas_fiscais" ? (
           <div className="finance-legacy-grid">
-            <article className="panel finance-form-panel finance-span-all">
+            <article className="panel finance-module-list finance-span-all">
+              <span className="panel-kicker">NF a emitir</span>
+              <div className="module-sublist">
+                {notasFiscaisAEmitir.length ? notasFiscaisAEmitir.map((item) => (
+                  <div className="module-subitem finance-module-subitem" key={item.contratoId}>
+                    <div>
+                      <strong>{item.paciente || "Paciente"} · Orçamento #{item.contratoId}</strong>
+                      <span>{item.prontuario ? `Prontuário ${item.prontuario} · ` : ""}{item.dataOrcamento || "Sem data"} · {item.procedimentos || "Sem procedimentos"}</span>
+                    </div>
+                    <div className="module-subitem-right">
+                      <strong>{item.valor}</strong>
+                      <div className="finance-inline-actions">
+                        <span className="module-status-badge pendente">{item.statusOrcamento === "APROVADO" ? "Contrato aprovado" : "Orçamento em aberto"}</span>
+                        <button type="button" className="primary-action compact" onClick={() => prepararEmissaoNota(item)}>Emitir NF</button>
+                      </div>
+                    </div>
+                  </div>
+                )) : <div className="empty-inline">Nenhuma NF aguardando emissão.</div>}
+              </div>
+            </article>
+
+            <article id="nf-editor" className="panel finance-form-panel finance-span-all">
               <span className="panel-kicker">{notaFiscalForm.id ? "Editar NF emitida" : "Nova NF emitida"}</span>
+              {notaFiscalForm.contratoId ? <div className="feedback-banner">Vinculada ao orçamento #{notaFiscalForm.contratoId}. Ao salvar, ela sairá da lista “A emitir”.</div> : null}
               <div className="finance-form-grid">
                 <label><span>Competência</span><input type="month" value={notaFiscalForm.competencia} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, competencia: e.target.value }))} /></label>
                 <label><span>Data emissão</span><input type="date" value={notaFiscalForm.dataEmissao} onChange={(e) => setNotaFiscalForm((atual) => ({ ...atual, dataEmissao: e.target.value }))} /></label>
@@ -1824,7 +1869,7 @@ export function FinanceiroPage({ usuarioLogado = null }: FinanceiroPageProps) {
             <article className="panel finance-form-panel"><span>Pendentes de conferência</span><strong>{String(resumoNotasFiscais.quantidadePendentes)}</strong></article>
 
             <article className="panel finance-module-list finance-span-all">
-              <span className="panel-kicker">Controle de NF emitidas</span>
+              <span className="panel-kicker">NF emitidas</span>
               <div className="module-sublist">
                 {notasFiscaisOrdenadas.length ? notasFiscaisOrdenadas.map((item) => (
                   <div className="module-subitem finance-module-subitem" key={item.id}>

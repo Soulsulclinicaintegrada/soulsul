@@ -256,6 +256,7 @@ type OrcamentoDraft = {
   regioesSelecionadas: string[];
   denticao: string;
   valorUnitario: string;
+  nfSolicitada: "" | "SIM" | "NAO";
 };
 
 type FormaPagamentoOpcao = "PIX" | "BOLETO" | "CARTAO_CREDITO" | "CARTAO_DEBITO" | "DINHEIRO" | "PERMUTA";
@@ -348,7 +349,8 @@ const ORCAMENTO_INICIAL = (dataAtual: string): OrcamentoDraft => ({
   regiaoInput: "",
   regioesSelecionadas: [],
   denticao: DENTICOES[0],
-  valorUnitario: ""
+  valorUnitario: "",
+  nfSolicitada: ""
 });
 
 const DESCONTO_INICIAL: DescontoOrcamento = {
@@ -2387,7 +2389,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       regiaoInput: "",
       regioesSelecionadas: [],
       denticao: DENTICOES[0],
-      valorUnitario: ""
+      valorUnitario: "",
+      nfSolicitada: detalhe.nfSolicitada ? "SIM" : "NAO"
     });
     setNovaObservacaoOrcamento("");
     setHistoricoOrcamento(detalhe.historico || []);
@@ -2893,6 +2896,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setErro("Informe a data de retorno do CRM para este orçamento.");
       return;
     }
+    if (!orcamentoDraft.nfSolicitada) {
+      setErro("Informe obrigatoriamente se este orçamento precisa de NF.");
+      return;
+    }
     const linhasPagamentoAtivas = planoPagamento.linhas.filter((linha) => Number(linha.valor || 0) > 0);
     if (!linhasPagamentoAtivas.length) {
       setErro("Informe ao menos uma forma de pagamento com valor maior que zero.");
@@ -2925,6 +2932,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         forma_pagamento: resumoFormaPagamento(planoPagamento),
         parcelas: planoPagamento.parcelas,
         entrada: planoPagamento.entrada,
+        nf_solicitada: orcamentoDraft.nfSolicitada === "SIM",
         plano_pagamento: planoPagamentoParaApi(planoPagamento),
         itens
       };
@@ -4163,6 +4171,14 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                               <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} />
                             </label>
                             <label>
+                              <span>NF? *</span>
+                              <select value={orcamentoDraft.nfSolicitada} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, nfSolicitada: e.target.value as "" | "SIM" | "NAO" })}>
+                                <option value="">Selecione</option>
+                                <option value="SIM">Sim</option>
+                                <option value="NAO">Não</option>
+                              </select>
+                            </label>
+                            <label>
                               <span>Validade</span>
                               <input type="date" value={descontoOrcamento.validade} onChange={(e) => setDescontoOrcamento((atual) => ({ ...atual, validade: e.target.value }))} />
                             </label>
@@ -5048,6 +5064,14 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                         <label>
                           <span>Data de retorno CRM</span>
                           <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} disabled={orcamentoBloqueado} />
+                        </label>
+                        <label>
+                          <span>NF? *</span>
+                          <select value={orcamentoDraft.nfSolicitada} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, nfSolicitada: e.target.value as "" | "SIM" | "NAO" })} disabled={orcamentoBloqueado}>
+                            <option value="">Selecione</option>
+                            <option value="SIM">Sim</option>
+                            <option value="NAO">Não</option>
+                          </select>
                         </label>
                         <label className="full">
                           <span>Observações gerais</span>
