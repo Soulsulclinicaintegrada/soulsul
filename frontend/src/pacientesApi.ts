@@ -748,6 +748,56 @@ export type OrcamentoDetalheApi = {
   crmHistorico?: CrmResgateHistoricoItemApi[];
 };
 
+export type DistratoProcedimentoApi = {
+  id: number;
+  procedimento: string;
+  regiao: string;
+  valor: number;
+};
+
+export type DistratoPreparacaoApi = {
+  contratoId: number;
+  pacienteNome: string;
+  sexo: string;
+  dataNascimento: string;
+  cpf: string;
+  enderecoCompleto: string;
+  menorIdade: boolean;
+  responsavel: string;
+  cpfResponsavel: string;
+  dataContrato: string;
+  valorContrato: number;
+  valorPago: number;
+  procedimentos: DistratoProcedimentoApi[];
+};
+
+export type DistratoPayloadApi = {
+  multa_dispensada: boolean;
+  valor_pago: number;
+  data_distrato: string;
+  quantidade_parcelas: number;
+  forma_pagamento: string;
+  data_inicio_pagamentos: string;
+  paciente_nome: string;
+  sexo: string;
+  data_nascimento: string;
+  cpf: string;
+  endereco_completo: string;
+  menor_idade: boolean;
+  responsavel: string;
+  cpf_responsavel: string;
+  itens: Array<{ procedimento_contrato_id: number; situacao: string; percentual_executado: number }>;
+};
+
+export type DistratoGeradoApi = {
+  distrato_id: number;
+  documento_url: string;
+  valor_executado: number;
+  valor_nao_executado: number;
+  valor_multa: number;
+  valor_resultado: number;
+};
+
 export type FichaPacienteApi = {
   paciente: PacienteDetalheApi;
   contratos: ContratoResumoApi[];
@@ -1593,6 +1643,22 @@ export async function criarOrcamentoPacienteApi(pacienteId: number, payload: Orc
 
 export async function detalharOrcamentoPacienteApi(pacienteId: number, contratoId: number) {
   return fetchJson<OrcamentoDetalheApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}`);
+}
+
+export async function prepararDistratoPacienteApi(pacienteId: number, contratoId: number) {
+  return fetchJson<DistratoPreparacaoApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}/distrato`);
+}
+
+export async function criarDistratoPacienteApi(pacienteId: number, contratoId: number, payload: DistratoPayloadApi) {
+  return fetchJson<DistratoGeradoApi>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}/distrato`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function urlDocumentoDistratoApi(caminho: string) {
+  if (/^https?:\/\//i.test(caminho)) return caminho;
+  return `${API_BASE_URL}${caminho.startsWith("/") ? caminho : `/${caminho}`}`;
 }
 
 export async function atualizarOrcamentoPacienteApi(pacienteId: number, contratoId: number, payload: OrcamentoPacientePayload) {

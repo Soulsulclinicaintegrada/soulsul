@@ -13,6 +13,8 @@ import {
   buscarCepApi,
   baixarRecebivelPacienteApi,
   detalharOrcamentoPacienteApi,
+  prepararDistratoPacienteApi,
+  criarDistratoPacienteApi,
   criarOrcamentoPacienteApi,
   excluirOrcamentoPacienteApi,
   criarPacienteApi,
@@ -36,6 +38,7 @@ import {
   urlReciboPaciente,
   urlExamePaciente,
   urlFotoPaciente,
+  urlDocumentoDistratoApi,
   type OrcamentoPacientePayload,
   type ParcelaPagamentoApi,
   type RecebivelAtualizacaoPayload,
@@ -52,6 +55,7 @@ import {
   type PlanoTratamentoProcedimentoApi,
   type PlanoTratamentoPassoApi,
   type OrdemServicoResumoApi,
+  type DistratoPreparacaoApi,
   atualizarPacienteApi,
   atualizarSuspensaoTratamentoPacienteApi
 } from "./pacientesApi";
@@ -119,6 +123,35 @@ type AbaFicha = {
 };
 
 type ModoComercial = "lista" | "contrato";
+
+type DistratoItemDraft = {
+  id: number;
+  procedimento: string;
+  regiao: string;
+  valor: number;
+  situacao: "" | "INTEGRAL" | "PARCIAL" | "NAO_FEITO";
+  percentual: string;
+};
+
+type DistratoDraft = {
+  contratoId: number;
+  multaDispensada: "" | "SIM" | "NAO";
+  valorContrato: number;
+  valorPago: string;
+  dataDistrato: string;
+  quantidadeParcelas: string;
+  formaPagamento: string;
+  dataInicioPagamentos: string;
+  pacienteNome: string;
+  sexo: string;
+  dataNascimento: string;
+  cpf: string;
+  enderecoCompleto: string;
+  menorIdade: boolean;
+  responsavel: string;
+  cpfResponsavel: string;
+  itens: DistratoItemDraft[];
+};
 
 const OPCOES_SEXO = ["Feminino", "Masculino"] as const;
 const ABAS_PRINCIPAIS: Array<{ key: AbaPrincipal; label: string }> = [
@@ -1083,6 +1116,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const [buscaOdontogramaClinico, setBuscaOdontogramaClinico] = useState("");
   const [salvandoOrcamento, setSalvandoOrcamento] = useState(false);
   const [confirmarDesaprovarId, setConfirmarDesaprovarId] = useState<number | null>(null);
+  const [modalDistratoAberto, setModalDistratoAberto] = useState(false);
+  const [carregandoDistrato, setCarregandoDistrato] = useState(false);
+  const [salvandoDistrato, setSalvandoDistrato] = useState(false);
+  const [distratoDraft, setDistratoDraft] = useState<DistratoDraft | null>(null);
   const [reaprovarOrcamentoId, setReaprovarOrcamentoId] = useState<number | null>(null);
   const [tipoReaprovacao, setTipoReaprovacao] = useState<"ALTERACAO" | "NOVA" | "ACRESCIMO">("ALTERACAO");
   const [valorAcrescimoReaprovacao, setValorAcrescimoReaprovacao] = useState("");
@@ -3049,14 +3086,109 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     }
   }
 
+  async function abrirDistrato(contratoId: number) {
+    if (!pacienteAtivoId) return;
+    setCarregandoDistrato(true);
+    setErro(null);
+    try {
+      const dados: DistratoPreparacaoApi = await prepararDistratoPacienteApi(pacienteAtivoId, contratoId);
+      setDistratoDraft({
+        contratoId,
+        multaDispensada: "",
+        valorContrato: dados.valorContrato,
+        valorPago: dados.valorPago.toFixed(2).replace(".", ","),
+        dataDistrato: dataHojeIso(),
+        quantidadeParcelas: "1",
+        formaPagamento: "PIX",
+        dataInicioPagamentos: dataHojeIso(),
+        pacienteNome: dados.pacienteNome,
+        sexo: dados.sexo,
+        dataNascimento: dados.dataNascimento,
+        cpf: dados.cpf,
+        enderecoCompleto: dados.enderecoCompleto,
+        menorIdade: dados.menorIdade,
+        responsavel: dados.responsavel,
+        cpfResponsavel: dados.cpfResponsavel,
+        itens: dados.procedimentos.map((item) => ({ ...item, situacao: "", percentual: "" }))
+      });
+      setModalDistratoAberto(true);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao preparar o distrato.");
+    } finally {
+      setCarregandoDistrato(false);
+    }
+  }
+
+  function atualizarItemDistrato(id: number, campo: "situacao" | "percentual", valor: string) {
+    setDistratoDraft((atual) => atual ? {
+      ...atual,
+      itens: atual.itens.map((item) => item.id === id ? { ...item, [campo]: valor } as DistratoItemDraft : item)
+    } : atual);
+  }
+
+  async function salvarDistrato() {
+    if (!pacienteAtivoId || !distratoDraft) return;
+    if (!distratoDraft.multaDispensada) {
+      setErro("Informe se a multa será dispensada.");
+      return;
+    }
+    if ([distratoDraft.pacienteNome, distratoDraft.dataNascimento, distratoDraft.cpf, distratoDraft.enderecoCompleto, distratoDraft.dataDistrato, distratoDraft.formaPagamento, distratoDraft.dataInicioPagamentos].some((valor) => !valor.trim())) {
+      setErro("Preencha todos os dados obrigatórios do distrato.");
+      return;
+    }
+    if (distratoDraft.menorIdade && (!distratoDraft.responsavel.trim() || !distratoDraft.cpfResponsavel.trim())) {
+      setErro("Informe o nome e o CPF do responsável pelo paciente menor de idade.");
+      return;
+    }
+    const pendente = distratoDraft.itens.find((item) => !item.situacao || (item.situacao === "PARCIAL" && !(Number(item.percentual.replace(",", ".")) > 0 && Number(item.percentual.replace(",", ".")) < 100)));
+    if (pendente) {
+      setErro(`Classifique corretamente o procedimento ${pendente.procedimento}${pendente.regiao ? ` - ${pendente.regiao}` : ""}.`);
+      return;
+    }
+    setSalvandoDistrato(true);
+    setErro(null);
+    try {
+      const resposta = await criarDistratoPacienteApi(pacienteAtivoId, distratoDraft.contratoId, {
+        multa_dispensada: distratoDraft.multaDispensada === "SIM",
+        valor_pago: parseMoeda(distratoDraft.valorPago),
+        data_distrato: distratoDraft.dataDistrato,
+        quantidade_parcelas: Math.max(1, Number(distratoDraft.quantidadeParcelas) || 1),
+        forma_pagamento: distratoDraft.formaPagamento,
+        data_inicio_pagamentos: distratoDraft.dataInicioPagamentos,
+        paciente_nome: distratoDraft.pacienteNome,
+        sexo: distratoDraft.sexo,
+        data_nascimento: distratoDraft.dataNascimento,
+        cpf: distratoDraft.cpf,
+        endereco_completo: distratoDraft.enderecoCompleto,
+        menor_idade: distratoDraft.menorIdade,
+        responsavel: distratoDraft.responsavel,
+        cpf_responsavel: distratoDraft.cpfResponsavel,
+        itens: distratoDraft.itens.map((item) => ({
+          procedimento_contrato_id: item.id,
+          situacao: item.situacao,
+          percentual_executado: item.situacao === "INTEGRAL" ? 100 : item.situacao === "PARCIAL" ? Number(item.percentual.replace(",", ".")) : 0
+        }))
+      });
+      setModalDistratoAberto(false);
+      setDistratoDraft(null);
+      setFeedback(`Distrato gerado. Valor executado: ${formatarMoeda(resposta.valor_executado)}. Multa: ${formatarMoeda(resposta.valor_multa)}.`);
+      await carregarFicha(pacienteAtivoId);
+      window.open(urlDocumentoDistratoApi(resposta.documento_url), "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao gerar o distrato.");
+    } finally {
+      setSalvandoDistrato(false);
+    }
+  }
+
   async function excluirOrcamento(contratoId: number, status: string) {
     if (!pacienteAtivoId) return;
     if (!usuarioPodeEditarOrcamento) {
       setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
       return;
     }
-    if ((status || "").toUpperCase() === "APROVADO") {
-      window.alert("Desaprove o orçamento antes de excluir.");
+    if (["APROVADO", "DISTRATADO"].includes((status || "").toUpperCase())) {
+      window.alert(status.toUpperCase() === "DISTRATADO" ? "Um contrato distratado não pode ser excluído." : "Desaprove o orçamento antes de excluir.");
       return;
     }
     const confirmou = window.confirm("Tem certeza que deseja excluir este orçamento? Essa ação não pode ser desfeita.");
@@ -4408,8 +4540,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           <div className="budget-list-row-left">
                             <button
                               type="button"
-                              className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : "open"}`}
-                              disabled={alterandoStatusOrcamentoId === contrato.id || !usuarioPodeAprovarOrcamentoComPermissao}
+                              className={`budget-status-badge ${contrato.status === "APROVADO" ? "approved" : contrato.status === "DISTRATADO" ? "distracted" : "open"}`}
+                              disabled={alterandoStatusOrcamentoId === contrato.id || !usuarioPodeAprovarOrcamentoComPermissao || contrato.status === "DISTRATADO"}
                               onClick={() => {
                                 if (contrato.status === "APROVADO") setConfirmarDesaprovarId(contrato.id);
                                 else void aprovarOrcamento(contrato.id);
@@ -4418,6 +4550,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                             >
                               {alterandoStatusOrcamentoId === contrato.id
                                 ? "Salvando..."
+                                : contrato.status === "DISTRATADO"
+                                  ? "Distratado"
                                 : contrato.status === "APROVADO"
                                   ? "Aprovado"
                                   : "Em Aberto"}
@@ -4435,6 +4569,16 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           </button>
                           <div className="budget-list-row-actions">
                             <strong className="budget-list-row-value">{contrato.valorTotal}</strong>
+                            {contrato.status === "APROVADO" && usuarioPodeAprovarOrcamentoComPermissao ? (
+                              <>
+                                <button type="button" className="ghost-action compact" onClick={() => setConfirmarDesaprovarId(contrato.id)}>
+                                  Desaprovar
+                                </button>
+                                <button type="button" className="primary-action compact" onClick={() => void abrirDistrato(contrato.id)} disabled={carregandoDistrato}>
+                                  {carregandoDistrato ? "Carregando..." : "Distrato"}
+                                </button>
+                              </>
+                            ) : null}
                             <button
                               type="button"
                               className="ghost-action danger compact"
@@ -4720,6 +4864,17 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       </div>
     );
   }
+
+  const resumoDistrato = distratoDraft ? (() => {
+    const executado = distratoDraft.itens.reduce((total, item) => {
+      const percentual = item.situacao === "INTEGRAL" ? 100 : item.situacao === "PARCIAL" ? Number(item.percentual.replace(",", ".")) || 0 : 0;
+      return total + item.valor * percentual / 100;
+    }, 0);
+    const naoExecutado = Math.max(0, distratoDraft.valorContrato - executado);
+    const multa = distratoDraft.multaDispensada === "NAO" ? naoExecutado * 0.10 : 0;
+    const resultado = parseMoeda(distratoDraft.valorPago) - executado - multa;
+    return { executado, naoExecutado, multa, resultado };
+  })() : null;
 
   return (
     <section className="module-shell">
@@ -5577,6 +5732,63 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 {!orcamentoBloqueado ? <button type="button" className="primary-action" onClick={confirmarModalPagamento}>OK</button> : null}
               </div>
             </footer>
+          </article>
+        </div>
+      ) : null}
+
+      {modalDistratoAberto && distratoDraft ? (
+        <div className="overlay" role="presentation">
+          <article className="modal-shell distrato-modal">
+            <header className="modal-header">
+              <div><span className="page-eyebrow">Contrato #{distratoDraft.contratoId}</span><h2>Gerar distrato</h2><p>Responda às perguntas para calcular e preencher o documento.</p></div>
+              <button type="button" className="icon-only" onClick={() => { setModalDistratoAberto(false); setDistratoDraft(null); }}><X size={20}/></button>
+            </header>
+            <div className="modal-body distrato-modal-body">
+              <section className="distrato-section">
+                <h3>1. Multa contratual</h3>
+                <label className="distrato-question"><span>A multa de 10% será dispensada? *</span><select value={distratoDraft.multaDispensada} onChange={(e) => setDistratoDraft({ ...distratoDraft, multaDispensada: e.target.value as DistratoDraft["multaDispensada"] })}><option value="">Selecione</option><option value="SIM">Sim, dispensar</option><option value="NAO">Não, calcular 10%</option></select></label>
+                <p className="distrato-help">Quando não for dispensada, a multa é calculada sobre o valor dos procedimentos que faltam fazer.</p>
+              </section>
+
+              <section className="distrato-section">
+                <h3>2. Procedimentos contratados</h3>
+                <p className="distrato-help">Informe o que foi feito integralmente, parcialmente ou não foi feito.</p>
+                <div className="distrato-procedure-list">
+                  {distratoDraft.itens.map((item) => (
+                    <article key={item.id} className="distrato-procedure-row">
+                      <div><strong>{item.procedimento}</strong><span>{item.regiao || "Sem região"} · {formatarMoeda(item.valor)}</span></div>
+                      <select value={item.situacao} onChange={(e) => atualizarItemDistrato(item.id, "situacao", e.target.value)}><option value="">Selecione</option><option value="INTEGRAL">Feito integralmente</option><option value="PARCIAL">Feito parcialmente</option><option value="NAO_FEITO">Não foi feito</option></select>
+                      {item.situacao === "PARCIAL" ? <label><span>% executada</span><input type="number" min="1" max="99" value={item.percentual} onChange={(e) => atualizarItemDistrato(item.id, "percentual", e.target.value)} /></label> : null}
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="distrato-section">
+                <h3>3. Dados financeiros e devolução</h3>
+                <div className="distrato-grid">
+                  <label><span>Valor total pago *</span><input value={distratoDraft.valorPago} onChange={(e) => setDistratoDraft({ ...distratoDraft, valorPago: formatarMoedaInput(e.target.value) })}/></label>
+                  <label><span>Quantidade de parcelas *</span><input type="number" min="1" value={distratoDraft.quantidadeParcelas} onChange={(e) => setDistratoDraft({ ...distratoDraft, quantidadeParcelas: e.target.value })}/></label>
+                  <label><span>Forma de pagamento/devolução *</span><select value={distratoDraft.formaPagamento} onChange={(e) => setDistratoDraft({ ...distratoDraft, formaPagamento: e.target.value })}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="ESTORNO DE CARTÃO DE CRÉDITO">Estorno de cartão</option><option value="BOLETO">Boleto</option><option value="TRANSFERÊNCIA BANCÁRIA">Transferência bancária</option></select></label>
+                  <label><span>Início dos pagamentos *</span><input type="date" value={distratoDraft.dataInicioPagamentos} onChange={(e) => setDistratoDraft({ ...distratoDraft, dataInicioPagamentos: e.target.value })}/></label>
+                  <label><span>Data do distrato *</span><input type="date" value={distratoDraft.dataDistrato} onChange={(e) => setDistratoDraft({ ...distratoDraft, dataDistrato: e.target.value })}/></label>
+                </div>
+                {resumoDistrato ? <div className="distrato-summary"><div><span>Executado</span><strong>{formatarMoeda(resumoDistrato.executado)}</strong></div><div><span>Falta fazer</span><strong>{formatarMoeda(resumoDistrato.naoExecutado)}</strong></div><div><span>Multa</span><strong>{formatarMoeda(resumoDistrato.multa)}</strong></div><div><span>{resumoDistrato.resultado >= 0 ? "A devolver" : "A receber"}</span><strong>{formatarMoeda(Math.abs(resumoDistrato.resultado))}</strong></div></div> : null}
+              </section>
+
+              <section className="distrato-section">
+                <h3>4. Dados obrigatórios do documento</h3>
+                <div className="distrato-grid">
+                  <label><span>Nome completo *</span><input value={distratoDraft.pacienteNome} onChange={(e) => setDistratoDraft({ ...distratoDraft, pacienteNome: e.target.value })}/></label>
+                  <label><span>Sexo *</span><select value={distratoDraft.sexo} onChange={(e) => setDistratoDraft({ ...distratoDraft, sexo: e.target.value })}><option value="">Selecione</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option></select></label>
+                  <label><span>Data de nascimento *</span><input type="date" value={distratoDraft.dataNascimento} onChange={(e) => setDistratoDraft({ ...distratoDraft, dataNascimento: e.target.value })}/></label>
+                  <label><span>CPF *</span><input value={distratoDraft.cpf} onChange={(e) => setDistratoDraft({ ...distratoDraft, cpf: e.target.value })}/></label>
+                  <label className="full"><span>Endereço completo *</span><textarea rows={2} value={distratoDraft.enderecoCompleto} onChange={(e) => setDistratoDraft({ ...distratoDraft, enderecoCompleto: e.target.value })}/></label>
+                  {distratoDraft.menorIdade ? <><label><span>Responsável legal *</span><input value={distratoDraft.responsavel} onChange={(e) => setDistratoDraft({ ...distratoDraft, responsavel: e.target.value })}/></label><label><span>CPF do responsável *</span><input value={distratoDraft.cpfResponsavel} onChange={(e) => setDistratoDraft({ ...distratoDraft, cpfResponsavel: e.target.value })}/></label></> : null}
+                </div>
+              </section>
+            </div>
+            <footer className="modal-footer"><div className="sticky-actions"><button type="button" className="ghost-action" onClick={() => { setModalDistratoAberto(false); setDistratoDraft(null); }}>Cancelar</button><button type="button" className="primary-action" onClick={() => void salvarDistrato()} disabled={salvandoDistrato}>{salvandoDistrato ? "Gerando..." : "Gerar distrato em Word"}</button></div></footer>
           </article>
         </div>
       ) : null}

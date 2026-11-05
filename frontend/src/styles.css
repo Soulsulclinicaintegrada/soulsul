@@ -10674,3 +10674,26 @@ body, body * {
   .activity-form-grid { grid-template-columns: 1fr; }
   .activity-form-grid .wide { grid-column: auto; }
 }
+.distrato-modal { width: min(1040px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.distrato-modal-body { display: grid; gap: 18px; overflow-y: auto; }
+.distrato-section { border: 1px solid #eadfce; border-radius: 18px; padding: 18px; background: #fffdfa; }
+.distrato-section h3 { margin: 0 0 12px; color: #302b26; }
+.distrato-help { margin: -4px 0 14px; color: #786f65; font-size: .9rem; }
+.distrato-question { display: grid; gap: 7px; max-width: 440px; }
+.distrato-procedure-list { display: grid; gap: 10px; }
+.distrato-procedure-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(190px, .65fr) minmax(120px, .3fr); gap: 12px; align-items: end; border: 1px solid #eee3d5; border-radius: 14px; padding: 13px; background: #fff; }
+.distrato-procedure-row > div { display: grid; gap: 4px; }
+.distrato-procedure-row > div span { color: #786f65; font-size: .86rem; }
+.distrato-procedure-row label, .distrato-grid label { display: grid; gap: 6px; }
+.distrato-procedure-row label span, .distrato-grid label span, .distrato-question span { color: #645c53; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+.distrato-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.distrato-grid .full { grid-column: 1 / -1; }
+.distrato-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.distrato-summary div { display: grid; gap: 5px; border-radius: 13px; padding: 12px; background: #f2f6f2; border: 1px solid #d8e2d8; }
+.distrato-summary span { color: #6c756d; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.distrato-summary strong { font-size: 1.05rem; color: #344a3b; }
+.budget-status-badge.distracted { background: #ece8f5; color: #65527e; border-color: #d7cce8; }
+@media (max-width: 760px) {
+  .distrato-procedure-row, .distrato-grid, .distrato-summary { grid-template-columns: 1fr; }
+  .distrato-grid .full { grid-column: auto; }
+}

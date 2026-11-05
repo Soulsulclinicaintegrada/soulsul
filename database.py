@@ -780,6 +780,33 @@ def inicializar_banco():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS distratos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            paciente_id INTEGER NOT NULL,
+            contrato_id INTEGER NOT NULL,
+            multa_dispensada INTEGER DEFAULT 0,
+            valor_contrato REAL DEFAULT 0,
+            valor_pago REAL DEFAULT 0,
+            valor_executado REAL DEFAULT 0,
+            valor_nao_executado REAL DEFAULT 0,
+            valor_multa REAL DEFAULT 0,
+            valor_resultado REAL DEFAULT 0,
+            quantidade_parcelas INTEGER DEFAULT 1,
+            forma_pagamento TEXT,
+            data_inicio_pagamentos TEXT,
+            data_distrato TEXT,
+            itens_json TEXT,
+            dados_json TEXT,
+            documento_nome TEXT,
+            criado_por TEXT,
+            criado_em TEXT,
+            atualizado_em TEXT
+        )
+        """
+    )
+
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS procedimentos_contrato (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             contrato_id INTEGER,
@@ -1995,6 +2022,7 @@ def inicializar_banco():
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_notas_fiscais_competencia ON notas_fiscais_emitidas(competencia, data_emissao)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_notas_fiscais_contrato ON notas_fiscais_emitidas(contrato_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_contratos_nf_solicitada ON contratos(nf_solicitada, status)")
+    garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_distratos_contrato ON distratos(contrato_id, criado_em)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_turmas_treinamento ON turmas_treinamento(treinamento_id, data_inicio)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_matriculas_aluno ON matriculas_treinamento(aluno_id)")
     garantir_indice(conn, "CREATE INDEX IF NOT EXISTS idx_matriculas_turma ON matriculas_treinamento(turma_id)")

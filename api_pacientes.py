@@ -33,18 +33,20 @@ except ImportError:  # pragma: no cover - ambiente pode nao ter lxml
 
 try:
     from docx import Document
-    from docx.enum.text import WD_BREAK
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Inches, Pt
+    from docx.shared import Inches, Pt, RGBColor
     from docx.text.paragraph import Paragraph
 except ImportError:  # pragma: no cover - ambiente pode nao ter python-docx
     Document = None
+    WD_ALIGN_PARAGRAPH = None
     WD_BREAK = None
     OxmlElement = None
     qn = None
     Inches = None
     Pt = None
+    RGBColor = None
     Paragraph = None
 
 try:
@@ -482,6 +484,32 @@ def garantir_colunas_pacientes_api() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS distratos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id INTEGER NOT NULL,
+                contrato_id INTEGER NOT NULL,
+                multa_dispensada INTEGER DEFAULT 0,
+                valor_contrato REAL DEFAULT 0,
+                valor_pago REAL DEFAULT 0,
+                valor_executado REAL DEFAULT 0,
+                valor_nao_executado REAL DEFAULT 0,
+                valor_multa REAL DEFAULT 0,
+                valor_resultado REAL DEFAULT 0,
+                quantidade_parcelas INTEGER DEFAULT 1,
+                forma_pagamento TEXT,
+                data_inicio_pagamentos TEXT,
+                data_distrato TEXT,
+                itens_json TEXT,
+                dados_json TEXT,
+                documento_nome TEXT,
+                criado_por TEXT,
+                criado_em TEXT,
+                atualizado_em TEXT
+            )
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_prontuario ON pacientes(prontuario)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pacientes_cpf ON pacientes(cpf)")
@@ -501,6 +529,7 @@ def garantir_colunas_pacientes_api() -> None:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_webhook_eventos_externo_id ON crm_webhook_eventos(canal, evento_externo_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_recebiveis_historico_recebivel_id ON recebiveis_historico(recebivel_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_orcamentos_historico_contrato_id ON orcamentos_historico(contrato_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_distratos_contrato ON distratos(contrato_id, criado_em)")
         garantir_coluna(conn, "recebiveis", "data_pagamento TEXT")
         garantir_coluna(conn, "financeiro", "conta_caixa TEXT")
         garantir_coluna(conn, "contas_pagar", "categoria TEXT")
@@ -2591,6 +2620,53 @@ class OrcamentoStatusPayload(BaseModel):
     aprovado_por: str = ""
     tipo_reaprovacao: str = ""
     valor_acrescimo: float = 0
+
+
+class DistratoProcedimentoPayload(BaseModel):
+    procedimento_contrato_id: int
+    situacao: str
+    percentual_executado: float = 0
+
+
+class DistratoPayload(BaseModel):
+    multa_dispensada: bool
+    valor_pago: float
+    data_distrato: str
+    quantidade_parcelas: int = 1
+    forma_pagamento: str
+    data_inicio_pagamentos: str
+    paciente_nome: str
+    sexo: str = ""
+    data_nascimento: str
+    cpf: str
+    endereco_completo: str
+    menor_idade: bool = False
+    responsavel: str = ""
+    cpf_responsavel: str = ""
+    itens: list[DistratoProcedimentoPayload]
+
+
+class DistratoProcedimentoResposta(BaseModel):
+    id: int
+    procedimento: str
+    regiao: str = ""
+    valor: float = 0
+
+
+class DistratoPreparacaoResposta(BaseModel):
+    contratoId: int
+    pacienteNome: str
+    sexo: str = ""
+    dataNascimento: str = ""
+    cpf: str = ""
+    enderecoCompleto: str = ""
+    menorIdade: bool = False
+    responsavel: str = ""
+    cpfResponsavel: str = ""
+    dataContrato: str = ""
+    valorContrato: float = 0
+    valorPago: float = 0
+    procedimentos: list[DistratoProcedimentoResposta] = Field(default_factory=list)
 
 
 class OrcamentoHistoricoItemResposta(BaseModel):
@@ -13272,6 +13348,303 @@ def detalhar_orcamento_paciente(paciente_id: int, contrato_id: int):
     try:
         carregar_paciente_por_id(conn, paciente_id)
         return carregar_orcamento_detalhe(conn, paciente_id, contrato_id)
+    finally:
+        conn.close()
+
+
+def endereco_completo_paciente(paciente: sqlite3.Row) -> str:
+    logradouro = str(paciente["endereco"] or "").strip()
+    numero = str(paciente["numero"] or "").strip()
+    complemento = str(paciente["complemento"] or "").strip()
+    bairro = str(paciente["bairro"] or "").strip()
+    cidade = str(paciente["cidade"] or "").strip()
+    estado = str(paciente["estado"] or "").strip()
+    cep = str(paciente["cep"] or "").strip()
+    primeira = ", ".join(parte for parte in [logradouro, numero] if parte)
+    partes = [primeira, complemento, bairro, " - ".join(parte for parte in [cidade, estado] if parte), f"CEP {cep}" if cep else ""]
+    return ", ".join(parte for parte in partes if parte)
+
+
+def inteiro_por_extenso(valor: int) -> str:
+    unidades = ["zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"]
+    especiais = {10: "dez", 11: "onze", 12: "doze", 13: "treze", 14: "quatorze", 15: "quinze", 16: "dezesseis", 17: "dezessete", 18: "dezoito", 19: "dezenove"}
+    dezenas = {20: "vinte", 30: "trinta", 40: "quarenta", 50: "cinquenta", 60: "sessenta", 70: "setenta", 80: "oitenta", 90: "noventa"}
+    centenas = {100: "cem", 200: "duzentos", 300: "trezentos", 400: "quatrocentos", 500: "quinhentos", 600: "seiscentos", 700: "setecentos", 800: "oitocentos", 900: "novecentos"}
+    if valor < 10:
+        return unidades[valor]
+    if valor < 20:
+        return especiais[valor]
+    if valor < 100:
+        base = (valor // 10) * 10
+        return dezenas[base] if valor == base else f"{dezenas[base]} e {inteiro_por_extenso(valor - base)}"
+    if valor < 1000:
+        if valor == 100:
+            return "cem"
+        base = (valor // 100) * 100
+        prefixo = "cento" if base == 100 else centenas[base]
+        return prefixo if valor == base else f"{prefixo} e {inteiro_por_extenso(valor - base)}"
+    if valor < 1_000_000:
+        milhares, resto = divmod(valor, 1000)
+        prefixo = "mil" if milhares == 1 else f"{inteiro_por_extenso(milhares)} mil"
+        return prefixo if not resto else f"{prefixo}{' e ' if resto < 100 else ' '}{inteiro_por_extenso(resto)}"
+    milhoes, resto = divmod(valor, 1_000_000)
+    prefixo = "um milhão" if milhoes == 1 else f"{inteiro_por_extenso(milhoes)} milhões"
+    return prefixo if not resto else f"{prefixo}{' e ' if resto < 100 else ' '}{inteiro_por_extenso(resto)}"
+
+
+def moeda_por_extenso(valor: float) -> str:
+    centavos_total = int(round(max(0.0, valor) * 100))
+    reais, centavos = divmod(centavos_total, 100)
+    partes = []
+    if reais:
+        partes.append(f"{inteiro_por_extenso(reais)} {'real' if reais == 1 else 'reais'}")
+    if centavos:
+        partes.append(f"{inteiro_por_extenso(centavos)} {'centavo' if centavos == 1 else 'centavos'}")
+    return " e ".join(partes) or "zero reais"
+
+
+def adicionar_paragrafo_legal(doc, texto: str, *, negrito: bool = False, centralizado: bool = False):
+    paragrafo = doc.add_paragraph()
+    paragrafo.alignment = WD_ALIGN_PARAGRAPH.CENTER if centralizado else WD_ALIGN_PARAGRAPH.JUSTIFY
+    paragrafo.paragraph_format.space_after = Pt(8)
+    paragrafo.paragraph_format.line_spacing = 1.15
+    run = paragrafo.add_run(texto)
+    run.bold = negrito
+    run.font.name = "Arial"
+    run.font.size = Pt(11)
+    run.font.color.rgb = RGBColor(0, 0, 0)
+    return paragrafo
+
+
+def gerar_documento_distrato(
+    paciente: sqlite3.Row,
+    contrato: sqlite3.Row,
+    payload: DistratoPayload,
+    itens_calculados: list[dict],
+    valor_executado: float,
+    valor_nao_executado: float,
+    valor_multa: float,
+    valor_resultado: float,
+) -> str:
+    if Document is None:
+        raise HTTPException(status_code=500, detail="python-docx não está disponível para gerar o distrato.")
+    doc = Document()
+    secao = doc.sections[0]
+    secao.top_margin = Inches(0.7)
+    secao.bottom_margin = Inches(0.7)
+    secao.left_margin = Inches(0.8)
+    secao.right_margin = Inches(0.8)
+    estilo = doc.styles["Normal"]
+    estilo.font.name = "Arial"
+    estilo.font.size = Pt(11)
+
+    titulo = doc.add_paragraph()
+    titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    titulo.paragraph_format.space_after = Pt(16)
+    run_titulo = titulo.add_run("TERMO DE DISTRATO AO CONTRATO PARTICULAR DE PRESTAÇÃO DE SERVIÇOS ODONTOLÓGICOS E OUTRAS AVENÇAS")
+    run_titulo.bold = True
+    run_titulo.font.name = "Arial"
+    run_titulo.font.size = Pt(12)
+
+    sexo = normalizar_texto(payload.sexo)
+    feminino = sexo in {"feminino", "f", "mulher"}
+    qualificado = "brasileira, nascida e inscrita" if feminino else "brasileiro, nascido e inscrito"
+    denominado = "denominada" if feminino else "denominado"
+    data_nascimento = formatar_data_br_valor(payload.data_nascimento)
+    data_contrato = formatar_data_br_valor(contrato["data_criacao"])
+    valor_contrato = float(contrato["valor_total"] or 0)
+
+    adicionar_paragrafo_legal(doc, "Pelo presente instrumento particular e na melhor forma em direito admitida, de um lado,")
+    adicionar_paragrafo_legal(doc, "SOUL SUL CLÍNICA INTEGRADA LTDA., pessoa jurídica de direito privado, inscrita no CNPJ sob o nº 59.002.730/0001-74, com sede na cidade de Campos dos Goytacazes/RJ, na Rua Tenente Coronel Cardoso, nº 812, Bairro Centro, CEP 28.035-042, representada por sua sócia administradora JULIANA SOUSA GOMES RIBEIRO, doravante denominada simplesmente DISTRATADA; e, de outro lado,")
+    representacao = f", neste ato representado por {payload.responsavel.upper()}, CPF nº {payload.cpf_responsavel}" if payload.menor_idade else ""
+    adicionar_paragrafo_legal(doc, f"{payload.paciente_nome.upper()}, {qualificado} em {data_nascimento}, no CPF sob nº {payload.cpf}, residente e domiciliad{'a' if feminino else 'o'} em {payload.endereco_completo}{representacao}, doravante {denominado} simplesmente DISTRATANTE.")
+    adicionar_paragrafo_legal(doc, "As partes resolvem, de comum acordo e por total liberalidade, livres de qualquer vício de vontade ou consentimento, firmar o presente Termo de Distrato, regido pelas cláusulas e condições seguintes.")
+
+    adicionar_paragrafo_legal(doc, "DO OBJETO", negrito=True, centralizado=True)
+    adicionar_paragrafo_legal(doc, f"Cláusula 1ª: As partes declaram que, em {data_contrato}, celebraram o Contrato de Prestação de Serviços Odontológicos nº {int(contrato['id'])}, no valor total de {formatar_moeda_br(valor_contrato)} ({moeda_por_extenso(valor_contrato)}). Até esta data, o DISTRATANTE pagou {formatar_moeda_br(payload.valor_pago)} ({moeda_por_extenso(payload.valor_pago)}).")
+    adicionar_paragrafo_legal(doc, f"Cláusula 2ª: Os procedimentos integral ou parcialmente executados somam {formatar_moeda_br(valor_executado)} ({moeda_por_extenso(valor_executado)}), conforme demonstrativo abaixo.")
+
+    tabela = doc.add_table(rows=1, cols=5)
+    tabela.style = "Table Grid"
+    cab = tabela.rows[0].cells
+    for indice, texto in enumerate(["Procedimento", "Região", "Valor", "Execução", "Valor executado"]):
+        cab[indice].text = texto
+        for run in cab[indice].paragraphs[0].runs:
+            run.bold = True
+            run.font.name = "Arial"
+            run.font.size = Pt(9)
+    for item in itens_calculados:
+        cells = tabela.add_row().cells
+        cells[0].text = item["procedimento"]
+        cells[1].text = item["regiao"] or "-"
+        cells[2].text = formatar_moeda_br(item["valor"])
+        cells[3].text = f"{item['percentual']:.0f}%"
+        cells[4].text = formatar_moeda_br(item["valor_executado"])
+        for cell in cells:
+            for run in cell.paragraphs[0].runs:
+                run.font.name = "Arial"
+                run.font.size = Pt(9)
+
+    adicionar_paragrafo_legal(doc, "Parágrafo único: Após a realização integral ou parcial dos procedimentos indicados, o DISTRATANTE decidiu encerrar o contrato no estágio em que se encontra, não tendo interesse em finalizar os procedimentos remanescentes com a DISTRATADA.")
+    adicionar_paragrafo_legal(doc, "DO DISTRATO E DAS CONDIÇÕES ACORDADAS", negrito=True, centralizado=True)
+    adicionar_paragrafo_legal(doc, "Cláusula 3ª: Diante da intenção manifestada pelo DISTRATANTE, as partes ajustam as presentes condições para proporcionar a rescisão amigável do contrato, sem ressalvas futuras além das obrigações expressamente previstas neste instrumento.")
+
+    parcelas = max(1, int(payload.quantidade_parcelas or 1))
+    forma = payload.forma_pagamento.strip().upper()
+    inicio = formatar_data_br_valor(payload.data_inicio_pagamentos)
+    multa_texto = (
+        "De comum acordo, as partes renunciam à multa contratual eventualmente aplicável."
+        if payload.multa_dispensada
+        else f"Incide multa de 10% sobre o valor dos procedimentos não executados, correspondente a {formatar_moeda_br(valor_multa)} ({moeda_por_extenso(valor_multa)})."
+    )
+    if valor_resultado >= 0:
+        resultado_texto = f"A DISTRATADA devolverá ao DISTRATANTE o saldo de {formatar_moeda_br(valor_resultado)} ({moeda_por_extenso(valor_resultado)}), em {parcelas} {'parcela' if parcelas == 1 else 'parcelas'}, por {forma}, com início em {inicio}."
+    else:
+        devido = abs(valor_resultado)
+        resultado_texto = f"Após a compensação dos procedimentos executados e da multa aplicável, o DISTRATANTE pagará à DISTRATADA o saldo de {formatar_moeda_br(devido)} ({moeda_por_extenso(devido)}), em {parcelas} {'parcela' if parcelas == 1 else 'parcelas'}, por {forma}, com início em {inicio}."
+    adicionar_paragrafo_legal(doc, f"Cláusula 4ª: O valor dos procedimentos não executados é de {formatar_moeda_br(valor_nao_executado)} ({moeda_por_extenso(valor_nao_executado)}). {multa_texto} {resultado_texto}")
+    adicionar_paragrafo_legal(doc, "Parágrafo único: O DISTRATANTE declara sua ciência, validação e concordância quanto aos procedimentos executados, sem prejuízo das garantias legais aplicáveis.")
+    adicionar_paragrafo_legal(doc, "Cláusula 5ª: As condições deste distrato foram previamente negociadas e ajustadas entre as partes, não representando reconhecimento de culpa ou responsabilidade por qualquer delas.")
+    adicionar_paragrafo_legal(doc, "Cláusula 6ª: O DISTRATANTE declara que o encerramento do contrato e os termos aqui ajustados atendem à sua solicitação e vontade, estando ciente das condições previstas neste instrumento e na legislação aplicável.")
+    adicionar_paragrafo_legal(doc, "Cláusula 7ª: A partir da assinatura deste termo, não subsistirão obrigações entre as partes relacionadas ao contrato distratado, exceto as expressamente previstas neste instrumento.")
+    adicionar_paragrafo_legal(doc, "DA QUITAÇÃO E DO ENCERRAMENTO DO VÍNCULO CONTRATUAL", negrito=True, centralizado=True)
+    adicionar_paragrafo_legal(doc, f"Cláusula 8ª: Cumpridas as obrigações previstas neste distrato, as partes outorgam-se reciprocamente plena, geral, irrevogável e irretratável quitação quanto ao Contrato de Prestação de Serviços nº {int(contrato['id'])}, nada mais tendo a reclamar uma da outra em relação ao seu objeto.")
+    adicionar_paragrafo_legal(doc, "DISPOSIÇÕES FINAIS", negrito=True, centralizado=True)
+    adicionar_paragrafo_legal(doc, "Cláusula 9ª: O DISTRATANTE declara que leu e compreendeu este distrato, concordando com todos os seus termos e obrigando-se ao seu fiel cumprimento.")
+    adicionar_paragrafo_legal(doc, "Por representar a livre manifestação de vontade das partes, o presente instrumento é firmado em duas vias de igual teor, na presença das testemunhas abaixo.")
+    data_distrato = parse_data_contrato(payload.data_distrato) or date.today()
+    adicionar_paragrafo_legal(doc, f"Campos dos Goytacazes/RJ, {formatar_data_extenso_local(data_distrato)}.", centralizado=True)
+    adicionar_paragrafo_legal(doc, "\n____________________________________\nSOUL SUL CLÍNICA INTEGRADA LTDA.\nCNPJ nº 59.002.730/0001-74", centralizado=True)
+    adicionar_paragrafo_legal(doc, f"\n____________________________________\n{payload.paciente_nome.upper()}\nCPF nº {payload.cpf}", centralizado=True)
+    adicionar_paragrafo_legal(doc, "\nTestemunhas:\n\n1. __________________________________  CPF: ______________________________\n\n2. __________________________________  CPF: ______________________________")
+
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    prontuario = formatar_prontuario_valor(paciente["prontuario"])
+    nome = slug_paciente_arquivos(paciente)
+    arquivo = f"DISTRATO_{nome}_{prontuario}_{int(contrato['id'])}_{datetime.now().strftime('%Y%m%d%H%M%S')}.docx"
+    caminho = os.path.join(DOCS_DIR, arquivo)
+    doc.save(caminho)
+    return caminho
+
+
+@app.get("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}/distrato", response_model=DistratoPreparacaoResposta)
+def preparar_distrato_paciente(paciente_id: int, contrato_id: int):
+    conn = conectar()
+    try:
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=?", (contrato_id, paciente_id)).fetchone()
+        if contrato is None:
+            raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+        if normalizar_texto(contrato["status"]).upper() not in {"APROVADO", "DISTRATADO"}:
+            raise HTTPException(status_code=400, detail="O distrato só pode ser gerado para um orçamento aprovado.")
+        procedimentos = conn.execute(
+            """SELECT id, procedimento, regiao, valor FROM procedimentos_dente
+               WHERE contrato_id=? AND upper(trim(COALESCE(status, ''))) <> 'EXCLUIDO'
+               ORDER BY grupo_item, id""",
+            (contrato_id,),
+        ).fetchall()
+        total_procedimentos = sum(float(row["valor"] or 0) for row in procedimentos)
+        fator_rateio = float(contrato["valor_total"] or 0) / total_procedimentos if total_procedimentos > 0 else 1.0
+        valor_pago = conn.execute(
+            "SELECT COALESCE(SUM(valor), 0) AS total FROM recebiveis WHERE contrato_id=? AND lower(trim(COALESCE(status, '')))='pago'",
+            (contrato_id,),
+        ).fetchone()["total"]
+        nascimento_data = parse_data_contrato(str(paciente["data_nascimento"] or ""))
+        contrato_data = parse_data_contrato(str(contrato["data_criacao"] or ""))
+        return DistratoPreparacaoResposta(
+            contratoId=contrato_id,
+            pacienteNome=str(paciente["nome"] or ""),
+            sexo=str(paciente["sexo"] or ""),
+            dataNascimento=nascimento_data.isoformat() if nascimento_data else "",
+            cpf=str(paciente["cpf"] or ""),
+            enderecoCompleto=endereco_completo_paciente(paciente),
+            menorIdade=bool(int(paciente["menor_idade"] or 0)),
+            responsavel=str(paciente["responsavel"] or ""),
+            cpfResponsavel=str(paciente["cpf_responsavel"] or ""),
+            dataContrato=contrato_data.isoformat() if contrato_data else "",
+            valorContrato=float(contrato["valor_total"] or 0),
+            valorPago=float(valor_pago or 0),
+            procedimentos=[DistratoProcedimentoResposta(id=int(row["id"]), procedimento=str(row["procedimento"] or ""), regiao=str(row["regiao"] or ""), valor=round(float(row["valor"] or 0) * fator_rateio, 2)) for row in procedimentos],
+        )
+    finally:
+        conn.close()
+
+
+@app.post("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}/distrato")
+def criar_distrato_paciente(paciente_id: int, contrato_id: int, payload: DistratoPayload, request: Request):
+    conn = conectar()
+    try:
+        validar_usuario_aprovacao_orcamento(request)
+        paciente = carregar_paciente_por_id(conn, paciente_id)
+        contrato = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=?", (contrato_id, paciente_id)).fetchone()
+        if contrato is None or normalizar_texto(contrato["status"]).upper() not in {"APROVADO", "DISTRATADO"}:
+            raise HTTPException(status_code=400, detail="O distrato só pode ser gerado para um orçamento aprovado.")
+        obrigatorios = [payload.paciente_nome, payload.data_nascimento, payload.cpf, payload.endereco_completo, payload.data_distrato, payload.forma_pagamento, payload.data_inicio_pagamentos]
+        if payload.menor_idade:
+            obrigatorios.extend([payload.responsavel, payload.cpf_responsavel])
+        if any(not str(valor or "").strip() for valor in obrigatorios):
+            raise HTTPException(status_code=400, detail="Preencha todos os dados obrigatórios do distrato.")
+        procedimentos = conn.execute(
+            """SELECT id, procedimento, regiao, valor FROM procedimentos_dente
+               WHERE contrato_id=? AND upper(trim(COALESCE(status, ''))) <> 'EXCLUIDO' ORDER BY grupo_item, id""",
+            (contrato_id,),
+        ).fetchall()
+        total_procedimentos = sum(float(row["valor"] or 0) for row in procedimentos)
+        fator_rateio = float(contrato["valor_total"] or 0) / total_procedimentos if total_procedimentos > 0 else 1.0
+        mapa = {int(item.procedimento_contrato_id): item for item in payload.itens}
+        if not procedimentos or any(int(row["id"]) not in mapa for row in procedimentos):
+            raise HTTPException(status_code=400, detail="Classifique todos os procedimentos do contrato.")
+        itens_calculados = []
+        valor_executado = 0.0
+        for row in procedimentos:
+            escolha = mapa[int(row["id"])]
+            situacao = normalizar_texto(escolha.situacao).upper().replace(" ", "_")
+            if situacao not in {"INTEGRAL", "PARCIAL", "NAO_FEITO"}:
+                raise HTTPException(status_code=400, detail="Situação de procedimento inválida.")
+            percentual = 100.0 if situacao == "INTEGRAL" else 0.0 if situacao == "NAO_FEITO" else float(escolha.percentual_executado or 0)
+            if situacao == "PARCIAL" and not 0 < percentual < 100:
+                raise HTTPException(status_code=400, detail="Informe uma porcentagem entre 1% e 99% para os procedimentos parciais.")
+            valor = round(float(row["valor"] or 0) * fator_rateio, 2)
+            executado = round(valor * percentual / 100.0, 2)
+            valor_executado += executado
+            itens_calculados.append({"id": int(row["id"]), "procedimento": str(row["procedimento"] or ""), "regiao": str(row["regiao"] or ""), "valor": valor, "situacao": situacao, "percentual": percentual, "valor_executado": executado})
+        valor_contrato = float(contrato["valor_total"] or 0)
+        valor_executado = round(valor_executado, 2)
+        valor_nao_executado = round(max(0.0, valor_contrato - valor_executado), 2)
+        valor_multa = 0.0 if payload.multa_dispensada else round(valor_nao_executado * 0.10, 2)
+        valor_resultado = round(float(payload.valor_pago or 0) - valor_executado - valor_multa, 2)
+        caminho = gerar_documento_distrato(paciente, contrato, payload, itens_calculados, valor_executado, valor_nao_executado, valor_multa, valor_resultado)
+        agora = agora_str()
+        cursor = conn.execute(
+            """INSERT INTO distratos (paciente_id, contrato_id, multa_dispensada, valor_contrato, valor_pago,
+               valor_executado, valor_nao_executado, valor_multa, valor_resultado, quantidade_parcelas,
+               forma_pagamento, data_inicio_pagamentos, data_distrato, itens_json, dados_json, documento_nome,
+               criado_por, criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (paciente_id, contrato_id, int(payload.multa_dispensada), valor_contrato, float(payload.valor_pago or 0), valor_executado,
+             valor_nao_executado, valor_multa, valor_resultado, max(1, int(payload.quantidade_parcelas or 1)), payload.forma_pagamento.strip(),
+             payload.data_inicio_pagamentos.strip(), payload.data_distrato.strip(), json.dumps(itens_calculados, ensure_ascii=False),
+             payload.model_dump_json(), os.path.basename(caminho), usuario_request(request), agora, agora),
+        )
+        conn.execute("UPDATE contratos SET status='DISTRATADO' WHERE id=? AND paciente_id=?", (contrato_id, paciente_id))
+        registrar_historico_orcamento(conn, paciente_id=paciente_id, contrato_id=contrato_id, tipo="DISTRATO", observacao=f"Distrato gerado. Executado: {formatar_moeda_br(valor_executado)}; multa: {formatar_moeda_br(valor_multa)}; saldo: {formatar_moeda_br(valor_resultado)}.", criado_por=usuario_request(request))
+        conn.commit()
+        distrato_id = int(cursor.lastrowid)
+        return {"distrato_id": distrato_id, "documento_url": f"/api/pacientes/{paciente_id}/orcamentos/{contrato_id}/distratos/{distrato_id}/documento", "valor_executado": valor_executado, "valor_nao_executado": valor_nao_executado, "valor_multa": valor_multa, "valor_resultado": valor_resultado}
+    finally:
+        conn.close()
+
+
+@app.get("/api/pacientes/{paciente_id}/orcamentos/{contrato_id}/distratos/{distrato_id}/documento")
+def baixar_documento_distrato(paciente_id: int, contrato_id: int, distrato_id: int):
+    conn = conectar()
+    try:
+        row = conn.execute("SELECT documento_nome FROM distratos WHERE id=? AND paciente_id=? AND contrato_id=?", (distrato_id, paciente_id, contrato_id)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Distrato não encontrado.")
+        caminho = os.path.join(DOCS_DIR, os.path.basename(str(row["documento_nome"] or "")))
+        if not os.path.isfile(caminho):
+            raise HTTPException(status_code=404, detail="Documento do distrato não encontrado.")
+        return FileResponse(caminho, filename=os.path.basename(caminho), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     finally:
         conn.close()
 
