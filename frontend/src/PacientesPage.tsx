@@ -141,6 +141,7 @@ type DistratoDraft = {
   dataDistrato: string;
   quantidadeParcelas: string;
   formaPagamento: string;
+  chavePix: string;
   dataInicioPagamentos: string;
   pacienteNome: string;
   sexo: string;
@@ -3100,6 +3101,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         dataDistrato: dataHojeIso(),
         quantidadeParcelas: "1",
         formaPagamento: "PIX",
+        chavePix: "",
         dataInicioPagamentos: dataHojeIso(),
         pacienteNome: dados.pacienteNome,
         sexo: dados.sexo,
@@ -3140,6 +3142,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setErro("Informe o nome e o CPF do responsável pelo paciente menor de idade.");
       return;
     }
+    if (distratoDraft.formaPagamento === "PIX" && !distratoDraft.chavePix.trim()) {
+      setErro("Informe a chave PIX do paciente.");
+      return;
+    }
     const pendente = distratoDraft.itens.find((item) => !item.situacao || (item.situacao === "PARCIAL" && !(Number(item.percentual.replace(",", ".")) > 0 && Number(item.percentual.replace(",", ".")) < 100)));
     if (pendente) {
       setErro(`Classifique corretamente o procedimento ${pendente.procedimento}${pendente.regiao ? ` - ${pendente.regiao}` : ""}.`);
@@ -3154,6 +3160,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         data_distrato: distratoDraft.dataDistrato,
         quantidade_parcelas: Math.max(1, Number(distratoDraft.quantidadeParcelas) || 1),
         forma_pagamento: distratoDraft.formaPagamento,
+        chave_pix: distratoDraft.formaPagamento === "PIX" ? distratoDraft.chavePix.trim() : "",
         data_inicio_pagamentos: distratoDraft.dataInicioPagamentos,
         paciente_nome: distratoDraft.pacienteNome,
         sexo: distratoDraft.sexo,
@@ -5770,6 +5777,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   <label><span>Valor total pago *</span><input value={distratoDraft.valorPago} onChange={(e) => setDistratoDraft({ ...distratoDraft, valorPago: formatarMoedaInput(e.target.value) })}/></label>
                   <label><span>Quantidade de parcelas *</span><input type="number" min="1" value={distratoDraft.quantidadeParcelas} onChange={(e) => setDistratoDraft({ ...distratoDraft, quantidadeParcelas: e.target.value })}/></label>
                   <label><span>Forma de pagamento/devolução *</span><select value={distratoDraft.formaPagamento} onChange={(e) => setDistratoDraft({ ...distratoDraft, formaPagamento: e.target.value })}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="ESTORNO DE CARTÃO DE CRÉDITO">Estorno de cartão</option><option value="BOLETO">Boleto</option><option value="TRANSFERÊNCIA BANCÁRIA">Transferência bancária</option></select></label>
+                  {distratoDraft.formaPagamento === "PIX" ? <label><span>Chave PIX do paciente *</span><input value={distratoDraft.chavePix} onChange={(e) => setDistratoDraft({ ...distratoDraft, chavePix: e.target.value })} placeholder="CPF, telefone, e-mail ou chave aleatória" /></label> : null}
                   <label><span>Início dos pagamentos *</span><input type="date" value={distratoDraft.dataInicioPagamentos} onChange={(e) => setDistratoDraft({ ...distratoDraft, dataInicioPagamentos: e.target.value })}/></label>
                   <label><span>Data do distrato *</span><input type="date" value={distratoDraft.dataDistrato} onChange={(e) => setDistratoDraft({ ...distratoDraft, dataDistrato: e.target.value })}/></label>
                 </div>

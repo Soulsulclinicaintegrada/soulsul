@@ -777,6 +777,7 @@ export type DistratoPayloadApi = {
   data_distrato: string;
   quantidade_parcelas: number;
   forma_pagamento: string;
+  chave_pix: string;
   data_inicio_pagamentos: string;
   paciente_nome: string;
   sexo: string;

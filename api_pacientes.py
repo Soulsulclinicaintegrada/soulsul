@@ -2634,6 +2634,7 @@ class DistratoPayload(BaseModel):
     data_distrato: str
     quantidade_parcelas: int = 1
     forma_pagamento: str
+    chave_pix: str = ""
     data_inicio_pagamentos: str
     paciente_nome: str
     sexo: str = ""
@@ -13491,18 +13492,20 @@ def gerar_documento_distrato(
 
     parcelas = max(1, int(payload.quantidade_parcelas or 1))
     forma = payload.forma_pagamento.strip().upper()
+    forma_texto = f"VIA PIX, NA CHAVE PIX {payload.chave_pix.strip()}" if forma == "PIX" else f"VIA {forma}"
     inicio = formatar_data_br_valor(payload.data_inicio_pagamentos)
     multa_texto = (
-        "De comum acordo, as partes renunciam à multa contratual eventualmente aplicável."
+        "De comum acordo, as partes renunciam a eventual multa contratual a que fazem jus, encerrando o contrato da forma como se encontra."
         if payload.multa_dispensada
-        else f"Incide multa de 10% sobre o valor dos procedimentos não executados, correspondente a {formatar_moeda_br(valor_multa)} ({moeda_por_extenso(valor_multa)})."
+        else f"A multa contratual de 10% sobre o valor dos procedimentos não executados corresponde a {formatar_moeda_br(valor_multa)} ({moeda_por_extenso(valor_multa)}). De comum acordo, as partes declaram o contrato encerrado, da forma como se encontra."
     )
+    texto_parcelamento = ", sendo as parcelas mensais, entretanto sem dia pré-fixado" if parcelas > 1 else ""
     if valor_resultado >= 0:
-        resultado_texto = f"A DISTRATADA devolverá ao DISTRATANTE o saldo de {formatar_moeda_br(valor_resultado)} ({moeda_por_extenso(valor_resultado)}), em {parcelas} {'parcela' if parcelas == 1 else 'parcelas'}, por {forma}, com início em {inicio}."
+        resultado_texto = f"devolvendo o saldo ao DISTRATANTE no valor de {formatar_moeda_br(valor_resultado)} ({moeda_por_extenso(valor_resultado)}), em {parcelas} {'parcela' if parcelas == 1 else 'parcelas'}, {forma_texto}, a partir do dia {inicio}{texto_parcelamento}."
     else:
         devido = abs(valor_resultado)
-        resultado_texto = f"Após a compensação dos procedimentos executados e da multa aplicável, o DISTRATANTE pagará à DISTRATADA o saldo de {formatar_moeda_br(devido)} ({moeda_por_extenso(devido)}), em {parcelas} {'parcela' if parcelas == 1 else 'parcelas'}, por {forma}, com início em {inicio}."
-    adicionar_paragrafo_legal(doc, f"Cláusula 4ª: O valor dos procedimentos não executados é de {formatar_moeda_br(valor_nao_executado)} ({moeda_por_extenso(valor_nao_executado)}). {multa_texto} {resultado_texto}")
+        resultado_texto = f"cabendo ao DISTRATANTE pagar à DISTRATADA o saldo de {formatar_moeda_br(devido)} ({moeda_por_extenso(devido)}), em {parcelas} {'parcela' if parcelas == 1 else 'parcelas'}, {forma_texto}, a partir do dia {inicio}{texto_parcelamento}."
+    adicionar_paragrafo_legal(doc, f"Cláusula 4ª: Desta forma, para fins de composição amigável, as partes decidiram encerrar o contrato no estágio em que se encontra, de modo que a DISTRATADA aceita receber o valor pago até o momento como quitação total e definitiva de todos os procedimentos executados, {resultado_texto} {multa_texto}")
     adicionar_paragrafo_legal(doc, "Parágrafo único: O DISTRATANTE declara sua ciência, validação e concordância quanto aos procedimentos executados, sem prejuízo das garantias legais aplicáveis.")
     adicionar_paragrafo_legal(doc, "Cláusula 5ª: As condições deste distrato foram previamente negociadas e ajustadas entre as partes, não representando reconhecimento de culpa ou responsabilidade por qualquer delas.")
     adicionar_paragrafo_legal(doc, "Cláusula 6ª: O DISTRATANTE declara que o encerramento do contrato e os termos aqui ajustados atendem à sua solicitação e vontade, estando ciente das condições previstas neste instrumento e na legislação aplicável.")
@@ -13580,6 +13583,8 @@ def criar_distrato_paciente(paciente_id: int, contrato_id: int, payload: Distrat
         if contrato is None or normalizar_texto(contrato["status"]).upper() not in {"APROVADO", "DISTRATADO"}:
             raise HTTPException(status_code=400, detail="O distrato só pode ser gerado para um orçamento aprovado.")
         obrigatorios = [payload.paciente_nome, payload.data_nascimento, payload.cpf, payload.endereco_completo, payload.data_distrato, payload.forma_pagamento, payload.data_inicio_pagamentos]
+        if normalizar_texto(payload.forma_pagamento) == "pix":
+            obrigatorios.append(payload.chave_pix)
         if payload.menor_idade:
             obrigatorios.extend([payload.responsavel, payload.cpf_responsavel])
         if any(not str(valor or "").strip() for valor in obrigatorios):
