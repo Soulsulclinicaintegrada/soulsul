@@ -703,7 +703,7 @@ export type OrcamentoPacientePayload = {
   forma_pagamento?: string;
   parcelas?: number;
   entrada?: boolean;
-  nf_solicitada: boolean;
+  nf_solicitada: boolean | null;
   plano_pagamento?: ParcelaPagamentoApi[];
   itens: OrcamentoItemPayload[];
 };
@@ -1701,11 +1701,12 @@ export async function alterarStatusOrcamentoPacienteApi(
   contratoId: number,
   status: "APROVADO" | "EM_ABERTO",
   aprovadoPor = nomeUsuarioCabecalho() || "JULIANA",
-  reaprovacao?: { tipo: "ALTERACAO" | "NOVA" | "ACRESCIMO"; valorAcrescimo?: number }
+  reaprovacao?: { tipo: "ALTERACAO" | "NOVA" | "ACRESCIMO"; valorAcrescimo?: number },
+  nfSolicitada?: boolean
 ) {
   return fetchJson<{ ok: true }>(`${API_BASE_URL}/api/pacientes/${pacienteId}/orcamentos/${contratoId}/status`, {
     method: "PUT",
-    body: JSON.stringify({ status, aprovado_por: aprovadoPor, tipo_reaprovacao: reaprovacao?.tipo || "", valor_acrescimo: reaprovacao?.valorAcrescimo || 0 })
+    body: JSON.stringify({ status, aprovado_por: aprovadoPor, tipo_reaprovacao: reaprovacao?.tipo || "", valor_acrescimo: reaprovacao?.valorAcrescimo || 0, nf_solicitada: nfSolicitada })
   });
 }
 

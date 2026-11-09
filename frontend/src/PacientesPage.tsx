@@ -384,7 +384,7 @@ const ORCAMENTO_INICIAL = (dataAtual: string): OrcamentoDraft => ({
   regioesSelecionadas: [],
   denticao: DENTICOES[0],
   valorUnitario: "",
-  nfSolicitada: "NAO"
+  nfSolicitada: ""
 });
 
 const DESCONTO_INICIAL: DescontoOrcamento = {
@@ -1122,6 +1122,8 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
   const [salvandoDistrato, setSalvandoDistrato] = useState(false);
   const [distratoDraft, setDistratoDraft] = useState<DistratoDraft | null>(null);
   const [reaprovarOrcamentoId, setReaprovarOrcamentoId] = useState<number | null>(null);
+  const [aprovarOrcamentoId, setAprovarOrcamentoId] = useState<number | null>(null);
+  const [nfAprovacao, setNfAprovacao] = useState<"" | "SIM" | "NAO">("");
   const [tipoReaprovacao, setTipoReaprovacao] = useState<"ALTERACAO" | "NOVA" | "ACRESCIMO">("ALTERACAO");
   const [valorAcrescimoReaprovacao, setValorAcrescimoReaprovacao] = useState("");
   const [alterandoStatusOrcamentoId, setAlterandoStatusOrcamentoId] = useState<number | null>(null);
@@ -2935,10 +2937,6 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setErro("Informe a data de retorno do CRM para este orçamento.");
       return;
     }
-    if (!orcamentoDraft.nfSolicitada) {
-      setErro("Informe obrigatoriamente se este orçamento precisa de NF.");
-      return;
-    }
     const linhasPagamentoAtivas = planoPagamento.linhas.filter((linha) => Number(linha.valor || 0) > 0);
     if (!linhasPagamentoAtivas.length) {
       setErro("Informe ao menos uma forma de pagamento com valor maior que zero.");
@@ -2971,7 +2969,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         forma_pagamento: resumoFormaPagamento(planoPagamento),
         parcelas: planoPagamento.parcelas,
         entrada: planoPagamento.entrada,
-        nf_solicitada: orcamentoDraft.nfSolicitada === "SIM",
+        nf_solicitada: orcamentoDraft.nfSolicitada ? orcamentoDraft.nfSolicitada === "SIM" : null,
         plano_pagamento: planoPagamentoParaApi(planoPagamento),
         itens
       };
@@ -3025,7 +3023,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     }
   }
 
-  async function aprovarOrcamento(contratoId: number, reaprovacao?: { tipo: "ALTERACAO" | "NOVA" | "ACRESCIMO"; valorAcrescimo?: number }) {
+  async function aprovarOrcamento(contratoId: number, reaprovacao?: { tipo: "ALTERACAO" | "NOVA" | "ACRESCIMO"; valorAcrescimo?: number }, nfSolicitada?: boolean) {
     if (!pacienteAtivoId) return;
     if (!usuarioPodeEditarOrcamento) {
       setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
@@ -3038,13 +3036,20 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     const contrato = ficha?.contratos.find((item) => item.id === contratoId);
     if (contrato?.jaFoiAprovado && !reaprovacao) {
       setReaprovarOrcamentoId(contratoId);
+      setNfAprovacao("");
       setTipoReaprovacao("ALTERACAO");
       setValorAcrescimoReaprovacao("");
       return;
     }
+    if (nfSolicitada === undefined) {
+      setAprovarOrcamentoId(contratoId);
+      setNfAprovacao("");
+      return;
+    }
     try {
       setAlterandoStatusOrcamentoId(contratoId);
-      await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, contratoId, "APROVADO", undefined, reaprovacao);
+      await alterarStatusOrcamentoPacienteApi(pacienteAtivoId, contratoId, "APROVADO", undefined, reaprovacao, nfSolicitada);
+      setAprovarOrcamentoId(null);
       setReaprovarOrcamentoId(null);
       setFeedback(reaprovacao?.tipo === "ALTERACAO" ? "Orçamento reaprovado como alteração contratual, sem entrar nas vendas ou comissões." : reaprovacao?.tipo === "ACRESCIMO" ? "Acréscimo aprovado e contabilizado somente pelo valor informado." : "Orçamento aprovado como nova venda.");
       await carregarFicha(pacienteAtivoId);
@@ -3062,7 +3067,11 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setErro("Informe o valor do acréscimo para continuar.");
       return;
     }
-    await aprovarOrcamento(reaprovarOrcamentoId, { tipo: tipoReaprovacao, valorAcrescimo });
+    if (!nfAprovacao) {
+      setErro("Informe se este contrato precisa de NF.");
+      return;
+    }
+    await aprovarOrcamento(reaprovarOrcamentoId, { tipo: tipoReaprovacao, valorAcrescimo }, nfAprovacao === "SIM");
   }
 
   async function desaprovarOrcamento() {
@@ -4311,7 +4320,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                               <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} />
                             </label>
                             <label>
-                              <span>NF? *</span>
+                              <span>NF (opcional até a aprovação)</span>
                               <select value={orcamentoDraft.nfSolicitada} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, nfSolicitada: e.target.value as "" | "SIM" | "NAO" })}>
                                 <option value="">Selecione</option>
                                 <option value="SIM">Sim</option>
@@ -5230,7 +5239,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           <input type="date" value={orcamentoDraft.dataRetornoCrm} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, dataRetornoCrm: e.target.value })} disabled={orcamentoBloqueado} />
                         </label>
                         <label>
-                          <span>NF? *</span>
+                          <span>NF (opcional até a aprovação)</span>
                           <select value={orcamentoDraft.nfSolicitada} onChange={(e) => setOrcamentoDraft({ ...orcamentoDraft, nfSolicitada: e.target.value as "" | "SIM" | "NAO" })} disabled={orcamentoBloqueado}>
                             <option value="">Selecione</option>
                             <option value="SIM">Sim</option>
@@ -5803,6 +5812,18 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         </div>
       ) : null}
 
+      {aprovarOrcamentoId ? (
+        <div className="overlay" role="presentation">
+          <article className="modal-shell modal-shell-confirm">
+            <header className="modal-header"><div><span className="page-eyebrow">Aprovação</span><h2>Este contrato precisa de nota fiscal?</h2></div><button type="button" className="icon-only" onClick={() => setAprovarOrcamentoId(null)}><X size={20}/></button></header>
+            <div className="modal-body confirm-modal-body">
+              <label className="full"><span>NF? *</span><select value={nfAprovacao} onChange={(e) => setNfAprovacao(e.target.value as "" | "SIM" | "NAO")}><option value="">Selecione</option><option value="SIM">Sim</option><option value="NAO">Não</option></select></label>
+            </div>
+            <footer className="modal-footer"><div className="sticky-actions"><button type="button" className="ghost-action" onClick={() => setAprovarOrcamentoId(null)}>Cancelar</button><button type="button" className="primary-action" onClick={() => { if (!nfAprovacao) { setErro("Informe se este contrato precisa de NF."); return; } void aprovarOrcamento(aprovarOrcamentoId, undefined, nfAprovacao === "SIM"); }} disabled={alterandoStatusOrcamentoId === aprovarOrcamentoId}>Confirmar aprovação</button></div></footer>
+          </article>
+        </div>
+      ) : null}
+
       {reaprovarOrcamentoId ? (
         <div className="overlay" role="presentation">
           <article className="modal-shell modal-shell-confirm budget-reapproval-modal">
@@ -5814,6 +5835,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 <button type="button" className={tipoReaprovacao === "ACRESCIMO" ? "active" : ""} onClick={() => setTipoReaprovacao("ACRESCIMO")}><strong>Acréscimo ao contrato</strong><span>Soma somente o valor novo, sem contar outro contrato.</span></button>
               </div>
               {tipoReaprovacao === "ACRESCIMO" ? <label className="budget-reapproval-value"><span>Valor do acréscimo</span><input value={valorAcrescimoReaprovacao} onChange={(e) => setValorAcrescimoReaprovacao(formatarMoedaInput(e.target.value))} placeholder="R$ 0,00" inputMode="numeric"/></label> : null}
+              <label className="budget-reapproval-value"><span>NF? *</span><select value={nfAprovacao} onChange={(e) => setNfAprovacao(e.target.value as "" | "SIM" | "NAO")}><option value="">Selecione</option><option value="SIM">Sim</option><option value="NAO">Não</option></select></label>
             </div>
             <footer className="modal-footer"><div className="sticky-actions"><button type="button" className="ghost-action" onClick={() => setReaprovarOrcamentoId(null)}>Cancelar</button><button type="button" className="primary-action" onClick={() => void confirmarReaprovacao()} disabled={alterandoStatusOrcamentoId === reaprovarOrcamentoId}>Confirmar reaprovação</button></div></footer>
           </article>

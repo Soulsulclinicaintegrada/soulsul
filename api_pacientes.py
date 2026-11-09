@@ -2620,6 +2620,7 @@ class OrcamentoStatusPayload(BaseModel):
     aprovado_por: str = ""
     tipo_reaprovacao: str = ""
     valor_acrescimo: float = 0
+    nf_solicitada: bool | None = None
 
 
 class DistratoProcedimentoPayload(BaseModel):
@@ -5855,8 +5856,6 @@ def salvar_orcamento_paciente(
     payload: OrcamentoPacientePayload,
     contrato_id: int | None = None,
 ) -> int:
-    if payload.nf_solicitada is None:
-        raise HTTPException(status_code=400, detail="Informe obrigatoriamente se o orçamento precisa de NF.")
     itens_validos = []
     for item in payload.itens:
         regioes_validas = [regiao for regiao in item.regioes if str(regiao.regiao or "").strip()]
@@ -5916,7 +5915,7 @@ def salvar_orcamento_paciente(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
-                int(bool(payload.nf_solicitada)),
+                None if payload.nf_solicitada is None else int(bool(payload.nf_solicitada)),
             ),
         )
         contrato_id = int(cursor.lastrowid)
@@ -5948,7 +5947,7 @@ def salvar_orcamento_paciente(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
-                int(bool(payload.nf_solicitada)),
+                None if payload.nf_solicitada is None else int(bool(payload.nf_solicitada)),
                 contrato_id,
                 paciente_id,
             ),
@@ -5996,8 +5995,6 @@ def salvar_orcamento_paciente_com_pagamento(
     payload: OrcamentoPacientePayload,
     contrato_id: int | None = None,
 ) -> int:
-    if payload.nf_solicitada is None:
-        raise HTTPException(status_code=400, detail="Informe obrigatoriamente se o orçamento precisa de NF.")
     itens_validos = []
     for item in payload.itens:
         regioes_validas = [regiao for regiao in item.regioes if str(regiao.regiao or "").strip()]
@@ -6057,7 +6054,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
-                int(bool(payload.nf_solicitada)),
+                None if payload.nf_solicitada is None else int(bool(payload.nf_solicitada)),
             ),
         )
         contrato_id = int(cursor.lastrowid)
@@ -6089,7 +6086,7 @@ def salvar_orcamento_paciente_com_pagamento(
                 desconto_valor,
                 normalizar_data_contrato_iso(payload.validade_orcamento, ""),
                 data_retorno_crm,
-                int(bool(payload.nf_solicitada)),
+                None if payload.nf_solicitada is None else int(bool(payload.nf_solicitada)),
                 contrato_id,
                 paciente_id,
             ),
@@ -13769,6 +13766,8 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
         usuario_aprovador = validar_usuario_aprovacao_orcamento(request)
 
         if status == "APROVADO":
+            if payload.nf_solicitada is None:
+                raise HTTPException(status_code=400, detail="Informe se o contrato aprovado precisa de NF.")
             reaprovacao = bool(int(contrato["ja_foi_aprovado"] or 0))
             tipo_reaprovacao = normalizar_texto(payload.tipo_reaprovacao).upper().replace(" ", "_")
             if reaprovacao and tipo_reaprovacao not in {"ALTERACAO", "NOVA", "ACRESCIMO"}:
@@ -13783,10 +13782,10 @@ def alterar_status_orcamento_paciente(paciente_id: int, contrato_id: int, payloa
             elif reaprovacao and tipo_reaprovacao == "NOVA":
                 incluir_venda, contar_venda, valor_considerado, tipo_movimento = 1, 1, None, "NOVA"
             conn.execute(
-                """UPDATE contratos SET status='APROVADO', aprovado_por=?, data_aprovacao=?, ja_foi_aprovado=1,
+                """UPDATE contratos SET status='APROVADO', aprovado_por=?, data_aprovacao=?, ja_foi_aprovado=1, nf_solicitada=?,
                    incluir_total_vendido=?, contar_quantidade_venda=?, valor_venda_considerado=?, tipo_movimento_venda=?
                    WHERE id=? AND paciente_id=?""",
-                (usuario_aprovador or "JULIANA", agora_str(), incluir_venda, contar_venda, valor_considerado, tipo_movimento, contrato_id, paciente_id),
+                (usuario_aprovador or "JULIANA", agora_str(), int(payload.nf_solicitada), incluir_venda, contar_venda, valor_considerado, tipo_movimento, contrato_id, paciente_id),
             )
             conn.execute(
                 """UPDATE procedimentos_dente
