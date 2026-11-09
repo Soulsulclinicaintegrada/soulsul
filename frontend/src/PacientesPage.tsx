@@ -384,7 +384,7 @@ const ORCAMENTO_INICIAL = (dataAtual: string): OrcamentoDraft => ({
   regioesSelecionadas: [],
   denticao: DENTICOES[0],
   valorUnitario: "",
-  nfSolicitada: ""
+  nfSolicitada: "NAO"
 });
 
 const DESCONTO_INICIAL: DescontoOrcamento = {
@@ -2390,6 +2390,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       setErro("Você só pode visualizar orçamentos. É necessária permissão de edição em Financeiro/Orçamentos.");
       return;
     }
+    setErro(null);
     setOrcamentoDraft(ORCAMENTO_INICIAL(dataHojeIso()));
     setNovaObservacaoOrcamento("");
     setHistoricoOrcamento([]);
@@ -5196,6 +5197,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
             </header>
 
             <div className="modal-body budget-modal-body">
+              {erro ? <div className="budget-save-error" role="alert">{erro}</div> : null}
               <div className="budget-builder-grid">
                 <section className="budget-builder-form">
                   {renderCalculadoraFinanceiraOrcamento(totalOrcamentoFinal)}

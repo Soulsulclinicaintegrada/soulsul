@@ -10697,3 +10697,12 @@ body, body * {
   .distrato-procedure-row, .distrato-grid, .distrato-summary { grid-template-columns: 1fr; }
   .distrato-grid .full { grid-column: auto; }
 }
+.budget-save-error {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border: 1px solid #e8b5ad;
+  border-radius: 12px;
+  background: #fff1ef;
+  color: #a33b31;
+  font-weight: 700;
+}
