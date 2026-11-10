@@ -13670,22 +13670,9 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
             - max(0.0, float(payload.desconto_valor or 0)),
         )
         contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
-        if contrato_anterior is not None and bool(int(contrato_anterior["ja_foi_aprovado"] or 0)):
-            conn.execute(
-                """
-                UPDATE contratos
-                SET valor_total=?, entrada=?, parcelas=?, primeiro_vencimento=?, data_pagamento_entrada=?,
-                    forma_pagamento=?, plano_pagamento_json=?, desconto_percentual=?, desconto_valor=?
-                WHERE id=? AND paciente_id=?
-                """,
-                (
-                    contrato_anterior["valor_total"], contrato_anterior["entrada"], contrato_anterior["parcelas"],
-                    contrato_anterior["primeiro_vencimento"], contrato_anterior["data_pagamento_entrada"],
-                    contrato_anterior["forma_pagamento"], contrato_anterior["plano_pagamento_json"],
-                    contrato_anterior["desconto_percentual"], contrato_anterior["desconto_valor"],
-                    contrato_id_salvo, paciente_id,
-                ),
-            )
+        # A edição de um contrato aprovado deve persistir os novos termos.
+        # A sincronização protege individualmente parcelas pagas e vencidas,
+        # alterando somente recebíveis futuros quando necessário.
         data_retorno = validar_data_retorno_crm(payload.data_retorno_crm)
         data_orcamento = normalizar_data_contrato_iso(payload.data, "")
         validade_orcamento = normalizar_data_contrato_iso(payload.validade_orcamento, "")
