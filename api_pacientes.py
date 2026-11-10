@@ -2601,6 +2601,7 @@ class OrcamentoPacientePayload(BaseModel):
     tabela: str = ""
     desconto_percentual: float = 0
     desconto_valor: float = 0
+    valor_contratado: float = 0
     validade_orcamento: str = ""
     data_retorno_crm: str = ""
     forma_pagamento: str = ""
@@ -2691,6 +2692,7 @@ class OrcamentoDetalheResposta(BaseModel):
     tabela: str = ""
     descontoPercentual: float = 0
     descontoValor: float = 0
+    valorContratado: float = 0
     validadeOrcamento: str = ""
     dataRetornoCrm: str = ""
     formaPagamento: str = ""
@@ -5636,6 +5638,16 @@ def carregar_orcamento_detalhe(conn: sqlite3.Connection, paciente_id: int, contr
         tabela=str(contrato["tabela_snapshot"] or ""),
         descontoPercentual=float(contrato["desconto_percentual"] or 0),
         descontoValor=float(contrato["desconto_valor"] or 0),
+        valorContratado=(
+            float(contrato["valor_total"] or 0)
+            if float(contrato["desconto_percentual"] or 0) == 0
+            and float(contrato["desconto_valor"] or 0) == 0
+            and abs(
+                float(contrato["valor_total"] or 0)
+                - sum(float(regiao.valor or 0) for item in itens for regiao in item.regioes if regiao.ativo)
+            ) > 0.009
+            else 0
+        ),
         validadeOrcamento=formatar_data_br_valor(contrato["validade_orcamento"]),
         dataRetornoCrm=formatar_data_br_valor(contrato["data_retorno_crm"]),
         formaPagamento=str(contrato["forma_pagamento"] or ""),
@@ -5868,7 +5880,8 @@ def salvar_orcamento_paciente(
     valor_bruto = sum(sum(float(regiao.valor or 0) for regiao in regioes if regiao.ativo) for _, regioes in itens_validos)
     desconto_percentual = max(0.0, float(payload.desconto_percentual or 0))
     desconto_valor = max(0.0, float(payload.desconto_valor or 0))
-    valor_total = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
+    valor_calculado = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
+    valor_total = max(0.0, float(payload.valor_contratado or 0)) or valor_calculado
     data_base = normalizar_data_contrato_iso(payload.data, date.today().isoformat())
     parcelas_plano = validar_plano_pagamento_orcamento(payload.plano_pagamento, valor_total, data_base)
     forma_pagamento = payload.forma_pagamento.strip() or "A Definir"
@@ -6007,7 +6020,8 @@ def salvar_orcamento_paciente_com_pagamento(
     valor_bruto = sum(sum(float(regiao.valor or 0) for regiao in regioes if regiao.ativo) for _, regioes in itens_validos)
     desconto_percentual = max(0.0, float(payload.desconto_percentual or 0))
     desconto_valor = max(0.0, float(payload.desconto_valor or 0))
-    valor_total = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
+    valor_calculado = max(0.0, valor_bruto - (valor_bruto * desconto_percentual / 100.0) - desconto_valor)
+    valor_total = max(0.0, float(payload.valor_contratado or 0)) or valor_calculado
     data_base = normalizar_data_contrato_iso(payload.data, date.today().isoformat())
     parcelas_plano = validar_plano_pagamento_orcamento(payload.plano_pagamento, valor_total, data_base)
     forma_pagamento = payload.forma_pagamento.strip() or "A Definir"
@@ -13663,12 +13677,13 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
             sum(float(regiao.valor or 0) for regiao in item.regioes if regiao.ativo)
             for item in payload.itens
         )
-        valor_total_novo = max(
+        valor_total_calculado = max(
             0.0,
             valor_bruto_novo
             - (valor_bruto_novo * max(0.0, float(payload.desconto_percentual or 0)) / 100.0)
             - max(0.0, float(payload.desconto_valor or 0)),
         )
+        valor_total_novo = max(0.0, float(payload.valor_contratado or 0)) or valor_total_calculado
         contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
         # A edição de um contrato aprovado deve persistir os novos termos.
         # A sincronização protege individualmente parcelas pagas e vencidas,

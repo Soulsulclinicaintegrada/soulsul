@@ -313,6 +313,7 @@ type PlanoPagamento = {
 type DescontoOrcamento = {
   percentual: string;
   valor: string;
+  contratado: string;
   validade: string;
 };
 
@@ -390,6 +391,7 @@ const ORCAMENTO_INICIAL = (dataAtual: string): OrcamentoDraft => ({
 const DESCONTO_INICIAL: DescontoOrcamento = {
   percentual: "",
   valor: "",
+  contratado: "",
   validade: ""
 };
 
@@ -1527,9 +1529,13 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     () => Math.min(totalOrcamento, Math.round(((totalOrcamento * descontoPercentualAplicado / 100) + descontoValorAplicado) * 100) / 100),
     [descontoPercentualAplicado, descontoValorAplicado, totalOrcamento]
   );
+  const valorContratadoAplicado = useMemo(
+    () => clamp(parseMoeda(descontoOrcamento.contratado), 0, totalOrcamento),
+    [descontoOrcamento.contratado, totalOrcamento]
+  );
   const totalOrcamentoFinal = useMemo(
-    () => Math.max(0, Math.round((totalOrcamento - totalDesconto) * 100) / 100),
-    [totalDesconto, totalOrcamento]
+    () => valorContratadoAplicado || Math.max(0, Math.round((totalOrcamento - totalDesconto) * 100) / 100),
+    [totalDesconto, totalOrcamento, valorContratadoAplicado]
   );
   const procedimentosContratadosPaciente = useMemo(() => {
     const nomesContratados = Array.from(new Set(
@@ -2446,11 +2452,13 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     setDescontoOrcamento({
       percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
       valor: detalhe.descontoValor ? formatarMoeda(detalhe.descontoValor) : "",
+      contratado: detalhe.valorContratado ? formatarMoeda(detalhe.valorContratado) : "",
       validade: detalhe.validadeOrcamento ? detalhe.validadeOrcamento.split("/").reverse().join("-") : ""
     });
     setDescontoEditor({
       percentual: detalhe.descontoPercentual ? String(detalhe.descontoPercentual).replace(".", ",") : "",
       valor: detalhe.descontoValor ? formatarMoeda(detalhe.descontoValor) : "",
+      contratado: detalhe.valorContratado ? formatarMoeda(detalhe.valorContratado) : "",
       validade: detalhe.validadeOrcamento ? detalhe.validadeOrcamento.split("/").reverse().join("-") : ""
     });
     setProcedimentoSelecionado(null);
@@ -2719,6 +2727,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     setDescontoOrcamento({
       percentual: percentual ? String(percentual).replace(".", ",") : "",
       valor: valorFixo ? formatarMoeda(valorFixo) : "",
+      contratado: parseMoeda(descontoEditor.contratado) ? formatarMoeda(parseMoeda(descontoEditor.contratado)) : "",
       validade: descontoEditor.validade
     });
     setModalDescontoAberto(false);
@@ -2965,6 +2974,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         tabela: orcamentoDraft.tabela,
         desconto_percentual: descontoPercentualAplicado,
         desconto_valor: descontoValorAplicado,
+        valor_contratado: valorContratadoAplicado,
         validade_orcamento: descontoOrcamento.validade,
         forma_pagamento: resumoFormaPagamento(planoPagamento),
         parcelas: planoPagamento.parcelas,
@@ -5141,7 +5151,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
           <article className="modal-shell modal-shell-discount">
             <header className="modal-header">
               <div>
-                <h2>Desconto</h2>
+                <h2>Valor e desconto</h2>
               </div>
               <button type="button" className="icon-only" onClick={() => setModalDescontoAberto(false)}>×</button>
             </header>
@@ -5155,7 +5165,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   <span>Desconto %</span>
                   <input
                     value={descontoEditor.percentual}
-                    onChange={(e) => setDescontoEditor({ ...descontoEditor, percentual: e.target.value })}
+                    onChange={(e) => setDescontoEditor({ ...descontoEditor, percentual: e.target.value, contratado: "" })}
                     placeholder="0,00"
                   />
                 </label>
@@ -5163,7 +5173,15 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                   <span>Valor do desconto</span>
                   <input
                     value={descontoEditor.valor}
-                    onChange={(e) => setDescontoEditor({ ...descontoEditor, valor: formatarMoedaInput(e.target.value) })}
+                    onChange={(e) => setDescontoEditor({ ...descontoEditor, valor: formatarMoedaInput(e.target.value), contratado: "" })}
+                    placeholder="R$ 0,00"
+                  />
+                </label>
+                <label>
+                  <span>Valor contratado</span>
+                  <input
+                    value={descontoEditor.contratado}
+                    onChange={(e) => setDescontoEditor({ ...descontoEditor, contratado: formatarMoedaInput(e.target.value), percentual: "", valor: "" })}
                     placeholder="R$ 0,00"
                   />
                 </label>
@@ -5178,7 +5196,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 <label className="full">
                   <span>Valor final</span>
                   <input
-                    value={formatarMoeda(Math.max(0, totalOrcamento - Math.min(totalOrcamento, ((totalOrcamento * clamp(parseMoeda(descontoEditor.percentual), 0, 100)) / 100) + clamp(parseMoeda(descontoEditor.valor), 0, totalOrcamento))))}
+                    value={formatarMoeda(clamp(parseMoeda(descontoEditor.contratado), 0, totalOrcamento) || Math.max(0, totalOrcamento - Math.min(totalOrcamento, ((totalOrcamento * clamp(parseMoeda(descontoEditor.percentual), 0, 100)) / 100) + clamp(parseMoeda(descontoEditor.valor), 0, totalOrcamento))))}
                     disabled
                   />
                 </label>

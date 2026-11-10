@@ -698,6 +698,7 @@ export type OrcamentoPacientePayload = {
   tabela: string;
   desconto_percentual?: number;
   desconto_valor?: number;
+  valor_contratado?: number;
   validade_orcamento?: string;
   data_retorno_crm?: string;
   forma_pagamento?: string;
@@ -732,6 +733,7 @@ export type OrcamentoDetalheApi = {
   tabela: string;
   descontoPercentual?: number;
   descontoValor?: number;
+  valorContratado?: number;
   validadeOrcamento?: string;
   dataRetornoCrm?: string;
   formaPagamento?: string;
