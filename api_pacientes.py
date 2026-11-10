@@ -5807,6 +5807,7 @@ def assinatura_orcamento_atual(conn: sqlite3.Connection, contrato_id: int) -> st
 
 
 FORMAS_PAGAMENTO_ORCAMENTO = {
+    "A_DEFINIR",
     "PERMUTA",
     "PIX",
     "BOLETO",

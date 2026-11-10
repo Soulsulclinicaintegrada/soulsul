@@ -215,6 +215,7 @@ const FILEIRA_INFERIOR_DECIDUA = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75];
 const OPCOES_ARCADA = ["Arcadas Superior e Inferior", "Arcada Superior", "Arcada Inferior"] as const;
 const FACES_PADRAO = ["V", "D", "M", "C", "P", "I"] as const;
 const FORMAS_PAGAMENTO: Array<{ value: FormaPagamentoOpcao; label: string }> = [
+  { value: "A_DEFINIR", label: "A definir" },
   { value: "PERMUTA", label: "Permuta" },
   { value: "PIX", label: "Pix" },
   { value: "BOLETO", label: "Boleto" },
@@ -293,7 +294,7 @@ type OrcamentoDraft = {
   nfSolicitada: "" | "SIM" | "NAO";
 };
 
-type FormaPagamentoOpcao = "PIX" | "BOLETO" | "CARTAO_CREDITO" | "CARTAO_DEBITO" | "DINHEIRO" | "PERMUTA";
+type FormaPagamentoOpcao = "A_DEFINIR" | "PIX" | "BOLETO" | "CARTAO_CREDITO" | "CARTAO_DEBITO" | "DINHEIRO" | "PERMUTA";
 
 type ParcelaPagamento = {
   indice: number;
