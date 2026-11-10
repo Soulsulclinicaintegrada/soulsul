@@ -6008,6 +6008,7 @@ def salvar_orcamento_paciente_com_pagamento(
     paciente_id: int,
     payload: OrcamentoPacientePayload,
     contrato_id: int | None = None,
+    sincronizar_financeiro_aprovado: bool = True,
 ) -> int:
     itens_validos = []
     for item in payload.itens:
@@ -6142,7 +6143,11 @@ def salvar_orcamento_paciente_com_pagamento(
             )
 
     contrato_atualizado = conn.execute("SELECT * FROM contratos WHERE id=? AND paciente_id=? LIMIT 1", (contrato_id, paciente_id)).fetchone()
-    if contrato_atualizado is not None and normalizar_texto(contrato_atualizado["status"]) == "aprovado":
+    if (
+        sincronizar_financeiro_aprovado
+        and contrato_atualizado is not None
+        and normalizar_texto(contrato_atualizado["status"]) == "aprovado"
+    ):
         paciente_row = carregar_paciente_por_id(conn, paciente_id)
         sincronizar_recebiveis_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
         sincronizar_financeiro_contrato(conn, paciente_row, contrato_atualizado, contrato_id)
@@ -13685,7 +13690,13 @@ def atualizar_orcamento_paciente(paciente_id: int, contrato_id: int, payload: Or
             - max(0.0, float(payload.desconto_valor or 0)),
         )
         valor_total_novo = max(0.0, float(payload.valor_contratado or 0)) or valor_total_calculado
-        contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(conn, paciente_id, payload, contrato_id=contrato_id)
+        contrato_id_salvo = salvar_orcamento_paciente_com_pagamento(
+            conn,
+            paciente_id,
+            payload,
+            contrato_id=contrato_id,
+            sincronizar_financeiro_aprovado=False,
+        )
         # A edição de um contrato aprovado deve persistir os novos termos.
         # A sincronização protege individualmente parcelas pagas e vencidas,
         # alterando somente recebíveis futuros quando necessário.
