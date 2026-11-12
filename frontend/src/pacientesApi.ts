@@ -758,6 +758,7 @@ export type DistratoProcedimentoApi = {
 };
 
 export type DistratoPreparacaoApi = {
+  distratoId?: number | null;
   contratoId: number;
   pacienteNome: string;
   sexo: string;
@@ -770,7 +771,14 @@ export type DistratoPreparacaoApi = {
   dataContrato: string;
   valorContrato: number;
   valorPago: number;
+  multaDispensada?: boolean | null;
+  dataDistrato?: string;
+  quantidadeParcelas?: number;
+  formaPagamento?: string;
+  chavePix?: string;
+  dataInicioPagamentos?: string;
   procedimentos: DistratoProcedimentoApi[];
+  itensAnteriores?: Array<{ id: number; situacao: "INTEGRAL" | "PARCIAL" | "NAO_FEITO"; percentual: number }>;
 };
 
 export type DistratoPayloadApi = {

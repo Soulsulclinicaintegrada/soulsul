@@ -134,6 +134,7 @@ type DistratoItemDraft = {
 };
 
 type DistratoDraft = {
+  distratoId?: number | null;
   contratoId: number;
   multaDispensada: "" | "SIM" | "NAO";
   valorContrato: number;
@@ -3115,15 +3116,16 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
     try {
       const dados: DistratoPreparacaoApi = await prepararDistratoPacienteApi(pacienteAtivoId, contratoId);
       setDistratoDraft({
+        distratoId: dados.distratoId,
         contratoId,
-        multaDispensada: "",
+        multaDispensada: dados.multaDispensada == null ? "" : dados.multaDispensada ? "SIM" : "NAO",
         valorContrato: dados.valorContrato,
         valorPago: dados.valorPago.toFixed(2).replace(".", ","),
-        dataDistrato: dataHojeIso(),
-        quantidadeParcelas: "1",
-        formaPagamento: "PIX",
-        chavePix: "",
-        dataInicioPagamentos: dataHojeIso(),
+        dataDistrato: dados.dataDistrato || dataHojeIso(),
+        quantidadeParcelas: String(dados.quantidadeParcelas || 1),
+        formaPagamento: dados.formaPagamento || "PIX",
+        chavePix: dados.chavePix || "",
+        dataInicioPagamentos: dados.dataInicioPagamentos || dataHojeIso(),
         pacienteNome: dados.pacienteNome,
         sexo: dados.sexo,
         dataNascimento: dados.dataNascimento,
@@ -3132,7 +3134,10 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         menorIdade: dados.menorIdade,
         responsavel: dados.responsavel,
         cpfResponsavel: dados.cpfResponsavel,
-        itens: dados.procedimentos.map((item) => ({ ...item, situacao: "", percentual: "" }))
+        itens: dados.procedimentos.map((item) => {
+          const anterior = (dados as DistratoPreparacaoApi & { itensAnteriores?: Array<{ id: number; situacao: DistratoItemDraft["situacao"]; percentual: number }> }).itensAnteriores?.find((registro) => registro.id === item.id);
+          return { ...item, situacao: anterior?.situacao || "", percentual: anterior?.percentual ? String(anterior.percentual).replace(".", ",") : "" };
+        })
       });
       setModalDistratoAberto(true);
     } catch (error) {
@@ -3199,7 +3204,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
       });
       setModalDistratoAberto(false);
       setDistratoDraft(null);
-      setFeedback(`Distrato gerado. Valor executado: ${formatarMoeda(resposta.valor_executado)}. Multa: ${formatarMoeda(resposta.valor_multa)}.`);
+      setFeedback(`${distratoDraft.distratoId ? "Nova versão do distrato salva" : "Distrato gerado"}. Valor executado: ${formatarMoeda(resposta.valor_executado)}. Multa: ${formatarMoeda(resposta.valor_multa)}.`);
       await carregarFicha(pacienteAtivoId);
       window.open(urlDocumentoDistratoApi(resposta.documento_url), "_blank", "noopener,noreferrer");
     } catch (error) {
@@ -4597,13 +4602,13 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                           </button>
                           <div className="budget-list-row-actions">
                             <strong className="budget-list-row-value">{contrato.valorTotal}</strong>
-                            {contrato.status === "APROVADO" && usuarioPodeAprovarOrcamentoComPermissao ? (
+                            {(contrato.status === "APROVADO" || contrato.status === "DISTRATADO") && usuarioPodeAprovarOrcamentoComPermissao ? (
                               <>
-                                <button type="button" className="ghost-action compact" onClick={() => setConfirmarDesaprovarId(contrato.id)}>
+                                {contrato.status === "APROVADO" ? <button type="button" className="ghost-action compact" onClick={() => setConfirmarDesaprovarId(contrato.id)}>
                                   Desaprovar
-                                </button>
+                                </button> : null}
                                 <button type="button" className="primary-action compact" onClick={() => void abrirDistrato(contrato.id)} disabled={carregandoDistrato}>
-                                  {carregandoDistrato ? "Carregando..." : "Distrato"}
+                                  {carregandoDistrato ? "Carregando..." : contrato.status === "DISTRATADO" ? "Editar distrato" : "Distrato"}
                                 </button>
                               </>
                             ) : null}
@@ -5777,7 +5782,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
         <div className="overlay" role="presentation">
           <article className="modal-shell distrato-modal">
             <header className="modal-header">
-              <div><span className="page-eyebrow">Contrato #{distratoDraft.contratoId}</span><h2>Gerar distrato</h2><p>Responda às perguntas para calcular e preencher o documento.</p></div>
+              <div><span className="page-eyebrow">Contrato #{distratoDraft.contratoId}</span><h2>{distratoDraft.distratoId ? "Editar distrato" : "Gerar distrato"}</h2><p>{distratoDraft.distratoId ? "Revise os dados e gere uma nova versão corrigida. A anterior será preservada." : "Responda às perguntas para calcular e preencher o documento."}</p></div>
               <button type="button" className="icon-only" onClick={() => { setModalDistratoAberto(false); setDistratoDraft(null); }}><X size={20}/></button>
             </header>
             <div className="modal-body distrato-modal-body">
@@ -5826,7 +5831,7 @@ export function PacientesPage({ busca, onLimparBusca, onNavegacaoConsumida, nave
                 </div>
               </section>
             </div>
-            <footer className="modal-footer"><div className="sticky-actions"><button type="button" className="ghost-action" onClick={() => { setModalDistratoAberto(false); setDistratoDraft(null); }}>Cancelar</button><button type="button" className="primary-action" onClick={() => void salvarDistrato()} disabled={salvandoDistrato}>{salvandoDistrato ? "Gerando..." : "Gerar distrato em Word"}</button></div></footer>
+            <footer className="modal-footer"><div className="sticky-actions"><button type="button" className="ghost-action" onClick={() => { setModalDistratoAberto(false); setDistratoDraft(null); }}>Cancelar</button><button type="button" className="primary-action" onClick={() => void salvarDistrato()} disabled={salvandoDistrato}>{salvandoDistrato ? "Gerando..." : distratoDraft.distratoId ? "Salvar nova versão em Word" : "Gerar distrato em Word"}</button></div></footer>
           </article>
         </div>
       ) : null}

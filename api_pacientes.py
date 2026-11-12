@@ -2657,6 +2657,7 @@ class DistratoProcedimentoResposta(BaseModel):
 
 
 class DistratoPreparacaoResposta(BaseModel):
+    distratoId: int | None = None
     contratoId: int
     pacienteNome: str
     sexo: str = ""
@@ -2669,7 +2670,14 @@ class DistratoPreparacaoResposta(BaseModel):
     dataContrato: str = ""
     valorContrato: float = 0
     valorPago: float = 0
+    multaDispensada: bool | None = None
+    dataDistrato: str = ""
+    quantidadeParcelas: int = 1
+    formaPagamento: str = "PIX"
+    chavePix: str = ""
+    dataInicioPagamentos: str = ""
     procedimentos: list[DistratoProcedimentoResposta] = Field(default_factory=list)
+    itensAnteriores: list[dict] = Field(default_factory=list)
 
 
 class OrcamentoHistoricoItemResposta(BaseModel):
@@ -13571,20 +13579,57 @@ def preparar_distrato_paciente(paciente_id: int, contrato_id: int):
         ).fetchone()["total"]
         nascimento_data = parse_data_contrato(str(paciente["data_nascimento"] or ""))
         contrato_data = parse_data_contrato(str(contrato["data_criacao"] or ""))
+        ultimo_distrato = conn.execute(
+            "SELECT * FROM distratos WHERE paciente_id=? AND contrato_id=? ORDER BY datetime(COALESCE(criado_em, '')) DESC, id DESC LIMIT 1",
+            (paciente_id, contrato_id),
+        ).fetchone()
+        dados_anteriores: dict = {}
+        itens_anteriores: list[dict] = []
+        if ultimo_distrato is not None:
+            try:
+                dados_anteriores = json.loads(str(ultimo_distrato["dados_json"] or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                dados_anteriores = {}
+            try:
+                itens_anteriores = json.loads(str(ultimo_distrato["itens_json"] or "[]"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                itens_anteriores = []
+        procedimentos_resposta = (
+            [
+                DistratoProcedimentoResposta(
+                    id=int(item.get("id") or 0),
+                    procedimento=str(item.get("procedimento") or ""),
+                    regiao=str(item.get("regiao") or ""),
+                    valor=float(item.get("valor") or 0),
+                )
+                for item in itens_anteriores
+                if int(item.get("id") or 0) > 0
+            ]
+            if itens_anteriores
+            else [DistratoProcedimentoResposta(id=int(row["id"]), procedimento=str(row["procedimento"] or ""), regiao=str(row["regiao"] or ""), valor=round(float(row["valor"] or 0) * fator_rateio, 2)) for row in procedimentos]
+        )
         return DistratoPreparacaoResposta(
+            distratoId=int(ultimo_distrato["id"]) if ultimo_distrato is not None else None,
             contratoId=contrato_id,
-            pacienteNome=str(paciente["nome"] or ""),
-            sexo=str(paciente["sexo"] or ""),
-            dataNascimento=nascimento_data.isoformat() if nascimento_data else "",
-            cpf=str(paciente["cpf"] or ""),
-            enderecoCompleto=endereco_completo_paciente(paciente),
-            menorIdade=bool(int(paciente["menor_idade"] or 0)),
-            responsavel=str(paciente["responsavel"] or ""),
-            cpfResponsavel=str(paciente["cpf_responsavel"] or ""),
+            pacienteNome=str(dados_anteriores.get("paciente_nome") or paciente["nome"] or ""),
+            sexo=str(dados_anteriores.get("sexo") or paciente["sexo"] or ""),
+            dataNascimento=str(dados_anteriores.get("data_nascimento") or (nascimento_data.isoformat() if nascimento_data else "")),
+            cpf=str(dados_anteriores.get("cpf") or paciente["cpf"] or ""),
+            enderecoCompleto=str(dados_anteriores.get("endereco_completo") or endereco_completo_paciente(paciente)),
+            menorIdade=bool(dados_anteriores.get("menor_idade", bool(int(paciente["menor_idade"] or 0)))),
+            responsavel=str(dados_anteriores.get("responsavel") or paciente["responsavel"] or ""),
+            cpfResponsavel=str(dados_anteriores.get("cpf_responsavel") or paciente["cpf_responsavel"] or ""),
             dataContrato=contrato_data.isoformat() if contrato_data else "",
             valorContrato=float(contrato["valor_total"] or 0),
-            valorPago=float(valor_pago or 0),
-            procedimentos=[DistratoProcedimentoResposta(id=int(row["id"]), procedimento=str(row["procedimento"] or ""), regiao=str(row["regiao"] or ""), valor=round(float(row["valor"] or 0) * fator_rateio, 2)) for row in procedimentos],
+            valorPago=float(dados_anteriores.get("valor_pago", valor_pago) or 0),
+            multaDispensada=(bool(dados_anteriores.get("multa_dispensada")) if ultimo_distrato is not None else None),
+            dataDistrato=str(dados_anteriores.get("data_distrato") or ""),
+            quantidadeParcelas=max(1, int(dados_anteriores.get("quantidade_parcelas") or 1)),
+            formaPagamento=str(dados_anteriores.get("forma_pagamento") or "PIX"),
+            chavePix=str(dados_anteriores.get("chave_pix") or ""),
+            dataInicioPagamentos=str(dados_anteriores.get("data_inicio_pagamentos") or ""),
+            procedimentos=procedimentos_resposta,
+            itensAnteriores=itens_anteriores,
         )
     finally:
         conn.close()
