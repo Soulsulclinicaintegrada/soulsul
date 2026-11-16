@@ -762,8 +762,6 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
   const [eventoTodaEquipe, setEventoTodaEquipe] = useState(false);
   const [slotsComAgendamento, setSlotsComAgendamento] = useState<string[]>([]);
   const [slotsOcupados, setSlotsOcupados] = useState<string[]>([]);
-  const [slotsOcupadosConsultorio, setSlotsOcupadosConsultorio] = useState<string[]>([]);
-  const [consultorioProfissionalModal, setConsultorioProfissionalModal] = useState("");
   const [slotsSelecionados, setSlotsSelecionados] = useState<string[]>(["10:00"]);
   const [modoSelecaoSlots, setModoSelecaoSlots] = useState<"preselecionado" | "ancora" | "intervalo">("preselecionado");
   const [carregandoDisponibilidade, setCarregandoDisponibilidade] = useState(false);
@@ -1096,36 +1094,6 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     return configProfissionais.find((item) => item.id === profissionalId)?.nomeAgenda || nomeProfissionalPorId(profissionalId);
   }
 
-  function consultorioProfissionalNoDia(profissionalId: number, dataIso: string) {
-    return configuracaoProfissionalNoDia(profissionalId, dataIso)?.consultorio?.trim() || "";
-  }
-
-  function consultorioSalvoAgendamento(evento: Pick<AgendaEventoUI, "consultorio">) {
-    return String(evento.consultorio || "").trim();
-  }
-
-  function consultorioAgendamento(evento: Pick<AgendaEventoUI, "profissionalId" | "consultorio" | "data">) {
-    return consultorioSalvoAgendamento(evento) || consultorioProfissionalNoDia(evento.profissionalId, brParaIso(evento.data));
-  }
-
-  function slotOcupadoNoConsultorio(profissionalId: number, dataIso: string, slot: string, ignorarAgendamentoId?: number | null) {
-    const consultorio = consultorioProfissionalNoDia(profissionalId, dataIso).trim();
-    if (!consultorio) return false;
-    const inicioSlot = paraMinutos(slot);
-    const fimSlot = inicioSlot + 15;
-    return eventos.some((evento) => {
-      if (ignorarAgendamentoId && evento.id === ignorarAgendamentoId) return false;
-      if (evento.data !== isoParaBr(dataIso)) return false;
-      if (evento.profissionalId === profissionalId) return false;
-      if (consultorioSalvoAgendamento(evento) !== consultorio) return false;
-      return inicioSlot < paraMinutos(evento.fim) && fimSlot > paraMinutos(evento.inicio);
-    });
-  }
-
-  function slotsConsultorioOcupadoNoDia(profissionalId: number, dataIso: string, ignorarAgendamentoId?: number | null) {
-    return horariosAgenda.filter((slot) => slotOcupadoNoConsultorio(profissionalId, dataIso, slot, ignorarAgendamentoId));
-  }
-
   function corProfissionalPorId(profissionalId: number) {
     return configProfissionais.find((item) => item.id === profissionalId)?.cor ?? "#c7aa78";
   }
@@ -1230,7 +1198,6 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
     buscarDisponibilidadeAgenda(form.profissionalId, isoParaBr(form.data), agendamentoEditandoId)
       .then((resultado) => {
         if (cancelado) return;
-        setConsultorioProfissionalModal(String(resultado.consultorioProfissional || consultorioProfissionalNoDia(form.profissionalId, form.data) || ""));
         const maximoPorHorario = configProfissionais.find((item) => item.id === form.profissionalId)?.maxAgendamentosPorHorario ?? 1;
         const agendamentosDisponibilidade = resultado.agendamentos
           .filter((evento) =>
@@ -1254,13 +1221,11 @@ export function AgendaPage({ usuarioLogado, onAbrirPaciente, onAbrirNovoPaciente
           .map(([slot]) => slot);
         setSlotsComAgendamento(slotsComAgendamentoAtual);
         setSlotsOcupados(ocupadosUnicos);
-        const ocupadosConsultorio = slotsConsultorioOcupadoNoDia(form.profissionalId, form.data, agendamentoEditandoId);
-        setSlotsOcupadosConsultorio(ocupadosConsultorio);
         setSlotsSelecionados((atual) => {
           const horariosPermitidos = horariosAgenda.filter((slot) => slotDisponivelNaAgenda(form.profissionalId, form.data, slot));
           const ancoraBase = atual[0] ?? form.horarioInicio;
           const ancora = horariosPermitidos.includes(ancoraBase) ? ancoraBase : horariosPermitidos[0] ?? ancoraBase;
-          return criarGradeSelecao(horariosPermitidos, new Set([...ocupadosUnicos, ...ocupadosConsultorio]), ancora, atual[atual.length - 1] ?? ancora);
+          return criarGradeSelecao(horariosPermitidos, new Set(ocupadosUnicos), ancora, atual[atual.length - 1] ?? ancora);
         });
       })
       .finally(() => {
@@ -2309,7 +2274,6 @@ function atualizarConfigProfissionalDia(
       }))
       .filter((grupo) => grupo.eventos.length > 0);
     const blocos = eventosPorProfissional.map(({ profissional, eventos }) => {
-      const consultorio = consultorioProfissionalNoDia(profissional.id, dataSelecionada) || consultorioAgendamento(eventos[0]) || "Não definido";
       const linhas = eventos.map((evento) => `
         <tr>
           <td>${visao === "Dia" ? `${evento.inicio} - ${evento.fim}` : `${evento.data} · ${evento.inicio} - ${evento.fim}`}</td>
@@ -2321,7 +2285,6 @@ function atualizarConfigProfissionalDia(
         <section class="agenda-print-block">
           <div class="agenda-print-block-head">
             <h3>${nomeAgendaProfissional(profissional.id)}</h3>
-            <span>Consultório: ${consultorio}</span>
           </div>
           <table>
             <thead>
@@ -2454,9 +2417,6 @@ function atualizarConfigProfissionalDia(
                     <span className="agenda-prof-dot" style={{ background: profissional.cor }} />
                     <div className="agenda-prof-chip-copy">
                       <strong>{nomeAgendaProfissional(profissional.id)}</strong>
-                      {consultorioProfissionalNoDia(profissional.id, dataSelecionada) ? (
-                        <span>{consultorioProfissionalNoDia(profissional.id, dataSelecionada)}</span>
-                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -2870,7 +2830,6 @@ function atualizarConfigProfissionalDia(
             <div><strong>Agendado por:</strong> {detalheAtivo.agendadoPor || "Sistema"}</div>
             <div><strong>Agendado em:</strong> {detalheAtivo.agendadoEm ?? "Agora"}</div>
             <div><strong>Profissional:</strong> {detalheAtivo.profissional}</div>
-            <div><strong>Sala:</strong> {consultorioAgendamento(detalheAtivo) || "Não definida"}</div>
             <div><strong>Prontuário:</strong> {detalheAtivo.paciente} ({detalheAtivo.prontuario})</div>
             <div><strong>Telefone:</strong> {detalheAtivo.telefone}</div>
             <div><strong>Horário:</strong> {detalheAtivo.inicio} - {detalheAtivo.fim}</div>
@@ -3042,16 +3001,12 @@ function atualizarConfigProfissionalDia(
                   <div className="agenda-horarios-block agenda-horarios-block-tight">
                     <div className="agenda-horarios-title-wrap">
                       <strong>Horários</strong>
-                      <span>{carregandoDisponibilidade ? "Atualizando disponibilidade..." : "Vermelho = já existe agendamento · Rosa = conflito de consultório · Azul = seleção"}</span>
+                      <span>{carregandoDisponibilidade ? "Atualizando disponibilidade..." : "Vermelho = já existe agendamento · Azul = seleção"}</span>
                     </div>
-                    {consultorioProfissionalModal ? (
-                      <div className="agenda-inline-hint">{`Consultório do profissional: ${consultorioProfissionalModal}`}</div>
-                    ) : null}
                     <div className="agenda-timeline-picker compact">
                       {horariosAgenda.map((slot) => {
                         const foraDisponibilidade = !slotDisponivelNaAgenda(form.profissionalId, form.data, slot);
                         const ocupado = slotsComAgendamento.includes(slot) && !slotsSelecionados.includes(slot);
-                        const ocupadoConsultorio = slotsOcupadosConsultorio.includes(slot) && !slotsSelecionados.includes(slot);
                         const selecionado = slotsSelecionados.includes(slot);
                         const bloqueado = slotsOcupados.includes(slot) && !slotsSelecionados.includes(slot);
                         return (
@@ -3059,7 +3014,7 @@ function atualizarConfigProfissionalDia(
                             key={slot}
                             type="button"
                             disabled={foraDisponibilidade}
-                            className={`timeline-slot${ocupado ? " ocupado" : ""}${ocupadoConsultorio ? " consultorio-ocupado" : ""}${bloqueado ? " bloqueado" : ""}${selecionado ? " selecionado" : ""}${foraDisponibilidade ? " unavailable" : ""}`}
+                            className={`timeline-slot${ocupado ? " ocupado" : ""}${bloqueado ? " bloqueado" : ""}${selecionado ? " selecionado" : ""}${foraDisponibilidade ? " unavailable" : ""}`}
                             onClick={() => selecionarSlot(slot)}
                           >
                             <span>{slot}</span>
@@ -3387,18 +3342,6 @@ function atualizarConfigProfissionalDia(
                           />
                         </label>
                         <label>
-                          <span>Sala / consultório</span>
-                          <select
-                            value={config.configuracaoDias[diaConfiguracaoSelecionado].consultorio || ""}
-                            onChange={(event) => atualizarConfigProfissionalDia(profissional.id, diaConfiguracaoSelecionado, "consultorio", event.target.value)}
-                          >
-                            <option value="">Automático / primeira livre</option>
-                            {salasAgenda.map((sala) => (
-                              <option key={sala} value={sala}>{sala}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
                           <span>Máx. por horário</span>
                           <input
                             type="number"
@@ -3440,17 +3383,6 @@ function atualizarConfigProfissionalDia(
                     </div>
                   );
                 })}
-              </div>
-              <div className="agenda-modal-grid agenda-consulta-top-grid">
-                <label className="agenda-span-2">
-                  <span>Salas disponíveis</span>
-                  <textarea
-                    value={salasAgenda.join("\n")}
-                    onChange={(event) => setSalasAgenda(normalizarListaSalas(event.target.value.split(/\r?\n/)))}
-                    rows={7}
-                    placeholder="Uma sala por linha"
-                  />
-                </label>
               </div>
               </fieldset>
               {!usuarioEhAdministrador ? <div className="agenda-config-readonly-note">Somente administradores podem alterar horários disponíveis e definir quem está ativo no dia.</div> : null}

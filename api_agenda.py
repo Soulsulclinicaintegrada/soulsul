@@ -576,27 +576,10 @@ def definir_consultorio_agendamento(
     *,
     ignorar_agendamento_id: int | None = None,
 ) -> str:
-    row = conn.execute("SELECT salas_json FROM agenda_configuracao WHERE id=1").fetchone()
-    salas = listar_salas_configuradas(row)
-    salas_normalizadas = normalizar_lista_salas(salas)
-    ocupadas = listar_salas_ocupadas(conn, data, inicio, fim, ignorar_agendamento_id=ignorar_agendamento_id)
-    consultorio_configurado = obter_consultorio_profissional_configurado(conn, profissional_id, data)
-    if consultorio_configurado:
-        if consultorio_configurado not in salas_normalizadas:
-            salas_normalizadas.append(consultorio_configurado)
-        if consultorio_configurado in ocupadas:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Consultório {consultorio_configurado} não está disponível neste horário.",
-            )
-        return consultorio_configurado
-    for sala in salas_normalizadas:
-        if sala not in ocupadas:
-            return sala
-    raise HTTPException(
-        status_code=409,
-        detail="Todas as salas/consultórios estão ocupados neste horário.",
-    )
+    # Salas e consultórios não participam mais da validação nem bloqueiam
+    # agendamentos. O campo permanece vazio por compatibilidade com registros
+    # antigos e com a estrutura atual da tabela.
+    return ""
 
 
 def obter_configuracao_agenda():
@@ -1238,17 +1221,12 @@ def buscar_disponibilidade(
                 if para_minutos(slot) >= inicio and para_minutos(slot) < fim
             )
 
-        ocupados_consultorio = listar_slots_consultorio_ocupado(
-            conn,
-            consultorio_profissional,
-            data_consulta,
-            ignorar_agendamento_id=excluir_agendamento_id,
-        )
+        ocupados_consultorio: list[str] = []
 
         return DisponibilidadeResposta(
             ocupados=sorted(set(ocupados), key=para_minutos),
             ocupadosConsultorio=ocupados_consultorio,
-            consultorioProfissional=consultorio_profissional or None,
+            consultorioProfissional=None,
             agendamentos=[mapear_agendamento(conn, row) for row in rows_filtrados],
         )
     finally:
