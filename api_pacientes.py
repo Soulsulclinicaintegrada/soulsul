@@ -3128,6 +3128,42 @@ async def proteger_portal_educacao(request: Request, call_next):
 def startup_event() -> None:
     inicializar_banco()
     garantir_colunas_pacientes_api()
+    corrigir_venda_marcia_lucia()
+
+
+def corrigir_venda_marcia_lucia() -> None:
+    """Repara o contrato salvo com total zero apesar do plano integral de pagamento."""
+    contrato_id = 6753358793212166
+    conn = conectar()
+    try:
+        row = conn.execute(
+            "SELECT valor_total, plano_pagamento_json FROM contratos WHERE id=? LIMIT 1",
+            (contrato_id,),
+        ).fetchone()
+        if row is None:
+            return
+        try:
+            plano = json.loads(str(row["plano_pagamento_json"] or "[]"))
+        except Exception:
+            plano = []
+        total_plano = round(
+            sum(float(item.get("valor") or 0) for item in plano if isinstance(item, dict)),
+            2,
+        )
+        if total_plano <= 0:
+            return
+        conn.execute(
+            """
+            UPDATE contratos
+            SET valor_total=?, incluir_total_vendido=1, contar_quantidade_venda=1,
+                valor_venda_considerado=?, tipo_movimento_venda='NOVA'
+            WHERE id=? AND (COALESCE(valor_total, 0)<=0 OR COALESCE(valor_venda_considerado, 0)<=0)
+            """,
+            (total_plano, total_plano, contrato_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def usuario_request(request: Request) -> str:
