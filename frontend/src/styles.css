@@ -10706,3 +10706,75 @@ body, body * {
   color: #a33b31;
   font-weight: 700;
 }
+
+/* Mantém o cabeçalho no fluxo da página e sempre atrás do menu lateral. */
+.shell:not(.education-portal-shell) .topbar {
+  position: relative;
+  z-index: 20;
+}
+
+@media (max-width: 980px) {
+  .shell:not(.education-portal-shell) .sidebar {
+    z-index: 300;
+  }
+
+  .shell:not(.education-portal-shell) .sidebar-overlay-backdrop {
+    z-index: 290;
+  }
+
+  .shell:not(.education-portal-shell) .topbar {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .shell:not(.education-portal-shell) .topbar-left {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .shell:not(.education-portal-shell) .topbar-right {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .shell:not(.education-portal-shell) .topbar-right .search-box {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .shell:not(.education-portal-shell) .topbar-right .header-user {
+    width: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell:not(.education-portal-shell) .topbar-right {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .shell:not(.education-portal-shell) .topbar-right .header-user {
+    display: none;
+  }
+
+  .shell:not(.education-portal-shell) .topbar-menu-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  .shell:not(.education-portal-shell) .page-title-wrap {
+    min-width: 0;
+  }
+
+  .shell:not(.education-portal-shell) .page-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
